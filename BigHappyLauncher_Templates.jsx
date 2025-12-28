@@ -503,7 +503,17 @@
                 }
 
                 app.project.save(saveFile);
-                statusText.text = "Created: " + saveFile.name;
+
+                // Open Main comp in viewer so user can start working
+                for (var i = 1; i <= app.project.numItems; i++) {
+                    var item = app.project.item(i);
+                    if (item instanceof CompItem && item.name === "Main") {
+                        item.openInViewer();
+                        break;
+                    }
+                }
+
+                statusText.text = "Ready: " + saveFile.name;
 
             } catch (e) {
                 alert("Error: " + e.toString());
