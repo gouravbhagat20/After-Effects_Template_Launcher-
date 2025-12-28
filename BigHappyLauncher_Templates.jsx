@@ -543,18 +543,15 @@
                 return;
             }
 
-            // Build filename
-            var client = sanitizeName(clientInput.text) || "Client";
-            var project = sanitizeName(projectInput.text);
-            var templateName = t.name.replace(/\s+/g, "_");
+            // Build filename: Brand_Campaign_Quarter_Dimensions_V#_R#
+            var brand = sanitizeName(brandInput.text) || "Brand";
+            var campaign = sanitizeName(campaignInput.text) || "Campaign";
+            var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
+            var version = "V" + (parseInt(versionInput.text) || 1);
+            var revision = "R" + (parseInt(revisionInput.text) || 1);
 
-            var parts = [client];
-            if (project) parts.push(project);
-            parts.push(templateName);
-            parts.push(size);
-            parts.push(getDateString());
-            var suggestedName = parts.join("_") + ".aep";
+            var suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
 
             try {
                 app.open(new File(t.path));
