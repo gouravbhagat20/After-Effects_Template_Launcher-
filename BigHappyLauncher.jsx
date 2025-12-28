@@ -21,7 +21,7 @@
   HOW TO USE:
   -----------
   1. Select a Preset (Sunrise, InterScroller, DOOH)
-  2. Select Size (Horizontal or Vertical)
+  2. Select Size (available sizes depend on preset)
   3. Enter a Base Name (e.g., "Pepsi", "CocaCola")
   4. Click "Create Template" to create folders + comps
      OR click "Create Folders Only" for just the folder structure
@@ -30,22 +30,37 @@
 */
 
 (function (thisObj) {
-    "use strict";
 
     // =========================================================================
-    // CONFIGURATION
+    // CONFIGURATION - Based on actual template files
     // =========================================================================
 
     var PRESETS = {
-        "Sunrise": { fps: 24, duration: 15 },
-        "InterScroller": { fps: 24, duration: 15 },
-        "DOOH": { fps: 29.97, duration: 15 }
+        "Sunrise": {
+            fps: 24,
+            duration: 15,
+            sizes: [
+                { label: "750x300", width: 750, height: 300, key: "H" }
+            ]
+        },
+        "InterScroller": {
+            fps: 24,
+            duration: 15,
+            sizes: [
+                { label: "880x1912", width: 880, height: 1912, key: "V" }
+            ]
+        },
+        "DOOH": {
+            fps: 29.97,
+            duration: 15,
+            sizes: [
+                { label: "Horizontal 1920x1080", width: 1920, height: 1080, key: "H" },
+                { label: "Vertical 1080x1920", width: 1080, height: 1920, key: "V" }
+            ]
+        }
     };
 
-    var SIZES = {
-        "Horizontal 1920×1080": { width: 1920, height: 1080, key: "H" },
-        "Vertical 1080×1920": { width: 1080, height: 1920, key: "V" }
-    };
+    var PRESET_NAMES = ["Sunrise", "InterScroller", "DOOH"];
 
     var FOLDER_STRUCTURE = [
         "00_BH",
@@ -64,7 +79,22 @@
      * Sanitize filename - remove invalid characters
      */
     function sanitizeName(name) {
-        return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, "_");
+        var result = "";
+        var invalid = "<>:\"/\\|?*";
+        for (var i = 0; i < name.length; i++) {
+            var c = name.charAt(i);
+            var code = name.charCodeAt(i);
+            if (invalid.indexOf(c) === -1 && code >= 32) {
+                if (c === " ") {
+                    result += "_";
+                } else {
+                    result += c;
+                }
+            } else {
+                result += "_";
+            }
+        }
+        return result;
     }
 
     /**
@@ -73,7 +103,6 @@
     function findOrCreateFolder(folderName, parentFolder) {
         var searchIn = parentFolder || app.project.rootFolder;
 
-        // Search for existing folder
         for (var i = 1; i <= searchIn.numItems; i++) {
             var item = searchIn.item(i);
             if (item instanceof FolderItem && item.name === folderName) {
@@ -81,7 +110,6 @@
             }
         }
 
-        // Create new folder
         return searchIn.items.addFolder(folderName);
     }
 
@@ -97,11 +125,9 @@
             var parts = path.split("/");
 
             if (parts.length === 1) {
-                // Root level folder
                 parentFolder = findOrCreateFolder(parts[0], null);
                 createdFolders.push(parts[0]);
             } else {
-                // Nested folder
                 var folder = findOrCreateFolder(parts[1], parentFolder);
                 createdFolders.push(parts[1]);
             }
@@ -136,12 +162,17 @@
     /**
      * Create template compositions
      */
-    function createTemplate(baseName, presetName, sizeName) {
+    function createTemplate(baseName, presetName, sizeIndex) {
         var preset = PRESETS[presetName];
-        var size = SIZES[sizeName];
 
-        if (!preset || !size) {
-            alert("ERROR: Invalid preset or size selection.");
+        if (!preset) {
+            alert("ERROR: Invalid preset selection.");
+            return null;
+        }
+
+        var size = preset.sizes[sizeIndex];
+        if (!size) {
+            alert("ERROR: Invalid size selection.");
             return null;
         }
 
@@ -175,7 +206,7 @@
             assetsName,
             size.width,
             size.height,
-            1,  // pixel aspect ratio
+            1,
             preset.duration,
             preset.fps
         );
@@ -225,9 +256,12 @@
     // =========================================================================
 
     function buildUI(thisObj) {
-        var panel = (thisObj instanceof Panel)
-            ? thisObj
-            : new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
+        var panel;
+        if (thisObj instanceof Panel) {
+            panel = thisObj;
+        } else {
+            panel = new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
+        }
 
         panel.orientation = "column";
         panel.alignChildren = ["fill", "top"];
@@ -238,14 +272,15 @@
         var titleGroup = panel.add("group");
         titleGroup.alignment = ["center", "top"];
         var title = titleGroup.add("statictext", undefined, "Big Happy Launcher");
-        title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 16);
+        try {
+            title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 16);
+        } catch (e) { }
 
         // Preset dropdown
         var presetGroup = panel.add("group");
         presetGroup.alignment = ["fill", "top"];
         presetGroup.add("statictext", undefined, "Preset:");
-        var presetDropdown = presetGroup.add("dropdownlist", undefined,
-            ["Sunrise", "InterScroller", "DOOH"]);
+        var presetDropdown = presetGroup.add("dropdownlist", undefined, PRESET_NAMES);
         presetDropdown.selection = 0;
         presetDropdown.alignment = ["fill", "center"];
 
@@ -253,10 +288,29 @@
         var sizeGroup = panel.add("group");
         sizeGroup.alignment = ["fill", "top"];
         sizeGroup.add("statictext", undefined, "Size:");
-        var sizeDropdown = sizeGroup.add("dropdownlist", undefined,
-            ["Horizontal 1920×1080", "Vertical 1080×1920"]);
-        sizeDropdown.selection = 0;
+        var sizeDropdown = sizeGroup.add("dropdownlist", undefined, []);
         sizeDropdown.alignment = ["fill", "center"];
+
+        // Function to update size dropdown based on preset
+        function updateSizeDropdown() {
+            sizeDropdown.removeAll();
+            var presetName = presetDropdown.selection.text;
+            var preset = PRESETS[presetName];
+            if (preset && preset.sizes) {
+                for (var i = 0; i < preset.sizes.length; i++) {
+                    sizeDropdown.add("item", preset.sizes[i].label);
+                }
+                sizeDropdown.selection = 0;
+            }
+        }
+
+        // Initialize size dropdown
+        updateSizeDropdown();
+
+        // Update sizes when preset changes
+        presetDropdown.onChange = function () {
+            updateSizeDropdown();
+        };
 
         // Base Name input
         var nameGroup = panel.add("group");
@@ -267,7 +321,8 @@
         nameInput.characters = 20;
 
         // Separator
-        panel.add("panel", undefined, "").alignment = ["fill", "center"];
+        var sep1 = panel.add("panel", undefined, "");
+        sep1.alignment = ["fill", "center"];
 
         // Buttons
         var buttonGroup = panel.add("group");
@@ -283,8 +338,9 @@
         createFoldersBtn.preferredSize.height = 28;
 
         // Status line
-        panel.add("panel", undefined, "").alignment = ["fill", "center"];
-        var statusText = panel.add("statictext", undefined, "Ready.", { multiline: false });
+        var sep2 = panel.add("panel", undefined, "");
+        sep2.alignment = ["fill", "center"];
+        var statusText = panel.add("statictext", undefined, "Ready.");
         statusText.alignment = ["fill", "bottom"];
 
         // =====================================================================
@@ -296,26 +352,29 @@
                 app.beginUndoGroup("Create BH Folder Structure");
 
                 var folders = createFolders();
-                statusText.text = "✓ Created folders: " + folders.join(", ");
+                statusText.text = "Created folders: " + folders.join(", ");
 
                 app.endUndoGroup();
             } catch (e) {
                 app.endUndoGroup();
-                statusText.text = "✗ Error: " + e.toString();
+                statusText.text = "Error: " + e.toString();
                 alert("ERROR creating folders:\n" + e.toString());
             }
         };
 
         createTemplateBtn.onClick = function () {
-            var baseName = nameInput.text.replace(/^\s+|\s+$/g, ""); // trim
+            // Trim whitespace from base name
+            var baseName = nameInput.text;
+            while (baseName.charAt(0) === " ") baseName = baseName.substring(1);
+            while (baseName.charAt(baseName.length - 1) === " ") baseName = baseName.substring(0, baseName.length - 1);
 
-            if (!baseName) {
+            if (baseName.length === 0) {
                 alert("Please enter a Base Name.");
                 return;
             }
 
             var presetName = presetDropdown.selection.text;
-            var sizeName = sizeDropdown.selection.text;
+            var sizeIndex = sizeDropdown.selection ? sizeDropdown.selection.index : 0;
 
             try {
                 app.beginUndoGroup("Create BH Template");
@@ -324,18 +383,18 @@
                 createFolders();
 
                 // Create template comps
-                var result = createTemplate(baseName, presetName, sizeName);
+                var result = createTemplate(baseName, presetName, sizeIndex);
 
                 if (result) {
-                    statusText.text = "✓ Created: " + result.master;
+                    statusText.text = "Created: " + result.master;
                 } else {
-                    statusText.text = "✗ Template creation failed.";
+                    statusText.text = "Template creation failed.";
                 }
 
                 app.endUndoGroup();
             } catch (e) {
                 app.endUndoGroup();
-                statusText.text = "✗ Error: " + e.toString();
+                statusText.text = "Error: " + e.toString();
                 alert("ERROR creating template:\n" + e.toString());
             }
         };
