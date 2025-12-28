@@ -3,8 +3,11 @@
   BigHappyLauncher_Templates.jsx
   After Effects ScriptUI Panel - Auto-Generated Templates
   
-  First Run: Automatically creates template folder and .aep files
-  Team Ready: Just install this .jsx, everything is auto-configured!
+  Features:
+  - Client Name & Project Name inputs
+  - Auto-generated filenames
+  - Auto-generate template .aep files
+  - Protected templates (can't overwrite originals)
 ================================================================================
 */
 
@@ -13,6 +16,7 @@
     var SETTINGS_SECTION = "BigHappyLauncher";
     var TEMPLATES_KEY = "templates_data";
     var TEMPLATES_FOLDER_KEY = "templates_folder";
+    var DEFAULT_SAVE_FOLDER_KEY = "default_save_folder";
 
     // Default templates configuration
     var DEFAULT_TEMPLATES = [
@@ -52,12 +56,24 @@
                 return app.settings.getSetting(SETTINGS_SECTION, TEMPLATES_FOLDER_KEY);
             }
         } catch (e) { }
-        // Default: Documents/BH_Templates
         return Folder.myDocuments.fsName + "/BH_Templates";
     }
 
     function setTemplatesFolder(path) {
         app.settings.saveSetting(SETTINGS_SECTION, TEMPLATES_FOLDER_KEY, path);
+    }
+
+    function getDefaultSaveFolder() {
+        try {
+            if (app.settings.haveSetting(SETTINGS_SECTION, DEFAULT_SAVE_FOLDER_KEY)) {
+                return app.settings.getSetting(SETTINGS_SECTION, DEFAULT_SAVE_FOLDER_KEY);
+            }
+        } catch (e) { }
+        return Folder.myDocuments.fsName;
+    }
+
+    function setDefaultSaveFolder(path) {
+        app.settings.saveSetting(SETTINGS_SECTION, DEFAULT_SAVE_FOLDER_KEY, path);
     }
 
     function jsonStringify(obj) {
@@ -85,99 +101,78 @@
 
     function generateTemplateFile(template, folderPath) {
         try {
-            // Close current project without saving
             if (app.project) {
                 app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
             }
 
-            // Create new project
             app.newProject();
 
-            // Create folder structure in Project panel (matching user's structure)
+            // Create folder structure
             var screensFolder = app.project.items.addFolder("Screens");
             var pngFolder = app.project.items.addFolder("png");
             var imageFolder = app.project.items.addFolder("Image");
             var compsFolder = app.project.items.addFolder("Comps");
 
-            // Create Main comp with correct settings
+            // Create Main comp
             var mainComp = app.project.items.addComp(
                 "Main",
                 template.width,
                 template.height,
-                1, // pixel aspect ratio
+                1,
                 template.duration,
                 template.fps
             );
             mainComp.parentFolder = compsFolder;
 
-            // Create a guide text layer with template info
+            // Guide text
             var textLayer = mainComp.layers.addText(template.name + "\n" + template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s");
             textLayer.property("Position").setValue([template.width / 2, template.height / 2]);
 
-            // Save the project
+            // Save
             var fileName = template.name.replace(/\s+/g, "_") + "_" + template.width + "x" + template.height + ".aep";
             var filePath = folderPath + "/" + fileName;
-            var file = new File(filePath);
-
-            app.project.save(file);
-
-            // Close project
+            app.project.save(new File(filePath));
             app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
 
             return filePath;
-
         } catch (e) {
             return null;
         }
     }
 
     function ensureTemplatesExist(templates, folderPath) {
-        // Create folder if needed
         var folder = new Folder(folderPath);
-        if (!folder.exists) {
-            folder.create();
-        }
+        if (!folder.exists) folder.create();
 
         var generated = [];
-        var allReady = true;
 
         for (var i = 0; i < templates.length; i++) {
             var t = templates[i];
 
-            // Check if path exists
-            if (t.path && new File(t.path).exists) {
-                continue; // Already has valid path
-            }
+            if (t.path && new File(t.path).exists) continue;
 
-            // Check if file already exists in templates folder
             var expectedName = t.name.replace(/\s+/g, "_") + "_" + t.width + "x" + t.height + ".aep";
             var expectedPath = folderPath + "/" + expectedName;
 
             if (new File(expectedPath).exists) {
                 templates[i].path = expectedPath;
-                generated.push(t.name + " (found)");
+                generated.push(t.name);
                 continue;
             }
 
-            // Generate the template
             var newPath = generateTemplateFile(t, folderPath);
             if (newPath) {
                 templates[i].path = newPath;
-                generated.push(t.name + " (created)");
-            } else {
-                allReady = false;
+                generated.push(t.name);
             }
         }
 
-        if (generated.length > 0) {
-            saveTemplates(templates);
-        }
-
-        return { templates: templates, generated: generated, allReady: allReady };
+        if (generated.length > 0) saveTemplates(templates);
+        return { templates: templates, generated: generated };
     }
 
     // =========================================================================
-    // HELPER FUNCTIONS
+    // HELPERS
     // =========================================================================
 
     function fileExists(path) {
@@ -198,8 +193,27 @@
         return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)";
     }
 
+    function sanitizeName(name) {
+        var result = "";
+        var invalid = "<>:\"/\\|?*";
+        for (var i = 0; i < name.length; i++) {
+            var c = name.charAt(i);
+            if (invalid.indexOf(c) === -1 && name.charCodeAt(i) >= 32) {
+                result += (c === " ") ? "_" : c;
+            }
+        }
+        return result;
+    }
+
+    function getDateString() {
+        var d = new Date();
+        var m = d.getMonth() + 1;
+        var day = d.getDate();
+        return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+    }
+
     // =========================================================================
-    // EDIT TEMPLATE DIALOG
+    // TEMPLATE DIALOG
     // =========================================================================
 
     function showTemplateDialog(template, isNew) {
@@ -229,19 +243,17 @@
         fpsGroup.add("statictext", undefined, "Duration:");
         var durInput = fpsGroup.add("edittext", undefined, String(template.duration || 15));
         durInput.characters = 6;
-        fpsGroup.add("statictext", undefined, "s");
 
         var btnGroup = dlg.add("group");
         btnGroup.alignment = ["center", "top"];
-        var okBtn = btnGroup.add("button", undefined, "OK", { name: "ok" });
-        var cancelBtn = btnGroup.add("button", undefined, "Cancel", { name: "cancel" });
+        btnGroup.add("button", undefined, "OK", { name: "ok" });
+        btnGroup.add("button", undefined, "Cancel", { name: "cancel" });
 
         var result = null;
 
-        okBtn.onClick = function () {
+        dlg.findElement("ok").onClick = function () {
             var name = nameInput.text.replace(/^\s+|\s+$/g, "");
             if (!name) { alert("Enter a name."); return; }
-
             result = {
                 name: name,
                 width: parseInt(widthInput.text) || 1920,
@@ -252,8 +264,6 @@
             };
             dlg.close();
         };
-
-        cancelBtn.onClick = function () { dlg.close(); };
 
         dlg.show();
         return result;
@@ -282,16 +292,59 @@
         // Header
         var title = panel.add("statictext", undefined, "BIG HAPPY LAUNCHER");
         title.alignment = ["center", "top"];
-        try {
-            title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13);
-        } catch (e) { }
+        try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
-        // Template Selection
+        // =====================================================================
+        // PROJECT INFO SECTION
+        // =====================================================================
+        var infoPanel = panel.add("panel", undefined, "Project Info");
+        infoPanel.alignment = ["fill", "top"];
+        infoPanel.alignChildren = ["fill", "top"];
+        infoPanel.margins = 10;
+        infoPanel.spacing = 6;
+
+        // Brand
+        var brandGroup = infoPanel.add("group");
+        brandGroup.add("statictext", undefined, "Brand:");
+        var brandInput = brandGroup.add("edittext", undefined, "");
+        brandInput.characters = 15;
+        brandInput.alignment = ["fill", "center"];
+
+        // Campaign
+        var campaignGroup = infoPanel.add("group");
+        campaignGroup.add("statictext", undefined, "Campaign:");
+        var campaignInput = campaignGroup.add("edittext", undefined, "");
+        campaignInput.characters = 15;
+        campaignInput.alignment = ["fill", "center"];
+
+        // Quarter
+        var quarterGroup = infoPanel.add("group");
+        quarterGroup.add("statictext", undefined, "Quarter:");
+        var quarterDropdown = quarterGroup.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+        quarterDropdown.selection = 0;
+        quarterDropdown.alignment = ["fill", "center"];
+
+        // Version & Revision
+        var versionGroup = infoPanel.add("group");
+        versionGroup.add("statictext", undefined, "Version:");
+        var versionInput = versionGroup.add("edittext", undefined, "1");
+        versionInput.characters = 3;
+        versionGroup.add("statictext", undefined, "Revision:");
+        var revisionInput = versionGroup.add("edittext", undefined, "1");
+        revisionInput.characters = 3;
+
+        // Preview filename
+        var previewText = infoPanel.add("statictext", undefined, "Filename: [Enter Brand]");
+        previewText.alignment = ["fill", "top"];
+        try { previewText.graphics.foregroundColor = previewText.graphics.newPen(previewText.graphics.PenType.SOLID_COLOR, [0.5, 0.7, 0.9], 1); } catch (e) { }
+
+        // =====================================================================
+        // TEMPLATE SECTION
+        // =====================================================================
         var templatePanel = panel.add("panel", undefined, "Template");
         templatePanel.alignment = ["fill", "top"];
         templatePanel.alignChildren = ["fill", "top"];
         templatePanel.margins = 10;
-        templatePanel.spacing = 8;
 
         var templateDropdown = templatePanel.add("dropdownlist", undefined, []);
         templateDropdown.alignment = ["fill", "center"];
@@ -304,10 +357,11 @@
             }
             if (templates.length > 0) templateDropdown.selection = 0;
         }
-
         refreshDropdown();
 
-        // Status
+        // =====================================================================
+        // STATUS SECTION
+        // =====================================================================
         var pathPanel = panel.add("panel", undefined, "Status");
         pathPanel.alignment = ["fill", "top"];
         pathPanel.alignChildren = ["fill", "top"];
@@ -315,7 +369,7 @@
 
         var statusIcon = pathPanel.add("statictext", undefined, "");
         var pathText = pathPanel.add("statictext", undefined, "", { truncate: "middle" });
-        pathText.preferredSize.height = 18;
+        pathText.preferredSize.height = 16;
 
         function updatePathDisplay() {
             if (templates.length === 0 || !templateDropdown.selection) {
@@ -323,12 +377,10 @@
                 pathText.text = "";
                 return;
             }
-
             var t = templates[templateDropdown.selection.index];
-
             if (!t.path) {
                 statusIcon.text = "[ Not Generated ]";
-                pathText.text = "Click 'Generate Templates'";
+                pathText.text = "Click 'Generate All Templates'";
                 try { statusIcon.graphics.foregroundColor = statusIcon.graphics.newPen(statusIcon.graphics.PenType.SOLID_COLOR, [0.9, 0.7, 0.3], 1); } catch (e) { }
             } else if (fileExists(t.path)) {
                 statusIcon.text = "Ready";
@@ -341,10 +393,43 @@
             }
         }
 
-        templateDropdown.onChange = updatePathDisplay;
-        updatePathDisplay();
+        // Update preview filename
+        function updatePreview() {
+            var brand = sanitizeName(brandInput.text) || "Brand";
+            var campaign = sanitizeName(campaignInput.text) || "Campaign";
+            var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
+            var size = "";
+            var version = "V" + (parseInt(versionInput.text) || 1);
+            var revision = "R" + (parseInt(revisionInput.text) || 1);
 
-        // Actions
+            if (templateDropdown.selection && templates.length > 0) {
+                var t = templates[templateDropdown.selection.index];
+                size = t.width + "x" + t.height;
+            }
+
+            // Format: Brand_Campaign_Quarter_Dimensions_V#_R#
+            var filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+            previewText.text = filename;
+        }
+
+        brandInput.onChanging = updatePreview;
+        campaignInput.onChanging = updatePreview;
+        quarterDropdown.onChange = function () {
+            updatePreview();
+        };
+        versionInput.onChanging = updatePreview;
+        revisionInput.onChanging = updatePreview;
+        templateDropdown.onChange = function () {
+            updatePathDisplay();
+            updatePreview();
+        };
+
+        updatePathDisplay();
+        updatePreview();
+
+        // =====================================================================
+        // ACTIONS SECTION
+        // =====================================================================
         var actionPanel = panel.add("panel", undefined, "Actions");
         actionPanel.alignment = ["fill", "top"];
         actionPanel.alignChildren = ["fill", "top"];
@@ -355,9 +440,11 @@
         newProjectBtn.preferredSize.height = 32;
 
         var generateBtn = actionPanel.add("button", undefined, "Generate All Templates");
-        generateBtn.preferredSize.height = 26;
+        generateBtn.preferredSize.height = 24;
 
-        // Management
+        // =====================================================================
+        // MANAGE SECTION
+        // =====================================================================
         var managePanel = panel.add("panel", undefined, "Manage");
         managePanel.alignment = ["fill", "top"];
         managePanel.alignChildren = ["fill", "top"];
@@ -378,39 +465,25 @@
         var folderBtn = managePanel.add("button", undefined, "Change Templates Folder...");
         folderBtn.preferredSize.height = 22;
 
-        // Folder display
         var folderText = managePanel.add("statictext", undefined, "Folder: " + templatesFolder, { truncate: "middle" });
-        folderText.preferredSize.height = 16;
-        try { folderText.graphics.foregroundColor = folderText.graphics.newPen(folderText.graphics.PenType.SOLID_COLOR, [0.6, 0.6, 0.6], 1); } catch (e) { }
+        try { folderText.graphics.foregroundColor = folderText.graphics.newPen(folderText.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
 
-        // Status line
+        // Status
         var statusText = panel.add("statictext", undefined, "Templates are protected");
         statusText.alignment = ["fill", "bottom"];
-        try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.6, 0.6, 0.6], 1); } catch (e) { }
+        try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
 
         // =====================================================================
         // HANDLERS
         // =====================================================================
 
         generateBtn.onClick = function () {
-            if (!confirm("Generate ALL template .aep files?\n\nThis will recreate all templates.\n\nFolder: " + templatesFolder)) return;
-
-            statusText.text = "Generating templates...";
-
-            // Clear all paths to force regeneration
-            for (var i = 0; i < templates.length; i++) {
-                templates[i].path = "";
-            }
-
+            if (!confirm("Generate ALL template .aep files?\n\nFolder: " + templatesFolder)) return;
+            statusText.text = "Generating...";
+            for (var i = 0; i < templates.length; i++) templates[i].path = "";
             var result = ensureTemplatesExist(templates, templatesFolder);
             templates = result.templates;
-
-            if (result.generated.length > 0) {
-                statusText.text = "Generated " + result.generated.length + " templates";
-            } else {
-                statusText.text = "No templates generated";
-            }
-
+            statusText.text = "Generated " + result.generated.length + " templates";
             refreshDropdown();
             updatePathDisplay();
         };
@@ -421,7 +494,6 @@
                 templatesFolder = folder.fsName;
                 setTemplatesFolder(templatesFolder);
                 folderText.text = "Folder: " + templatesFolder;
-                statusText.text = "Folder changed";
             }
         };
 
@@ -433,7 +505,7 @@
                 refreshDropdown();
                 templateDropdown.selection = templates.length - 1;
                 updatePathDisplay();
-                statusText.text = "Added: " + newT.name;
+                updatePreview();
             }
         };
 
@@ -447,7 +519,7 @@
                 refreshDropdown();
                 templateDropdown.selection = idx;
                 updatePathDisplay();
-                statusText.text = "Updated: " + edited.name;
+                updatePreview();
             }
         };
 
@@ -459,32 +531,44 @@
             saveTemplates(templates);
             refreshDropdown();
             updatePathDisplay();
-            statusText.text = "Deleted";
+            updatePreview();
         };
 
         newProjectBtn.onClick = function () {
             if (!templateDropdown.selection) return;
-
             var t = templates[templateDropdown.selection.index];
 
             if (!t.path || !fileExists(t.path)) {
-                alert("Template file not ready.\n\nClick 'Generate All Templates' first.");
+                alert("Template not ready.\n\nClick 'Generate All Templates' first.");
                 return;
             }
+
+            // Build filename
+            var client = sanitizeName(clientInput.text) || "Client";
+            var project = sanitizeName(projectInput.text);
+            var templateName = t.name.replace(/\s+/g, "_");
+            var size = t.width + "x" + t.height;
+
+            var parts = [client];
+            if (project) parts.push(project);
+            parts.push(templateName);
+            parts.push(size);
+            parts.push(getDateString());
+            var suggestedName = parts.join("_") + ".aep";
 
             try {
                 app.open(new File(t.path));
 
                 var saveFile = null;
                 var valid = false;
+                var defaultFolder = new Folder(getDefaultSaveFolder());
 
                 while (!valid) {
-                    saveFile = File.saveDialog("Save New Project As", "*.aep");
+                    saveFile = new File(defaultFolder.fsName + "/" + suggestedName).saveDlg("Save New Project As");
 
                     if (!saveFile) {
                         if (confirm("You must save to a new location.\n\nOK = Close\nCancel = Try again")) {
                             app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
-                            statusText.text = "Cancelled";
                             return;
                         }
                         continue;
@@ -502,9 +586,12 @@
                     valid = true;
                 }
 
+                // Remember folder for next time
+                setDefaultSaveFolder(getParentFolder(saveFile.fsName));
+
                 app.project.save(saveFile);
 
-                // Open Main comp in viewer so user can start working
+                // Open Main comp
                 for (var i = 1; i <= app.project.numItems; i++) {
                     var item = app.project.item(i);
                     if (item instanceof CompItem && item.name === "Main") {
@@ -513,10 +600,8 @@
                     }
                 }
 
-                // Close the launcher panel/window
-                if (panel instanceof Window) {
-                    panel.close();
-                }
+                // Close panel
+                if (panel instanceof Window) panel.close();
 
             } catch (e) {
                 alert("Error: " + e.toString());
