@@ -305,33 +305,40 @@
 
         // Brand
         var brandGroup = infoPanel.add("group");
-        brandGroup.add("statictext", undefined, "Brand:");
+        brandGroup.alignment = ["fill", "top"];
+        var brandLabel = brandGroup.add("statictext", undefined, "Brand:");
+        brandLabel.preferredSize.width = 70;
         var brandInput = brandGroup.add("edittext", undefined, "");
-        brandInput.characters = 15;
         brandInput.alignment = ["fill", "center"];
 
         // Campaign
         var campaignGroup = infoPanel.add("group");
-        campaignGroup.add("statictext", undefined, "Campaign:");
+        campaignGroup.alignment = ["fill", "top"];
+        var campaignLabel = campaignGroup.add("statictext", undefined, "Campaign:");
+        campaignLabel.preferredSize.width = 70;
         var campaignInput = campaignGroup.add("edittext", undefined, "");
-        campaignInput.characters = 15;
         campaignInput.alignment = ["fill", "center"];
 
         // Quarter
         var quarterGroup = infoPanel.add("group");
-        quarterGroup.add("statictext", undefined, "Quarter:");
+        quarterGroup.alignment = ["fill", "top"];
+        var quarterLabel = quarterGroup.add("statictext", undefined, "Quarter:");
+        quarterLabel.preferredSize.width = 70;
         var quarterDropdown = quarterGroup.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
         quarterDropdown.selection = 0;
         quarterDropdown.alignment = ["fill", "center"];
 
-        // Version & Revision
+        // Version & Revision (same row, equal widths)
         var versionGroup = infoPanel.add("group");
-        versionGroup.add("statictext", undefined, "Version:");
+        versionGroup.alignment = ["fill", "top"];
+        var versionLabel = versionGroup.add("statictext", undefined, "Version:");
+        versionLabel.preferredSize.width = 70;
         var versionInput = versionGroup.add("edittext", undefined, "1");
-        versionInput.characters = 3;
-        versionGroup.add("statictext", undefined, "Revision:");
+        versionInput.alignment = ["fill", "center"];
+        var revisionLabel = versionGroup.add("statictext", undefined, "Revision:");
+        revisionLabel.preferredSize.width = 60;
         var revisionInput = versionGroup.add("edittext", undefined, "1");
-        revisionInput.characters = 3;
+        revisionInput.alignment = ["fill", "center"];
 
         // Preview filename
         var previewText = infoPanel.add("statictext", undefined, "Filename: [Enter Brand]");
