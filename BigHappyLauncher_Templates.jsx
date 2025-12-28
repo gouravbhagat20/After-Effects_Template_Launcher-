@@ -2,6 +2,7 @@
 ================================================================================
   BigHappyLauncher_Templates.jsx
   After Effects ScriptUI Panel - Template Project Launcher (Protected)
+  Native AE Dark UI Style
 ================================================================================
 
   INSTALLATION:
@@ -14,27 +15,7 @@
 
   3. Open the panel: Window > BigHappyLauncher_Templates.jsx
 
-  4. Dock the panel where you like, then save your workspace:
-     Window > Workspace > Save as New Workspace...
-     The panel will appear automatically next time you use that workspace.
-
-  FIRST TIME SETUP:
-  -----------------
-  1. Select each template from the dropdown
-  2. Click "Set/Change Template Path"
-  3. Browse to the .aep file location and select it
-  4. Repeat for all 4 templates
-
-  HOW TO USE:
-  -----------
-  1. Select a template from the dropdown
-  2. Click "New Project from Template" - opens template and forces Save As
-
-  TEMPLATE PROTECTION:
-  --------------------
-  - Original template files are NEVER modified
-  - You MUST save to a new location before working
-  - Saving to the same folder as template is blocked
+  4. Dock the panel, then: Window > Workspace > Save as New Workspace...
 
 ================================================================================
 */
@@ -71,12 +52,26 @@
     ];
 
     // =========================================================================
+    // UI COLORS (AE Native Dark Theme)
+    // =========================================================================
+
+    var UI_COLORS = {
+        panelBg: [0.2, 0.2, 0.2],
+        groupBg: [0.25, 0.25, 0.25],
+        buttonBg: [0.31, 0.31, 0.31],
+        buttonHover: [0.4, 0.4, 0.4],
+        accent: [0.25, 0.5, 0.85],
+        textLight: [0.85, 0.85, 0.85],
+        textDim: [0.6, 0.6, 0.6],
+        success: [0.4, 0.75, 0.4],
+        warning: [0.9, 0.7, 0.3],
+        error: [0.9, 0.4, 0.4]
+    };
+
+    // =========================================================================
     // HELPER FUNCTIONS
     // =========================================================================
 
-    /**
-     * Get saved template path from settings
-     */
     function getTemplatePath(key) {
         try {
             if (app.settings.haveSetting(SETTINGS_SECTION, key)) {
@@ -86,49 +81,32 @@
         return "";
     }
 
-    /**
-     * Save template path to settings
-     */
     function setTemplatePath(key, path) {
         try {
             app.settings.saveSetting(SETTINGS_SECTION, key, path);
             return true;
         } catch (e) {
-            alert("ERROR: Could not save setting.\n" + e.toString());
             return false;
         }
     }
 
-    /**
-     * Check if file exists
-     */
     function fileExists(path) {
         if (!path || path.length === 0) return false;
         var f = new File(path);
         return f.exists;
     }
 
-    /**
-     * Get parent folder path from file path
-     */
     function getParentFolder(filePath) {
         var f = new File(filePath);
-        if (f.parent) {
-            return f.parent.fsName;
-        }
-        return "";
+        return f.parent ? f.parent.fsName : "";
     }
 
-    /**
-     * Sanitize filename - remove invalid characters
-     */
     function sanitizeFilename(name) {
         var result = "";
         var invalid = "<>:\"/\\|?*";
         for (var i = 0; i < name.length; i++) {
             var c = name.charAt(i);
-            var code = name.charCodeAt(i);
-            if (invalid.indexOf(c) === -1 && code >= 32) {
+            if (invalid.indexOf(c) === -1 && name.charCodeAt(i) >= 32) {
                 result += c;
             } else {
                 result += "_";
@@ -137,26 +115,15 @@
         return result;
     }
 
-    /**
-     * Get current date string for default filename
-     */
     function getDateString() {
         var d = new Date();
-        var year = d.getFullYear();
-        var month = d.getMonth() + 1;
+        var m = d.getMonth() + 1;
         var day = d.getDate();
-        if (month < 10) month = "0" + month;
-        if (day < 10) day = "0" + day;
-        return year + "-" + month + "-" + day;
+        return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
     }
 
-    /**
-     * Check if two paths are in the same folder
-     */
     function isSameFolder(path1, path2) {
-        var folder1 = getParentFolder(path1);
-        var folder2 = getParentFolder(path2);
-        return folder1.toLowerCase() === folder2.toLowerCase();
+        return getParentFolder(path1).toLowerCase() === getParentFolder(path2).toLowerCase();
     }
 
     // =========================================================================
@@ -168,116 +135,132 @@
         if (thisObj instanceof Panel) {
             panel = thisObj;
         } else {
-            panel = new Window("palette", "Big Happy Launcher (Templates)", undefined, { resizeable: true });
+            panel = new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
         }
 
         panel.orientation = "column";
         panel.alignChildren = ["fill", "top"];
-        panel.spacing = 10;
-        panel.margins = 16;
+        panel.spacing = 4;
+        panel.margins = 10;
 
-        // Title
-        var titleGroup = panel.add("group");
-        titleGroup.alignment = ["center", "top"];
-        var title = titleGroup.add("statictext", undefined, "Big Happy Launcher");
-        try {
-            title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14);
-        } catch (e) { }
+        // Draw panel background
+        panel.graphics.backgroundColor = panel.graphics.newBrush(panel.graphics.BrushType.SOLID_COLOR, UI_COLORS.panelBg);
 
-        var subtitle = panel.add("statictext", undefined, "Template Launcher (Protected)");
-        subtitle.alignment = ["center", "top"];
+        // =====================================================================
+        // HEADER
+        // =====================================================================
 
-        // Separator
-        panel.add("panel", undefined, "").alignment = ["fill", "center"];
+        var headerGroup = panel.add("group");
+        headerGroup.alignment = ["fill", "top"];
+        headerGroup.alignChildren = ["center", "center"];
+        headerGroup.margins = [0, 5, 0, 5];
 
-        // Template dropdown
-        var templateGroup = panel.add("group");
-        templateGroup.alignment = ["fill", "top"];
-        templateGroup.add("statictext", undefined, "Template:");
+        var titleText = headerGroup.add("statictext", undefined, "BIG HAPPY LAUNCHER");
+        titleText.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13);
+        titleText.graphics.foregroundColor = titleText.graphics.newPen(titleText.graphics.PenType.SOLID_COLOR, UI_COLORS.textLight, 1);
+
+        // =====================================================================
+        // TEMPLATE SELECTION GROUP
+        // =====================================================================
+
+        var templatePanel = panel.add("panel", undefined, "Template");
+        templatePanel.alignment = ["fill", "top"];
+        templatePanel.alignChildren = ["fill", "top"];
+        templatePanel.margins = 10;
+        templatePanel.spacing = 8;
 
         var templateLabels = [];
         for (var i = 0; i < TEMPLATES.length; i++) {
             templateLabels.push(TEMPLATES[i].label);
         }
 
-        var templateDropdown = templateGroup.add("dropdownlist", undefined, templateLabels);
+        var templateDropdown = templatePanel.add("dropdownlist", undefined, templateLabels);
         templateDropdown.selection = 0;
         templateDropdown.alignment = ["fill", "center"];
+        templateDropdown.preferredSize.height = 25;
 
-        // Path status display
-        var pathGroup = panel.add("group");
-        pathGroup.alignment = ["fill", "top"];
-        pathGroup.orientation = "column";
-        pathGroup.alignChildren = ["fill", "top"];
+        // =====================================================================
+        // PATH STATUS GROUP
+        // =====================================================================
 
-        var pathLabel = pathGroup.add("statictext", undefined, "Path:");
-        var pathStatus = pathGroup.add("statictext", undefined, "Loading...", { truncate: "middle" });
-        pathStatus.alignment = ["fill", "top"];
+        var pathPanel = panel.add("panel", undefined, "Template Path");
+        pathPanel.alignment = ["fill", "top"];
+        pathPanel.alignChildren = ["fill", "top"];
+        pathPanel.margins = 10;
+        pathPanel.spacing = 4;
 
-        // Function to update path display
+        var statusIcon = pathPanel.add("statictext", undefined, "");
+        statusIcon.alignment = ["fill", "top"];
+
+        var pathText = pathPanel.add("statictext", undefined, "", { truncate: "middle" });
+        pathText.alignment = ["fill", "top"];
+        pathText.preferredSize.height = 18;
+
         function updatePathDisplay() {
             var idx = templateDropdown.selection ? templateDropdown.selection.index : 0;
             var template = TEMPLATES[idx];
             var path = getTemplatePath(template.key);
 
             if (!path || path.length === 0) {
-                pathStatus.text = "[ Not Set ]";
-                pathLabel.text = "Path: (not configured)";
+                statusIcon.text = "[ Not Configured ]";
+                pathText.text = "Click 'Set Path' to configure";
+                try {
+                    statusIcon.graphics.foregroundColor = statusIcon.graphics.newPen(statusIcon.graphics.PenType.SOLID_COLOR, UI_COLORS.warning, 1);
+                } catch (e) { }
             } else if (fileExists(path)) {
-                pathStatus.text = "OK: " + path;
-                pathLabel.text = "Path: (file exists)";
+                statusIcon.text = "Ready";
+                pathText.text = path;
+                try {
+                    statusIcon.graphics.foregroundColor = statusIcon.graphics.newPen(statusIcon.graphics.PenType.SOLID_COLOR, UI_COLORS.success, 1);
+                } catch (e) { }
             } else {
-                pathStatus.text = "MISSING: " + path;
-                pathLabel.text = "Path: (file not found!)";
+                statusIcon.text = "File Not Found";
+                pathText.text = path;
+                try {
+                    statusIcon.graphics.foregroundColor = statusIcon.graphics.newPen(statusIcon.graphics.PenType.SOLID_COLOR, UI_COLORS.error, 1);
+                } catch (e) { }
             }
         }
 
-        // Update display when template changes
-        templateDropdown.onChange = function () {
-            updatePathDisplay();
-        };
-
-        // Initialize display
+        templateDropdown.onChange = updatePathDisplay;
         updatePathDisplay();
 
-        // Separator
-        panel.add("panel", undefined, "").alignment = ["fill", "center"];
+        // =====================================================================
+        // ACTION BUTTONS
+        // =====================================================================
 
-        // Protection notice
-        var noticeGroup = panel.add("group");
-        noticeGroup.alignment = ["center", "top"];
-        var notice = noticeGroup.add("statictext", undefined, "Templates are protected from overwrite");
+        var actionPanel = panel.add("panel", undefined, "Actions");
+        actionPanel.alignment = ["fill", "top"];
+        actionPanel.alignChildren = ["fill", "top"];
+        actionPanel.margins = 10;
+        actionPanel.spacing = 6;
+
+        var newProjectBtn = actionPanel.add("button", undefined, "New Project from Template");
+        newProjectBtn.preferredSize.height = 32;
+        newProjectBtn.alignment = ["fill", "center"];
+
+        var setPathBtn = actionPanel.add("button", undefined, "Set Template Path...");
+        setPathBtn.preferredSize.height = 26;
+        setPathBtn.alignment = ["fill", "center"];
+
+        // =====================================================================
+        // FOOTER / STATUS
+        // =====================================================================
+
+        var footerGroup = panel.add("group");
+        footerGroup.alignment = ["fill", "bottom"];
+        footerGroup.margins = [0, 5, 0, 0];
+
+        var statusText = footerGroup.add("statictext", undefined, "Templates are protected from overwrite");
+        statusText.alignment = ["fill", "center"];
         try {
-            notice.graphics.foregroundColor = notice.graphics.newPen(notice.graphics.PenType.SOLID_COLOR, [0.4, 0.7, 0.4], 1);
+            statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, UI_COLORS.textDim, 1);
         } catch (e) { }
-
-        // Buttons
-        var buttonGroup = panel.add("group");
-        buttonGroup.alignment = ["fill", "top"];
-        buttonGroup.orientation = "column";
-        buttonGroup.alignChildren = ["fill", "center"];
-        buttonGroup.spacing = 8;
-
-        var newProjectBtn = buttonGroup.add("button", undefined, "New Project from Template");
-        newProjectBtn.preferredSize.height = 40;
-
-        var setPathBtn = buttonGroup.add("button", undefined, "Set/Change Template Path");
-        setPathBtn.preferredSize.height = 28;
-
-        // Separator
-        panel.add("panel", undefined, "").alignment = ["fill", "center"];
-
-        // Status line
-        var statusText = panel.add("statictext", undefined, "Ready. Select a template to begin.");
-        statusText.alignment = ["fill", "bottom"];
 
         // =====================================================================
         // BUTTON HANDLERS
         // =====================================================================
 
-        /**
-         * Set/Change Template Path button
-         */
         setPathBtn.onClick = function () {
             var idx = templateDropdown.selection ? templateDropdown.selection.index : 0;
             var template = TEMPLATES[idx];
@@ -286,114 +269,89 @@
 
             if (file) {
                 if (setTemplatePath(template.key, file.fsName)) {
-                    statusText.text = "Path saved for: " + template.label.split(" (")[0];
+                    statusText.text = "Path saved: " + template.defaultName;
                     updatePathDisplay();
                 }
-            } else {
-                statusText.text = "Path selection cancelled.";
             }
         };
 
-        /**
-         * New Project from Template button (Protected)
-         */
         newProjectBtn.onClick = function () {
             var idx = templateDropdown.selection ? templateDropdown.selection.index : 0;
             var template = TEMPLATES[idx];
             var templatePath = getTemplatePath(template.key);
 
-            // Check if path is set
             if (!templatePath || templatePath.length === 0) {
-                alert("Template path not configured!\n\nPlease click 'Set/Change Template Path' first to select the .aep file for:\n" + template.label);
+                alert("Template path not configured.\n\nClick 'Set Template Path...' first.");
                 return;
             }
 
-            // Check if file exists
             if (!fileExists(templatePath)) {
-                alert("Template file not found!\n\nThe saved path does not exist:\n" + templatePath + "\n\nPlease click 'Set/Change Template Path' to update.");
+                alert("Template file not found:\n" + templatePath + "\n\nClick 'Set Template Path...' to update.");
                 return;
             }
 
             try {
-                // Open the template
                 var templateFile = new File(templatePath);
                 var project = app.open(templateFile);
 
                 if (!project) {
-                    statusText.text = "Failed to open template.";
+                    statusText.text = "Failed to open template";
                     return;
                 }
 
-                statusText.text = "Template opened. Please save to a new location...";
+                statusText.text = "Save to a new location...";
 
-                // Generate default save name
-                var defaultName = sanitizeFilename(template.defaultName + "_" + getDateString());
                 var saveFile = null;
                 var validSave = false;
 
-                // Keep prompting until user saves to a valid location or cancels
                 while (!validSave) {
-                    saveFile = File.saveDialog("Save New Project As (cannot save to template folder)", "After Effects Project:*.aep");
+                    saveFile = File.saveDialog("Save New Project As", "After Effects Project:*.aep");
 
                     if (!saveFile) {
-                        // User cancelled - close project without saving
                         var closeConfirm = confirm(
-                            "You must save to a new location to protect the template.\n\n" +
-                            "Cancel = Go back and save\n" +
-                            "OK = Close project without saving"
+                            "You must save to a new location.\n\n" +
+                            "OK = Close without saving\n" +
+                            "Cancel = Choose location"
                         );
 
                         if (closeConfirm) {
                             app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
-                            statusText.text = "Project closed (template protected)";
+                            statusText.text = "Cancelled - template protected";
                             return;
                         }
-                        // User wants to try saving again
                         continue;
                     }
 
-                    // Ensure .aep extension
                     var savePath = saveFile.fsName;
                     if (savePath.toLowerCase().indexOf(".aep") === -1) {
                         savePath = savePath + ".aep";
                         saveFile = new File(savePath);
                     }
 
-                    // Check if trying to save to template folder
                     if (isSameFolder(savePath, templatePath)) {
-                        alert(
-                            "PROTECTED: Cannot save to the template folder!\n\n" +
-                            "Template folder:\n" + getParentFolder(templatePath) + "\n\n" +
-                            "Please choose a different location to protect the original template."
-                        );
+                        alert("Cannot save to template folder.\nChoose a different location.");
                         continue;
                     }
 
-                    // Check if trying to overwrite the template file itself
                     if (savePath.toLowerCase() === templatePath.toLowerCase()) {
-                        alert(
-                            "PROTECTED: Cannot overwrite the template file!\n\n" +
-                            "Please choose a different name or location."
-                        );
+                        alert("Cannot overwrite the template file.");
                         continue;
                     }
 
-                    // Valid save location
                     validSave = true;
                 }
 
-                // Save the project
                 app.project.save(saveFile);
                 statusText.text = "Created: " + saveFile.name;
 
             } catch (e) {
-                statusText.text = "Error: " + e.toString();
-                alert("ERROR:\n" + e.toString());
+                statusText.text = "Error";
+                alert("Error:\n" + e.toString());
             }
         };
 
         // =====================================================================
-        // PANEL RESIZE HANDLING
+        // RESIZE HANDLING
         // =====================================================================
 
         panel.onResizing = panel.onResize = function () {
@@ -409,10 +367,6 @@
 
         return panel;
     }
-
-    // =========================================================================
-    // LAUNCH PANEL
-    // =========================================================================
 
     buildUI(thisObj);
 
