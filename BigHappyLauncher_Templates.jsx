@@ -393,17 +393,22 @@
         // =====================================================================
 
         generateBtn.onClick = function () {
-            if (!confirm("Generate template .aep files?\n\nFolder: " + templatesFolder)) return;
+            if (!confirm("Generate ALL template .aep files?\n\nThis will recreate all templates.\n\nFolder: " + templatesFolder)) return;
 
             statusText.text = "Generating templates...";
+
+            // Clear all paths to force regeneration
+            for (var i = 0; i < templates.length; i++) {
+                templates[i].path = "";
+            }
 
             var result = ensureTemplatesExist(templates, templatesFolder);
             templates = result.templates;
 
             if (result.generated.length > 0) {
-                statusText.text = "Generated: " + result.generated.join(", ");
+                statusText.text = "Generated " + result.generated.length + " templates";
             } else {
-                statusText.text = "All templates ready";
+                statusText.text = "No templates generated";
             }
 
             refreshDropdown();
