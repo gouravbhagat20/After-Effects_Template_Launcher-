@@ -513,7 +513,10 @@
                     }
                 }
 
-                statusText.text = "Ready: " + saveFile.name;
+                // Close the launcher panel/window
+                if (panel instanceof Window) {
+                    panel.close();
+                }
 
             } catch (e) {
                 alert("Error: " + e.toString());
