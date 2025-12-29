@@ -4,31 +4,31 @@
   After Effects ScriptUI Panel - Auto-Generated Templates
   
   Features:
-  - Client Name & Project Name inputs
-  - Auto-generated filenames
-  - Auto-generate template .aep files
+  - Minimalist UI (Clean Groups, No Panel Borders)
+  - Brand & Campaign Inputs
+  - Auto-generated filenames (Brand_Campaign_Q#_Size_V#_R#)
+  - Auto-generate template .aep files with standard folder structure
   - Protected templates (can't overwrite originals)
 ================================================================================
 */
 
 (function (thisObj) {
 
+    // =========================================================================
+    // CONFIG & STORAGE
+    // =========================================================================
+
     var SETTINGS_SECTION = "BigHappyLauncher";
     var TEMPLATES_KEY = "templates_data";
     var TEMPLATES_FOLDER_KEY = "templates_folder";
     var DEFAULT_SAVE_FOLDER_KEY = "default_save_folder";
 
-    // Default templates configuration
     var DEFAULT_TEMPLATES = [
         { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "" },
         { name: "InterScroller", width: 880, height: 1912, fps: 24, duration: 15, path: "" },
         { name: "DOOH Horizontal", width: 1920, height: 1080, fps: 29.97, duration: 15, path: "" },
         { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "" }
     ];
-
-    // =========================================================================
-    // STORAGE FUNCTIONS
-    // =========================================================================
 
     function loadTemplates() {
         try {
@@ -45,9 +45,7 @@
         try {
             app.settings.saveSetting(SETTINGS_SECTION, TEMPLATES_KEY, jsonStringify(templates));
             return true;
-        } catch (e) {
-            return false;
-        }
+        } catch (e) { return false; }
     }
 
     function getTemplatesFolder() {
@@ -87,9 +85,7 @@
         }
         if (typeof obj === "object") {
             var pairs = [];
-            for (var key in obj) {
-                if (obj.hasOwnProperty(key)) pairs.push('"' + key + '":' + jsonStringify(obj[key]));
-            }
+            for (var key in obj) { if (obj.hasOwnProperty(key)) pairs.push('"' + key + '":' + jsonStringify(obj[key])); }
             return "{" + pairs.join(",") + "}";
         }
         return String(obj);
@@ -101,30 +97,20 @@
 
     function generateTemplateFile(template, folderPath) {
         try {
-            if (app.project) {
-                app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
-            }
-
+            if (app.project) app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
             app.newProject();
 
-            // Create folder structure
+            // Structure
             var screensFolder = app.project.items.addFolder("Screens");
             var pngFolder = app.project.items.addFolder("png");
             var imageFolder = app.project.items.addFolder("Image");
             var compsFolder = app.project.items.addFolder("Comps");
 
-            // Create Main comp
-            var mainComp = app.project.items.addComp(
-                "Main",
-                template.width,
-                template.height,
-                1,
-                template.duration,
-                template.fps
-            );
+            // Main Comp
+            var mainComp = app.project.items.addComp("Main", template.width, template.height, 1, template.duration, template.fps);
             mainComp.parentFolder = compsFolder;
 
-            // Guide text
+            // Info Text
             var textLayer = mainComp.layers.addText(template.name + "\n" + template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s");
             textLayer.property("Position").setValue([template.width / 2, template.height / 2]);
 
@@ -135,9 +121,7 @@
             app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
 
             return filePath;
-        } catch (e) {
-            return null;
-        }
+        } catch (e) { return null; }
     }
 
     function ensureTemplatesExist(templates, folderPath) {
@@ -145,10 +129,9 @@
         if (!folder.exists) folder.create();
 
         var generated = [];
-
         for (var i = 0; i < templates.length; i++) {
             var t = templates[i];
-
+            // Clear path if we are forcing regeneration, handled by caller optionally
             if (t.path && new File(t.path).exists) continue;
 
             var expectedName = t.name.replace(/\s+/g, "_") + "_" + t.width + "x" + t.height + ".aep";
@@ -166,7 +149,6 @@
                 generated.push(t.name);
             }
         }
-
         if (generated.length > 0) saveTemplates(templates);
         return { templates: templates, generated: generated };
     }
@@ -175,23 +157,10 @@
     // HELPERS
     // =========================================================================
 
-    function fileExists(path) {
-        if (!path) return false;
-        return new File(path).exists;
-    }
-
-    function getParentFolder(filePath) {
-        var f = new File(filePath);
-        return f.parent ? f.parent.fsName : "";
-    }
-
-    function isSameFolder(path1, path2) {
-        return getParentFolder(path1).toLowerCase() === getParentFolder(path2).toLowerCase();
-    }
-
-    function getTemplateLabel(t) {
-        return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)";
-    }
+    function fileExists(path) { return path && new File(path).exists; }
+    function getParentFolder(filePath) { var f = new File(filePath); return f.parent ? f.parent.fsName : ""; }
+    function isSameFolder(path1, path2) { return getParentFolder(path1).toLowerCase() === getParentFolder(path2).toLowerCase(); }
+    function getTemplateLabel(t) { return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)"; }
 
     function sanitizeName(name) {
         var result = "";
@@ -205,15 +174,8 @@
         return result;
     }
 
-    function getDateString() {
-        var d = new Date();
-        var m = d.getMonth() + 1;
-        var day = d.getDate();
-        return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
-    }
-
     // =========================================================================
-    // TEMPLATE DIALOG
+    // DIALOGS
     // =========================================================================
 
     function showTemplateDialog(template, isNew) {
@@ -246,12 +208,11 @@
 
         var btnGroup = dlg.add("group");
         btnGroup.alignment = ["center", "top"];
-        btnGroup.add("button", undefined, "OK", { name: "ok" });
-        btnGroup.add("button", undefined, "Cancel", { name: "cancel" });
+        var okBtn = btnGroup.add("button", undefined, "OK", { name: "ok" });
+        var cancelBtn = btnGroup.add("button", undefined, "Cancel", { name: "cancel" });
 
         var result = null;
-
-        dlg.findElement("ok").onClick = function () {
+        okBtn.onClick = function () {
             var name = nameInput.text.replace(/^\s+|\s+$/g, "");
             if (!name) { alert("Enter a name."); return; }
             result = {
@@ -264,7 +225,7 @@
             };
             dlg.close();
         };
-
+        cancelBtn.onClick = function () { dlg.close(); };
         dlg.show();
         return result;
     }
@@ -286,74 +247,42 @@
 
         panel.orientation = "column";
         panel.alignChildren = ["fill", "top"];
-        panel.spacing = 4;
-        panel.margins = 10;
+        panel.spacing = 10;
+        panel.margins = 15;
 
-        // Header
+        // --- TITLE ---
         var title = panel.add("statictext", undefined, "BIG HAPPY LAUNCHER");
         title.alignment = ["center", "top"];
-        try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+        try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
 
-        // =====================================================================
-        // PROJECT INFO SECTION
-        // =====================================================================
-        var infoPanel = panel.add("panel", undefined, "Project Info");
-        infoPanel.alignment = ["fill", "top"];
-        infoPanel.alignChildren = ["fill", "top"];
-        infoPanel.margins = 10;
-        infoPanel.spacing = 6;
+        // --- MAIN INPUTS ---
+        var mainGroup = panel.add("group");
+        mainGroup.orientation = "column";
+        mainGroup.alignChildren = ["fill", "top"];
+        mainGroup.spacing = 5;
 
-        // Brand
-        var brandGroup = infoPanel.add("group");
-        brandGroup.alignment = ["fill", "top"];
-        var brandLabel = brandGroup.add("statictext", undefined, "Brand:");
-        brandLabel.preferredSize.width = 70;
-        var brandInput = brandGroup.add("edittext", undefined, "");
-        brandInput.alignment = ["fill", "center"];
+        // Helper to add input row
+        function addInputRow(parent, labelText, defaultText) {
+            var grp = parent.add("group");
+            grp.orientation = "row";
+            grp.alignChildren = ["left", "center"];
+            var lbl = grp.add("statictext", undefined, labelText);
+            lbl.preferredSize.width = 65;
+            var inp = grp.add("edittext", undefined, defaultText);
+            inp.alignment = ["fill", "center"];
+            return inp;
+        }
 
-        // Campaign
-        var campaignGroup = infoPanel.add("group");
-        campaignGroup.alignment = ["fill", "top"];
-        var campaignLabel = campaignGroup.add("statictext", undefined, "Campaign:");
-        campaignLabel.preferredSize.width = 70;
-        var campaignInput = campaignGroup.add("edittext", undefined, "");
-        campaignInput.alignment = ["fill", "center"];
+        var brandInput = addInputRow(mainGroup, "Brand:", "");
+        var campaignInput = addInputRow(mainGroup, "Campaign:", "");
 
-        // Quarter
-        var quarterGroup = infoPanel.add("group");
-        quarterGroup.alignment = ["fill", "top"];
-        var quarterLabel = quarterGroup.add("statictext", undefined, "Quarter:");
-        quarterLabel.preferredSize.width = 70;
-        var quarterDropdown = quarterGroup.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
-        quarterDropdown.selection = 0;
-        quarterDropdown.alignment = ["fill", "center"];
-
-        // Version & Revision (same row, equal widths)
-        var versionGroup = infoPanel.add("group");
-        versionGroup.alignment = ["fill", "top"];
-        var versionLabel = versionGroup.add("statictext", undefined, "Version:");
-        versionLabel.preferredSize.width = 70;
-        var versionInput = versionGroup.add("edittext", undefined, "1");
-        versionInput.alignment = ["fill", "center"];
-        var revisionLabel = versionGroup.add("statictext", undefined, "Revision:");
-        revisionLabel.preferredSize.width = 60;
-        var revisionInput = versionGroup.add("edittext", undefined, "1");
-        revisionInput.alignment = ["fill", "center"];
-
-        // Preview filename
-        var previewText = infoPanel.add("statictext", undefined, "Filename: [Enter Brand]");
-        previewText.alignment = ["fill", "top"];
-        try { previewText.graphics.foregroundColor = previewText.graphics.newPen(previewText.graphics.PenType.SOLID_COLOR, [0.5, 0.7, 0.9], 1); } catch (e) { }
-
-        // =====================================================================
-        // TEMPLATE SECTION
-        // =====================================================================
-        var templatePanel = panel.add("panel", undefined, "Template");
-        templatePanel.alignment = ["fill", "top"];
-        templatePanel.alignChildren = ["fill", "top"];
-        templatePanel.margins = 10;
-
-        var templateDropdown = templatePanel.add("dropdownlist", undefined, []);
+        // --- TEMPLATE ---
+        var tmplGroup = mainGroup.add("group");
+        tmplGroup.orientation = "row";
+        tmplGroup.alignChildren = ["left", "center"];
+        var tmplLabel = tmplGroup.add("statictext", undefined, "Template:");
+        tmplLabel.preferredSize.width = 65;
+        var templateDropdown = tmplGroup.add("dropdownlist", undefined, []);
         templateDropdown.alignment = ["fill", "center"];
         templateDropdown.preferredSize.height = 25;
 
@@ -366,46 +295,93 @@
         }
         refreshDropdown();
 
-        // =====================================================================
-        // STATUS SECTION
-        // =====================================================================
-        var pathPanel = panel.add("panel", undefined, "Status");
-        pathPanel.alignment = ["fill", "top"];
-        pathPanel.alignChildren = ["fill", "top"];
-        pathPanel.margins = 10;
+        // --- DETAILS ROW (Q + V + R) ---
+        var detailsGroup = mainGroup.add("group");
+        detailsGroup.orientation = "row";
+        detailsGroup.alignChildren = ["left", "center"];
 
-        var statusIcon = pathPanel.add("statictext", undefined, "");
-        var pathText = pathPanel.add("statictext", undefined, "", { truncate: "middle" });
-        pathText.preferredSize.height = 16;
+        detailsGroup.add("statictext", undefined, "Quarter:");
+        var quarterDropdown = detailsGroup.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+        quarterDropdown.selection = 0;
+        quarterDropdown.preferredSize.width = 60;
+
+        detailsGroup.add("statictext", undefined, "  Ver:");
+        var versionInput = detailsGroup.add("edittext", undefined, "1");
+        versionInput.preferredSize.width = 40;
+
+        detailsGroup.add("statictext", undefined, "Rev:");
+        var revisionInput = detailsGroup.add("edittext", undefined, "1");
+        revisionInput.preferredSize.width = 40;
+
+        // Divider
+        var div = panel.add("panel", [0, 0, 100, 1], undefined);
+        div.alignment = ["fill", "top"];
+
+        // --- PREVIEW ---
+        var previewText = panel.add("statictext", undefined, "Filename: ...");
+        previewText.alignment = ["center", "top"];
+        try { previewText.graphics.foregroundColor = previewText.graphics.newPen(previewText.graphics.PenType.SOLID_COLOR, [0.4, 0.7, 1], 1); } catch (e) { }
+
+        // --- MAIN BUTTON ---
+        var newProjectBtn = panel.add("button", undefined, "CREATE PROJECT");
+        newProjectBtn.preferredSize.height = 35;
+        newProjectBtn.alignment = ["fill", "top"];
+        try { newProjectBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+
+        // Status Line
+        var statusText = panel.add("statictext", undefined, "Ready");
+        statusText.alignment = ["center", "top"];
+        try { statusText.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
+        try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.6, 0.6, 0.6], 1); } catch (e) { }
+
+        // --- UTILITIES (Footer) ---
+        var utilsGroup = panel.add("group");
+        utilsGroup.orientation = "row";
+        utilsGroup.alignChildren = ["center", "center"];
+        utilsGroup.spacing = 2;
+
+        var addBtn = utilsGroup.add("button", undefined, "+");
+        addBtn.helpTip = "Add Template";
+        addBtn.preferredSize.width = 25;
+
+        var editBtn = utilsGroup.add("button", undefined, "Edit");
+        editBtn.preferredSize.width = 40;
+
+        var deleteBtn = utilsGroup.add("button", undefined, "Del");
+        deleteBtn.preferredSize.width = 40;
+
+        utilsGroup.add("statictext", undefined, "|");
+
+        var generateBtn = utilsGroup.add("button", undefined, "Regenerate Assets");
+        generateBtn.preferredSize.height = 20;
+
+        var folderBtn = utilsGroup.add("button", undefined, "Folder...");
+        folderBtn.preferredSize.height = 20;
+
+        // =====================================================================
+        // LOGIC
+        // =====================================================================
 
         function updatePathDisplay() {
             if (templates.length === 0 || !templateDropdown.selection) {
-                statusIcon.text = "No templates";
-                pathText.text = "";
+                statusText.text = "No templates selected";
                 return;
             }
             var t = templates[templateDropdown.selection.index];
-            if (!t.path) {
-                statusIcon.text = "[ Not Generated ]";
-                pathText.text = "Click 'Generate All Templates'";
-                try { statusIcon.graphics.foregroundColor = statusIcon.graphics.newPen(statusIcon.graphics.PenType.SOLID_COLOR, [0.9, 0.7, 0.3], 1); } catch (e) { }
-            } else if (fileExists(t.path)) {
-                statusIcon.text = "Ready";
-                pathText.text = t.path;
-                try { statusIcon.graphics.foregroundColor = statusIcon.graphics.newPen(statusIcon.graphics.PenType.SOLID_COLOR, [0.4, 0.75, 0.4], 1); } catch (e) { }
+            if (!t.path || !fileExists(t.path)) {
+                statusText.text = "Template missing (Click Regenerate Assets)";
+                try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.9, 0.5, 0.2], 1); } catch (e) { }
             } else {
-                statusIcon.text = "File Missing";
-                pathText.text = t.path;
-                try { statusIcon.graphics.foregroundColor = statusIcon.graphics.newPen(statusIcon.graphics.PenType.SOLID_COLOR, [0.9, 0.4, 0.4], 1); } catch (e) { }
+                statusText.text = "Ready: " + t.name;
+                try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.5, 0.8, 0.5], 1); } catch (e) { }
             }
         }
 
-        // Update preview filename
         function updatePreview() {
             var brand = sanitizeName(brandInput.text) || "Brand";
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
-            var size = "";
+            var size = "0x0";
             var version = "V" + (parseInt(versionInput.text) || 1);
             var revision = "R" + (parseInt(revisionInput.text) || 1);
 
@@ -414,79 +390,20 @@
                 size = t.width + "x" + t.height;
             }
 
-            // Format: Brand_Campaign_Quarter_Dimensions_V#_R#
             var filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
             previewText.text = filename;
         }
 
         brandInput.onChanging = updatePreview;
         campaignInput.onChanging = updatePreview;
-        quarterDropdown.onChange = function () {
-            updatePreview();
-        };
+        quarterDropdown.onChange = updatePreview;
         versionInput.onChanging = updatePreview;
         revisionInput.onChanging = updatePreview;
-        templateDropdown.onChange = function () {
-            updatePathDisplay();
-            updatePreview();
-        };
-
-        updatePathDisplay();
-        updatePreview();
-
-        // =====================================================================
-        // ACTIONS SECTION
-        // =====================================================================
-        var actionPanel = panel.add("panel", undefined, "Actions");
-        actionPanel.alignment = ["fill", "top"];
-        actionPanel.alignChildren = ["fill", "top"];
-        actionPanel.margins = 10;
-        actionPanel.spacing = 6;
-
-        var newProjectBtn = actionPanel.add("button", undefined, "New Project from Template");
-        newProjectBtn.preferredSize.height = 32;
-
-        var generateBtn = actionPanel.add("button", undefined, "Generate All Templates");
-        generateBtn.preferredSize.height = 24;
-
-        // =====================================================================
-        // MANAGE SECTION
-        // =====================================================================
-        var managePanel = panel.add("panel", undefined, "Manage");
-        managePanel.alignment = ["fill", "top"];
-        managePanel.alignChildren = ["fill", "top"];
-        managePanel.margins = 10;
-        managePanel.spacing = 6;
-
-        var manageRow = managePanel.add("group");
-        manageRow.alignment = ["fill", "top"];
-        manageRow.spacing = 4;
-
-        var addBtn = manageRow.add("button", undefined, "Add");
-        addBtn.alignment = ["fill", "center"];
-        var editBtn = manageRow.add("button", undefined, "Edit");
-        editBtn.alignment = ["fill", "center"];
-        var deleteBtn = manageRow.add("button", undefined, "Delete");
-        deleteBtn.alignment = ["fill", "center"];
-
-        var folderBtn = managePanel.add("button", undefined, "Change Templates Folder...");
-        folderBtn.preferredSize.height = 22;
-
-        var folderText = managePanel.add("statictext", undefined, "Folder: " + templatesFolder, { truncate: "middle" });
-        try { folderText.graphics.foregroundColor = folderText.graphics.newPen(folderText.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
-
-        // Status
-        var statusText = panel.add("statictext", undefined, "Templates are protected");
-        statusText.alignment = ["fill", "bottom"];
-        try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
-
-        // =====================================================================
-        // HANDLERS
-        // =====================================================================
+        templateDropdown.onChange = function () { updatePathDisplay(); updatePreview(); };
 
         generateBtn.onClick = function () {
-            if (!confirm("Generate ALL template .aep files?\n\nFolder: " + templatesFolder)) return;
-            statusText.text = "Generating...";
+            if (!confirm("Regenerate ALL template assets?\nThis will recreate all .aep files in: " + templatesFolder)) return;
+            statusText.text = "Regenerating...";
             for (var i = 0; i < templates.length; i++) templates[i].path = "";
             var result = ensureTemplatesExist(templates, templatesFolder);
             templates = result.templates;
@@ -500,7 +417,7 @@
             if (folder) {
                 templatesFolder = folder.fsName;
                 setTemplatesFolder(templatesFolder);
-                folderText.text = "Folder: " + templatesFolder;
+                statusText.text = "Folder changed";
             }
         };
 
@@ -544,58 +461,37 @@
         newProjectBtn.onClick = function () {
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
+            if (!t.path || !fileExists(t.path)) { alert("Template not ready.\nClick 'Regenerate Assets' first."); return; }
 
-            if (!t.path || !fileExists(t.path)) {
-                alert("Template not ready.\n\nClick 'Generate All Templates' first.");
-                return;
-            }
-
-            // Build filename: Brand_Campaign_Quarter_Dimensions_V#_R#
             var brand = sanitizeName(brandInput.text) || "Brand";
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text) || 1);
             var revision = "R" + (parseInt(revisionInput.text) || 1);
-
             var suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
 
             try {
+                if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES); // Safer close
                 app.open(new File(t.path));
 
-                var saveFile = null;
-                var valid = false;
                 var defaultFolder = new Folder(getDefaultSaveFolder());
+                var saveFile = new File(defaultFolder.fsName + "/" + suggestedName).saveDlg("Save New Project As");
 
-                while (!valid) {
-                    saveFile = new File(defaultFolder.fsName + "/" + suggestedName).saveDlg("Save New Project As");
-
-                    if (!saveFile) {
-                        if (confirm("You must save to a new location.\n\nOK = Close\nCancel = Try again")) {
-                            app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
-                            return;
-                        }
-                        continue;
-                    }
-
-                    var savePath = saveFile.fsName;
-                    if (savePath.toLowerCase().indexOf(".aep") === -1) savePath += ".aep";
-                    saveFile = new File(savePath);
-
-                    if (isSameFolder(savePath, t.path)) {
-                        alert("Cannot save to templates folder.");
-                        continue;
-                    }
-
-                    valid = true;
+                if (!saveFile) {
+                    app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES); // User cancelled save, close template
+                    return;
                 }
 
-                // Remember folder for next time
-                setDefaultSaveFolder(getParentFolder(saveFile.fsName));
+                var savePath = saveFile.fsName;
+                if (savePath.toLowerCase().indexOf(".aep") === -1) savePath += ".aep";
+                saveFile = new File(savePath);
 
+                if (isSameFolder(savePath, t.path)) { alert("Cannot save to templates folder."); return; }
+
+                setDefaultSaveFolder(getParentFolder(saveFile.fsName));
                 app.project.save(saveFile);
 
-                // Open Main comp
                 for (var i = 1; i <= app.project.numItems; i++) {
                     var item = app.project.item(i);
                     if (item instanceof CompItem && item.name === "Main") {
@@ -604,23 +500,17 @@
                     }
                 }
 
-                // Close panel
                 if (panel instanceof Window) panel.close();
 
-            } catch (e) {
-                alert("Error: " + e.toString());
-            }
+            } catch (e) { alert("Error: " + e.toString()); }
         };
 
-        // Resize
-        panel.onResizing = panel.onResize = function () { this.layout.resize(); };
+        // Init
+        updatePathDisplay();
+        updatePreview();
 
-        if (panel instanceof Window) {
-            panel.center();
-            panel.show();
-        } else {
-            panel.layout.layout(true);
-        }
+        panel.onResizing = panel.onResize = function () { this.layout.resize(); };
+        if (panel instanceof Window) { panel.center(); panel.show(); } else { panel.layout.layout(true); }
 
         return panel;
     }
