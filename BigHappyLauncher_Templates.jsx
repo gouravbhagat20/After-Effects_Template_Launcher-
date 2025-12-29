@@ -273,9 +273,6 @@
             return inp;
         }
 
-        var brandInput = addInputRow(mainGroup, "Brand:", "");
-        var campaignInput = addInputRow(mainGroup, "Campaign:", "");
-
         // --- TEMPLATE ---
         var tmplGroup = mainGroup.add("group");
         tmplGroup.orientation = "row";
@@ -294,6 +291,10 @@
             if (templates.length > 0) templateDropdown.selection = 0;
         }
         refreshDropdown();
+
+        // --- MAIN INPUTS ---
+        var brandInput = addInputRow(mainGroup, "Brand:", "");
+        var campaignInput = addInputRow(mainGroup, "Campaign:", "");
 
         // --- DETAILS ROW (Q + V + R) ---
         var detailsGroup = mainGroup.add("group");
