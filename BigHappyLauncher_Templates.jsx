@@ -4,11 +4,11 @@
   After Effects ScriptUI Panel - Auto-Generated Templates
   
   Features:
-  - Minimalist UI (Clean Groups, No Panel Borders)
+  - Minimalist UI (Groups instead of Panels)
+  - Auto-generate template .aep files
+  - Template Protection (Save As)
   - Brand & Campaign Inputs
   - Auto-generated filenames (Brand_Campaign_Q#_Size_V#_R#)
-  - Auto-generate template .aep files with standard folder structure
-  - Protected templates (can't overwrite originals)
 ================================================================================
 */
 
@@ -92,7 +92,7 @@
     }
 
     // =========================================================================
-    // TEMPLATE GENERATION
+    // ASSET & FILE LOGIC
     // =========================================================================
 
     function generateTemplateFile(template, folderPath) {
@@ -100,21 +100,18 @@
             if (app.project) app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
             app.newProject();
 
-            // Structure
             var screensFolder = app.project.items.addFolder("Screens");
             var pngFolder = app.project.items.addFolder("png");
             var imageFolder = app.project.items.addFolder("Image");
             var compsFolder = app.project.items.addFolder("Comps");
 
-            // Main Comp
             var mainComp = app.project.items.addComp("Main", template.width, template.height, 1, template.duration, template.fps);
             mainComp.parentFolder = compsFolder;
 
-            // Info Text
             var textLayer = mainComp.layers.addText(template.name + "\n" + template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s");
             textLayer.property("Position").setValue([template.width / 2, template.height / 2]);
 
-            // Save
+            // Default save location for templates
             var fileName = template.name.replace(/\s+/g, "_") + "_" + template.width + "x" + template.height + ".aep";
             var filePath = folderPath + "/" + fileName;
             app.project.save(new File(filePath));
@@ -131,7 +128,6 @@
         var generated = [];
         for (var i = 0; i < templates.length; i++) {
             var t = templates[i];
-            // Clear path if we are forcing regeneration, handled by caller optionally
             if (t.path && new File(t.path).exists) continue;
 
             var expectedName = t.name.replace(/\s+/g, "_") + "_" + t.width + "x" + t.height + ".aep";
@@ -153,15 +149,6 @@
         return { templates: templates, generated: generated };
     }
 
-    // =========================================================================
-    // HELPERS
-    // =========================================================================
-
-    function fileExists(path) { return path && new File(path).exists; }
-    function getParentFolder(filePath) { var f = new File(filePath); return f.parent ? f.parent.fsName : ""; }
-    function isSameFolder(path1, path2) { return getParentFolder(path1).toLowerCase() === getParentFolder(path2).toLowerCase(); }
-    function getTemplateLabel(t) { return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)"; }
-
     function sanitizeName(name) {
         var result = "";
         var invalid = "<>:\"/\\|?*";
@@ -173,6 +160,11 @@
         }
         return result;
     }
+
+    function fileExists(path) { return path && new File(path).exists; }
+    function getParentFolder(filePath) { var f = new File(filePath); return f.parent ? f.parent.fsName : ""; }
+    function isSameFolder(path1, path2) { return getParentFolder(path1).toLowerCase() === getParentFolder(path2).toLowerCase(); }
+    function getTemplateLabel(t) { return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)"; }
 
     // =========================================================================
     // DIALOGS
@@ -261,7 +253,6 @@
         mainGroup.alignChildren = ["fill", "top"];
         mainGroup.spacing = 5;
 
-        // Helper to add input row
         function addInputRow(parent, labelText, defaultText) {
             var grp = parent.add("group");
             grp.orientation = "row";
@@ -292,7 +283,6 @@
         }
         refreshDropdown();
 
-        // --- MAIN INPUTS ---
         var brandInput = addInputRow(mainGroup, "Brand:", "");
         var campaignInput = addInputRow(mainGroup, "Campaign:", "");
 
@@ -342,12 +332,9 @@
         utilsGroup.spacing = 2;
 
         var addBtn = utilsGroup.add("button", undefined, "+");
-        addBtn.helpTip = "Add Template";
         addBtn.preferredSize.width = 25;
-
         var editBtn = utilsGroup.add("button", undefined, "Edit");
         editBtn.preferredSize.width = 40;
-
         var deleteBtn = utilsGroup.add("button", undefined, "Del");
         deleteBtn.preferredSize.width = 40;
 
@@ -403,7 +390,7 @@
         templateDropdown.onChange = function () { updatePathDisplay(); updatePreview(); };
 
         generateBtn.onClick = function () {
-            if (!confirm("Regenerate ALL template assets?\nThis will recreate all .aep files in: " + templatesFolder)) return;
+            if (!confirm("Regenerate ALL template assets?\n\nFolder: " + templatesFolder)) return;
             statusText.text = "Regenerating...";
             for (var i = 0; i < templates.length; i++) templates[i].path = "";
             var result = ensureTemplatesExist(templates, templatesFolder);
@@ -414,11 +401,12 @@
         };
 
         folderBtn.onClick = function () {
-            var folder = Folder.selectDialog("Select Templates Folder");
-            if (folder) {
-                templatesFolder = folder.fsName;
+            var f = Folder.selectDialog("Select Templates Folder");
+            if (f) {
+                templatesFolder = f.fsName;
                 setTemplatesFolder(templatesFolder);
-                statusText.text = "Folder changed";
+                statusText.text = "Folder updated";
+                // Optionally regenerate on folder change or just update
             }
         };
 
@@ -464,8 +452,10 @@
             var t = templates[templateDropdown.selection.index];
             if (!t.path || !fileExists(t.path)) { alert("Template not ready.\nClick 'Regenerate Assets' first."); return; }
 
-            var brand = sanitizeName(brandInput.text) || "Brand";
+            var brand = sanitizeName(brandInput.text);
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
+            if (!brand) { alert("Please enter a Brand name."); return; }
+
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text) || 1);
@@ -473,14 +463,16 @@
             var suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
 
             try {
-                if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES); // Safer close
+                if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
                 app.open(new File(t.path));
 
+                // Save As Logic
+                // Try to default to last used save folder
                 var defaultFolder = new Folder(getDefaultSaveFolder());
                 var saveFile = new File(defaultFolder.fsName + "/" + suggestedName).saveDlg("Save New Project As");
 
                 if (!saveFile) {
-                    app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES); // User cancelled save, close template
+                    app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
                     return;
                 }
 
@@ -488,11 +480,13 @@
                 if (savePath.toLowerCase().indexOf(".aep") === -1) savePath += ".aep";
                 saveFile = new File(savePath);
 
+                // Prevent saving to template folder
                 if (isSameFolder(savePath, t.path)) { alert("Cannot save to templates folder."); return; }
 
-                setDefaultSaveFolder(getParentFolder(saveFile.fsName));
+                setDefaultSaveFolder(getParentFolder(savePath));
                 app.project.save(saveFile);
 
+                // Open Main
                 for (var i = 1; i <= app.project.numItems; i++) {
                     var item = app.project.item(i);
                     if (item instanceof CompItem && item.name === "Main") {
