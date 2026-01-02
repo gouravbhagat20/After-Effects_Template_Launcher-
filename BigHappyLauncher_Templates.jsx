@@ -165,6 +165,11 @@
 
             var infoText = template.name + "\n" + template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s";
             var textLayer = mainComp.layers.addText(infoText);
+            var textProp = textLayer.property("Source Text");
+            var textDoc = textProp.value;
+            textDoc.justification = ParagraphJustification.CENTER_JUSTIFY;
+            textProp.setValue(textDoc);
+
             textLayer.property("Position").setValue([template.width / 2, template.height / 2]);
 
             var fileName = template.name.replace(/\s+/g, "_") + "_" + template.width + "x" + template.height + ".aep";
@@ -345,10 +350,20 @@
         try { previewText.graphics.foregroundColor = previewText.graphics.newPen(previewText.graphics.PenType.SOLID_COLOR, [0.4, 0.7, 1], 1); } catch (e) { }
 
         // Main button
-        var createBtn = panel.add("button", undefined, "CREATE PROJECT");
+        var btnGroup = panel.add("group");
+        btnGroup.orientation = "row";
+        btnGroup.alignChildren = ["fill", "top"];
+        btnGroup.spacing = 5;
+        btnGroup.alignment = ["fill", "top"];
+
+        var createBtn = btnGroup.add("button", undefined, "CREATE");
         createBtn.preferredSize.height = 35;
-        createBtn.alignment = ["fill", "top"];
+        createBtn.preferredSize.width = 100;
         try { createBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+
+        var saveAsBtn = btnGroup.add("button", undefined, "SAVE AS...");
+        saveAsBtn.preferredSize.height = 35;
+        try { saveAsBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
         // Status
         var statusText = panel.add("statictext", undefined, "Ready");
@@ -572,6 +587,41 @@
             } catch (e) { alert("Error: " + e.toString()); }
         };
 
+        saveAsBtn.onClick = function () {
+            if (!app.project || !app.project.file) {
+                alert("No project open.");
+                return;
+            }
+            if (!templateDropdown.selection) return;
+            var t = templates[templateDropdown.selection.index];
+
+            var brand = sanitizeName(brandInput.text);
+            var campaign = sanitizeName(campaignInput.text) || "Campaign";
+            if (!brand) { alert("Enter a Brand name."); return; }
+
+            var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
+            var size = t.width + "x" + t.height;
+            var version = "V" + (parseInt(versionInput.text) || 1);
+            var revision = "R" + (parseInt(revisionInput.text) || 1);
+
+            var suggestedName;
+            if (isDOOHTemplate(t.name)) {
+                suggestedName = "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
+            } else {
+                suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+            }
+
+            var saveFile = new File(app.project.file.parent.fsName + "/" + suggestedName).saveDlg("Save Project As");
+            if (saveFile) {
+                if (saveFile.fsName.toLowerCase().indexOf(".aep") === -1) saveFile = new File(saveFile.fsName + ".aep");
+                app.project.save(saveFile);
+                alert("Project saved as:\n" + saveFile.name);
+
+                // Update Inputs to match new file to keep in sync
+                // already in sync because we just used them
+            }
+        };
+
         renderBtn.onClick = function () {
             if (!app.project || !app.project.file) {
                 alert("No project open. Create or open a project first.");
@@ -612,6 +662,52 @@
         };
 
         // Init
+        // Auto-detect from open project
+        if (app.project && app.project.file) {
+            var currentName = app.project.file.name.replace(/\.aep$/i, "");
+            var parsed = parseProjectName(currentName);
+            var mainComp = findMainComp();
+
+            if (parsed && parsed.brand) {
+                // Determine template based on main comp size (most reliable)
+                if (mainComp) {
+                    var type = getTemplateType(mainComp.width, mainComp.height);
+                    for (var i = 0; i < templates.length; i++) {
+                        var t = templates[i];
+                        if (type === "sunrise" && t.width === 750 && t.height === 300) { templateDropdown.selection = i; break; }
+                        if (type === "interscroller" && t.width === 880 && t.height === 1912) { templateDropdown.selection = i; break; }
+                        if (type === "dooh" && t.width === 1920 && t.height === 1080 && mainComp.width === 1920) { templateDropdown.selection = i; break; }
+                        if (type === "dooh" && t.width === 1080 && t.height === 1920 && mainComp.width === 1080) { templateDropdown.selection = i; break; }
+                    }
+                }
+
+                // Pre-fill inputs
+                brandInput.text = parsed.brand;
+                if (parsed.campaign) campaignInput.text = parsed.campaign;
+                if (parsed.version) versionInput.text = parsed.version.replace("V", "");
+                if (parsed.revision) revisionInput.text = parsed.revision.replace("R", "");
+
+                // Attempt to find quarter if present
+                var parts = currentName.split("_");
+                if (parts.length > 2) {
+                    var q = parts[2]; // usually Brand_Camp_Q1_...
+                    for (var x = 0; x < quarterDropdown.items.length; x++) {
+                        if (quarterDropdown.items[x].text === q) {
+                            quarterDropdown.selection = x;
+                            break;
+                        }
+                    }
+                }
+            } else if (parsed && parsed.prefix && mainComp) {
+                // DOOH format: DOOH_ProjectName...
+                // Try to infer inputs
+                var p = parsed.prefix.split("_");
+                if (p.length >= 2) { // DOOH_Brand...
+                    brandInput.text = p[1]; // Guess brand is second part
+                }
+            }
+        }
+
         updateStatus();
         updatePreview();
 
