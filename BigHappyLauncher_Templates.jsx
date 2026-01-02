@@ -562,10 +562,14 @@
                 return;
             }
 
-            // Detect template type from project filename
+            // Detect template type by Main comp dimensions
             var projectName = app.project.file.name.replace(/\.aep$/i, "");
-            var isDOOH = projectName.toLowerCase().indexOf("dooh") !== -1;
-            var isSunrise = projectName.toLowerCase().indexOf("sunrise") !== -1;
+            var compWidth = mainComp.width;
+            var compHeight = mainComp.height;
+
+            var isSunrise = (compWidth === 750 && compHeight === 300);
+            var isInterScroller = (compWidth === 880 && compHeight === 1912);
+            var isDOOH = (compWidth === 1920 && compHeight === 1080) || (compWidth === 1080 && compHeight === 1920);
 
             // Build render output name and format info
             var renderName;
@@ -577,16 +581,30 @@
                 // Render name: Brand_Campaign_CTA_AnimatedSunrise_V1_R1
                 var parts = projectName.split("_");
                 if (parts.length >= 6) {
-                    // Brand_Campaign_Q#_Size_V#_R#
                     var brand = parts[0];
                     var campaign = parts[1];
-                    var version = parts[4]; // V#
-                    var revision = parts[5]; // R#
+                    var version = parts[4];
+                    var revision = parts[5];
                     renderName = brand + "_" + campaign + "_CTA_AnimatedSunrise_" + version + "_" + revision;
                 } else {
                     renderName = projectName + "_Sunrise";
                 }
                 formatInfo = "PNG Sequence (RGB+Alpha)";
+            } else if (isInterScroller) {
+                // InterScroller: MP4
+                // AE name: Brand_Campaign_Q1_880x1912_V1_R1
+                // Render name: Brand_Campaign_CTA_InterScroller_V1_R1
+                var parts = projectName.split("_");
+                if (parts.length >= 6) {
+                    var brand = parts[0];
+                    var campaign = parts[1];
+                    var version = parts[4];
+                    var revision = parts[5];
+                    renderName = brand + "_" + campaign + "_CTA_InterScroller_" + version + "_" + revision;
+                } else {
+                    renderName = projectName + "_InterScroller";
+                }
+                formatInfo = "MP4 (H.264)";
             } else if (isDOOH) {
                 // DOOH: MP4 with date
                 // AE name: DOOH_ProjectName_Size_V#_R#
