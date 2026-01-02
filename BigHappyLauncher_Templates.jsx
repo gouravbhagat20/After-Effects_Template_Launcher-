@@ -4,11 +4,11 @@
   After Effects ScriptUI Panel - Auto-Generated Templates
   
   Features:
-  - Minimalist UI (Groups instead of Panels)
+  - Minimalist UI
   - Auto-generate template .aep files
   - Template Protection (Save As)
-  - Brand & Campaign Inputs
-  - Auto-generated filenames (Brand_Campaign_Q#_Size_V#_R#)
+  - Smart naming by template type
+  - Render queue automation
 ================================================================================
 */
 
@@ -30,10 +30,27 @@
         { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "" }
     ];
 
+    // =========================================================================
+    // SETTINGS HELPERS
+    // =========================================================================
+
+    function getSetting(key, defaultVal) {
+        try {
+            if (app.settings.haveSetting(SETTINGS_SECTION, key)) {
+                return app.settings.getSetting(SETTINGS_SECTION, key);
+            }
+        } catch (e) { }
+        return defaultVal;
+    }
+
+    function setSetting(key, value) {
+        try { app.settings.saveSetting(SETTINGS_SECTION, key, value); } catch (e) { }
+    }
+
     function loadTemplates() {
         try {
-            if (app.settings.haveSetting(SETTINGS_SECTION, TEMPLATES_KEY)) {
-                var data = app.settings.getSetting(SETTINGS_SECTION, TEMPLATES_KEY);
+            var data = getSetting(TEMPLATES_KEY, null);
+            if (data) {
                 var templates = eval("(" + data + ")");
                 if (templates && templates.length > 0) return templates;
             }
@@ -42,37 +59,20 @@
     }
 
     function saveTemplates(templates) {
-        try {
-            app.settings.saveSetting(SETTINGS_SECTION, TEMPLATES_KEY, jsonStringify(templates));
-            return true;
-        } catch (e) { return false; }
+        setSetting(TEMPLATES_KEY, jsonStringify(templates));
     }
 
     function getTemplatesFolder() {
-        try {
-            if (app.settings.haveSetting(SETTINGS_SECTION, TEMPLATES_FOLDER_KEY)) {
-                return app.settings.getSetting(SETTINGS_SECTION, TEMPLATES_FOLDER_KEY);
-            }
-        } catch (e) { }
-        return Folder.myDocuments.fsName + "/BH_Templates";
-    }
-
-    function setTemplatesFolder(path) {
-        app.settings.saveSetting(SETTINGS_SECTION, TEMPLATES_FOLDER_KEY, path);
+        return getSetting(TEMPLATES_FOLDER_KEY, Folder.myDocuments.fsName + "/BH_Templates");
     }
 
     function getDefaultSaveFolder() {
-        try {
-            if (app.settings.haveSetting(SETTINGS_SECTION, DEFAULT_SAVE_FOLDER_KEY)) {
-                return app.settings.getSetting(SETTINGS_SECTION, DEFAULT_SAVE_FOLDER_KEY);
-            }
-        } catch (e) { }
-        return Folder.myDocuments.fsName;
+        return getSetting(DEFAULT_SAVE_FOLDER_KEY, Folder.myDocuments.fsName);
     }
 
-    function setDefaultSaveFolder(path) {
-        app.settings.saveSetting(SETTINGS_SECTION, DEFAULT_SAVE_FOLDER_KEY, path);
-    }
+    // =========================================================================
+    // UTILITY FUNCTIONS
+    // =========================================================================
 
     function jsonStringify(obj) {
         if (obj === null) return "null";
@@ -85,14 +85,69 @@
         }
         if (typeof obj === "object") {
             var pairs = [];
-            for (var key in obj) { if (obj.hasOwnProperty(key)) pairs.push('"' + key + '":' + jsonStringify(obj[key])); }
+            for (var k in obj) if (obj.hasOwnProperty(k)) pairs.push('"' + k + '":' + jsonStringify(obj[k]));
             return "{" + pairs.join(",") + "}";
         }
         return String(obj);
     }
 
+    function sanitizeName(name) {
+        var result = "", invalid = "<>:\"/\\|?*";
+        for (var i = 0; i < name.length; i++) {
+            var c = name.charAt(i);
+            if (invalid.indexOf(c) === -1 && name.charCodeAt(i) >= 32) {
+                result += (c === " ") ? "_" : c;
+            }
+        }
+        return result;
+    }
+
+    function getDateString() {
+        var d = new Date();
+        var pad = function (n) { return n < 10 ? "0" + n : String(n); };
+        return pad(d.getMonth() + 1) + pad(d.getDate()) + d.getFullYear();
+    }
+
+    function fileExists(path) { return path && new File(path).exists; }
+    function getParentFolder(path) { var f = new File(path); return f.parent ? f.parent.fsName : ""; }
+    function isSameFolder(p1, p2) { return getParentFolder(p1).toLowerCase() === getParentFolder(p2).toLowerCase(); }
+    function getTemplateLabel(t) { return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)"; }
+
+    // Template type detection by dimensions
+    function getTemplateType(width, height) {
+        if (width === 750 && height === 300) return "sunrise";
+        if (width === 880 && height === 1912) return "interscroller";
+        if ((width === 1920 && height === 1080) || (width === 1080 && height === 1920)) return "dooh";
+        return "default";
+    }
+
+    function isDOOHTemplate(name) {
+        return name.toLowerCase().indexOf("dooh") !== -1;
+    }
+
+    // Find Main comp in project
+    function findMainComp() {
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof CompItem && item.name === "Main") return item;
+        }
+        return null;
+    }
+
+    // Parse project name into parts
+    function parseProjectName(projectName) {
+        var parts = projectName.split("_");
+        if (parts.length >= 6) {
+            return { brand: parts[0], campaign: parts[1], version: parts[4], revision: parts[5] };
+        }
+        if (parts.length >= 4) {
+            return { prefix: parts.slice(0, parts.length - 2).join("_") };
+        }
+        return null;
+    }
+
     // =========================================================================
-    // ASSET & FILE LOGIC
+    // TEMPLATE GENERATION
     // =========================================================================
 
     function generateTemplateFile(template, folderPath) {
@@ -100,18 +155,18 @@
             if (app.project) app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
             app.newProject();
 
-            var screensFolder = app.project.items.addFolder("Screens");
-            var pngFolder = app.project.items.addFolder("png");
-            var imageFolder = app.project.items.addFolder("Image");
+            app.project.items.addFolder("Screens");
+            app.project.items.addFolder("png");
+            app.project.items.addFolder("Image");
             var compsFolder = app.project.items.addFolder("Comps");
 
             var mainComp = app.project.items.addComp("Main", template.width, template.height, 1, template.duration, template.fps);
             mainComp.parentFolder = compsFolder;
 
-            var textLayer = mainComp.layers.addText(template.name + "\n" + template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s");
+            var infoText = template.name + "\n" + template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s";
+            var textLayer = mainComp.layers.addText(infoText);
             textLayer.property("Position").setValue([template.width / 2, template.height / 2]);
 
-            // Default save location for templates
             var fileName = template.name.replace(/\s+/g, "_") + "_" + template.width + "x" + template.height + ".aep";
             var filePath = folderPath + "/" + fileName;
             app.project.save(new File(filePath));
@@ -149,23 +204,6 @@
         return { templates: templates, generated: generated };
     }
 
-    function sanitizeName(name) {
-        var result = "";
-        var invalid = "<>:\"/\\|?*";
-        for (var i = 0; i < name.length; i++) {
-            var c = name.charAt(i);
-            if (invalid.indexOf(c) === -1 && name.charCodeAt(i) >= 32) {
-                result += (c === " ") ? "_" : c;
-            }
-        }
-        return result;
-    }
-
-    function fileExists(path) { return path && new File(path).exists; }
-    function getParentFolder(filePath) { var f = new File(filePath); return f.parent ? f.parent.fsName : ""; }
-    function isSameFolder(path1, path2) { return getParentFolder(path1).toLowerCase() === getParentFolder(path2).toLowerCase(); }
-    function getTemplateLabel(t) { return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)"; }
-
     // =========================================================================
     // DIALOGS
     // =========================================================================
@@ -177,34 +215,34 @@
         dlg.spacing = 10;
         dlg.margins = 20;
 
-        var nameGroup = dlg.add("group");
-        nameGroup.add("statictext", undefined, "Name:");
-        var nameInput = nameGroup.add("edittext", undefined, template.name || "");
+        var nameGrp = dlg.add("group");
+        nameGrp.add("statictext", undefined, "Name:");
+        var nameInput = nameGrp.add("edittext", undefined, template.name || "");
         nameInput.characters = 20;
 
-        var dimGroup = dlg.add("group");
-        dimGroup.add("statictext", undefined, "Width:");
-        var widthInput = dimGroup.add("edittext", undefined, String(template.width || 1920));
+        var dimGrp = dlg.add("group");
+        dimGrp.add("statictext", undefined, "Width:");
+        var widthInput = dimGrp.add("edittext", undefined, String(template.width || 1920));
         widthInput.characters = 6;
-        dimGroup.add("statictext", undefined, "Height:");
-        var heightInput = dimGroup.add("edittext", undefined, String(template.height || 1080));
+        dimGrp.add("statictext", undefined, "Height:");
+        var heightInput = dimGrp.add("edittext", undefined, String(template.height || 1080));
         heightInput.characters = 6;
 
-        var fpsGroup = dlg.add("group");
-        fpsGroup.add("statictext", undefined, "FPS:");
-        var fpsInput = fpsGroup.add("edittext", undefined, String(template.fps || 24));
+        var fpsGrp = dlg.add("group");
+        fpsGrp.add("statictext", undefined, "FPS:");
+        var fpsInput = fpsGrp.add("edittext", undefined, String(template.fps || 24));
         fpsInput.characters = 8;
-        fpsGroup.add("statictext", undefined, "Duration:");
-        var durInput = fpsGroup.add("edittext", undefined, String(template.duration || 15));
+        fpsGrp.add("statictext", undefined, "Duration:");
+        var durInput = fpsGrp.add("edittext", undefined, String(template.duration || 15));
         durInput.characters = 6;
 
-        var btnGroup = dlg.add("group");
-        btnGroup.alignment = ["center", "top"];
-        var okBtn = btnGroup.add("button", undefined, "OK", { name: "ok" });
-        var cancelBtn = btnGroup.add("button", undefined, "Cancel", { name: "cancel" });
+        var btnGrp = dlg.add("group");
+        btnGrp.alignment = ["center", "top"];
+        btnGrp.add("button", undefined, "OK", { name: "ok" });
+        btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
 
         var result = null;
-        okBtn.onClick = function () {
+        dlg.findElement("ok").onClick = function () {
             var name = nameInput.text.replace(/^\s+|\s+$/g, "");
             if (!name) { alert("Enter a name."); return; }
             result = {
@@ -217,7 +255,6 @@
             };
             dlg.close();
         };
-        cancelBtn.onClick = function () { dlg.close(); };
         dlg.show();
         return result;
     }
@@ -230,47 +267,41 @@
         var templates = loadTemplates();
         var templatesFolder = getTemplatesFolder();
 
-        var panel;
-        if (thisObj instanceof Panel) {
-            panel = thisObj;
-        } else {
-            panel = new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
-        }
-
+        var panel = (thisObj instanceof Panel) ? thisObj : new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
         panel.orientation = "column";
         panel.alignChildren = ["fill", "top"];
         panel.spacing = 10;
         panel.margins = 15;
 
-        // --- TITLE ---
+        // Title
         var title = panel.add("statictext", undefined, "BIG HAPPY LAUNCHER");
         title.alignment = ["center", "top"];
         try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
 
-        // --- MAIN INPUTS ---
-        var mainGroup = panel.add("group");
-        mainGroup.orientation = "column";
-        mainGroup.alignChildren = ["fill", "top"];
-        mainGroup.spacing = 5;
+        // Main inputs container
+        var mainGrp = panel.add("group");
+        mainGrp.orientation = "column";
+        mainGrp.alignChildren = ["fill", "top"];
+        mainGrp.spacing = 5;
 
-        function addInputRow(parent, labelText, defaultText) {
-            var grp = parent.add("group");
-            grp.orientation = "row";
-            grp.alignChildren = ["left", "center"];
-            var lbl = grp.add("statictext", undefined, labelText);
+        function addRow(parent, label, defaultVal) {
+            var g = parent.add("group");
+            g.orientation = "row";
+            g.alignChildren = ["left", "center"];
+            var lbl = g.add("statictext", undefined, label);
             lbl.preferredSize.width = 65;
-            var inp = grp.add("edittext", undefined, defaultText);
+            var inp = g.add("edittext", undefined, defaultVal);
             inp.alignment = ["fill", "center"];
             return inp;
         }
 
-        // --- TEMPLATE ---
-        var tmplGroup = mainGroup.add("group");
-        tmplGroup.orientation = "row";
-        tmplGroup.alignChildren = ["left", "center"];
-        var tmplLabel = tmplGroup.add("statictext", undefined, "Template:");
-        tmplLabel.preferredSize.width = 65;
-        var templateDropdown = tmplGroup.add("dropdownlist", undefined, []);
+        // Template dropdown
+        var tmplGrp = mainGrp.add("group");
+        tmplGrp.orientation = "row";
+        tmplGrp.alignChildren = ["left", "center"];
+        var tmplLbl = tmplGrp.add("statictext", undefined, "Template:");
+        tmplLbl.preferredSize.width = 65;
+        var templateDropdown = tmplGrp.add("dropdownlist", undefined, []);
         templateDropdown.alignment = ["fill", "center"];
         templateDropdown.preferredSize.height = 25;
 
@@ -283,70 +314,66 @@
         }
         refreshDropdown();
 
-        var brandInput = addInputRow(mainGroup, "Brand:", "");
-        var campaignInput = addInputRow(mainGroup, "Campaign:", "");
+        var brandInput = addRow(mainGrp, "Brand:", "");
+        var campaignInput = addRow(mainGrp, "Campaign:", "");
 
-        // --- DETAILS ROW (Q + V + R) ---
-        var detailsGroup = mainGroup.add("group");
-        detailsGroup.orientation = "row";
-        detailsGroup.alignChildren = ["left", "center"];
+        // Details row
+        var detailsGrp = mainGrp.add("group");
+        detailsGrp.orientation = "row";
+        detailsGrp.alignChildren = ["left", "center"];
 
-        detailsGroup.add("statictext", undefined, "Quarter:");
-        var quarterDropdown = detailsGroup.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+        detailsGrp.add("statictext", undefined, "Quarter:");
+        var quarterDropdown = detailsGrp.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
         quarterDropdown.selection = 0;
         quarterDropdown.preferredSize.width = 60;
 
-        detailsGroup.add("statictext", undefined, "  Ver:");
-        var versionInput = detailsGroup.add("edittext", undefined, "1");
+        detailsGrp.add("statictext", undefined, "  Ver:");
+        var versionInput = detailsGrp.add("edittext", undefined, "1");
         versionInput.preferredSize.width = 40;
 
-        detailsGroup.add("statictext", undefined, "Rev:");
-        var revisionInput = detailsGroup.add("edittext", undefined, "1");
+        detailsGrp.add("statictext", undefined, "Rev:");
+        var revisionInput = detailsGrp.add("edittext", undefined, "1");
         revisionInput.preferredSize.width = 40;
 
         // Divider
-        var div = panel.add("panel", [0, 0, 100, 1], undefined);
+        var div = panel.add("panel", [0, 0, 100, 1]);
         div.alignment = ["fill", "top"];
 
-        // --- PREVIEW ---
+        // Preview
         var previewText = panel.add("statictext", undefined, "Filename: ...");
         previewText.alignment = ["center", "top"];
         try { previewText.graphics.foregroundColor = previewText.graphics.newPen(previewText.graphics.PenType.SOLID_COLOR, [0.4, 0.7, 1], 1); } catch (e) { }
 
-        // --- MAIN BUTTON ---
-        var newProjectBtn = panel.add("button", undefined, "CREATE PROJECT");
-        newProjectBtn.preferredSize.height = 35;
-        newProjectBtn.alignment = ["fill", "top"];
-        try { newProjectBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+        // Main button
+        var createBtn = panel.add("button", undefined, "CREATE PROJECT");
+        createBtn.preferredSize.height = 35;
+        createBtn.alignment = ["fill", "top"];
+        try { createBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
-        // Status Line
+        // Status
         var statusText = panel.add("statictext", undefined, "Ready");
         statusText.alignment = ["center", "top"];
         try { statusText.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
-        try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.6, 0.6, 0.6], 1); } catch (e) { }
 
-        // --- UTILITIES (Footer) ---
-        var utilsGroup = panel.add("group");
-        utilsGroup.orientation = "row";
-        utilsGroup.alignChildren = ["center", "center"];
-        utilsGroup.spacing = 2;
+        // Footer buttons
+        var footerGrp = panel.add("group");
+        footerGrp.orientation = "row";
+        footerGrp.alignChildren = ["center", "center"];
+        footerGrp.spacing = 2;
 
-        var addBtn = utilsGroup.add("button", undefined, "+");
+        var addBtn = footerGrp.add("button", undefined, "+");
         addBtn.preferredSize.width = 25;
-        var editBtn = utilsGroup.add("button", undefined, "Edit");
+        var editBtn = footerGrp.add("button", undefined, "Edit");
         editBtn.preferredSize.width = 40;
-        var deleteBtn = utilsGroup.add("button", undefined, "Del");
-        deleteBtn.preferredSize.width = 40;
-
-        utilsGroup.add("statictext", undefined, "|");
-
-        var generateBtn = utilsGroup.add("button", undefined, "Regenerate Assets");
-        generateBtn.preferredSize.height = 20;
-
-        var folderBtn = utilsGroup.add("button", undefined, "Folder...");
+        var delBtn = footerGrp.add("button", undefined, "Del");
+        delBtn.preferredSize.width = 40;
+        footerGrp.add("statictext", undefined, "|");
+        var regenBtn = footerGrp.add("button", undefined, "Regenerate");
+        regenBtn.preferredSize.height = 20;
+        var folderBtn = footerGrp.add("button", undefined, "Folder...");
         folderBtn.preferredSize.height = 20;
 
-        // --- RENDER BUTTON ---
+        // Render button
         var renderBtn = panel.add("button", undefined, "ADD TO RENDER QUEUE");
         renderBtn.preferredSize.height = 28;
         renderBtn.alignment = ["fill", "top"];
@@ -356,88 +383,65 @@
         // LOGIC
         // =====================================================================
 
-        function updatePathDisplay() {
-            if (templates.length === 0 || !templateDropdown.selection) {
-                statusText.text = "No templates selected";
+        function setStatus(text, color) {
+            statusText.text = text;
+            try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, color, 1); } catch (e) { }
+        }
+
+        function updateStatus() {
+            if (!templates.length || !templateDropdown.selection) {
+                setStatus("No templates", [0.6, 0.6, 0.6]);
                 return;
             }
             var t = templates[templateDropdown.selection.index];
             if (!t.path || !fileExists(t.path)) {
-                statusText.text = "Template missing (Click Regenerate Assets)";
-                try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.9, 0.5, 0.2], 1); } catch (e) { }
+                setStatus("Template missing (Regenerate)", [0.9, 0.5, 0.2]);
             } else {
-                statusText.text = "Ready: " + t.name;
-                try { statusText.graphics.foregroundColor = statusText.graphics.newPen(statusText.graphics.PenType.SOLID_COLOR, [0.5, 0.8, 0.5], 1); } catch (e) { }
+                setStatus("Ready: " + t.name, [0.5, 0.8, 0.5]);
             }
-        }
-
-        function getDateString() {
-            var d = new Date();
-            var mm = String(d.getMonth() + 1);
-            if (mm.length < 2) mm = "0" + mm;
-            var dd = String(d.getDate());
-            if (dd.length < 2) dd = "0" + dd;
-            var yyyy = String(d.getFullYear());
-            return mm + dd + yyyy;
-        }
-
-        function isDOOHTemplate(templateName) {
-            return templateName.toLowerCase().indexOf("dooh") !== -1;
         }
 
         function updatePreview() {
+            if (!templateDropdown.selection) return;
+            var t = templates[templateDropdown.selection.index];
             var brand = sanitizeName(brandInput.text) || "Brand";
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
-            var size = "0x0";
+            var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text) || 1);
             var revision = "R" + (parseInt(revisionInput.text) || 1);
-            var filename = "";
 
-            if (templateDropdown.selection && templates.length > 0) {
-                var t = templates[templateDropdown.selection.index];
-                size = t.width + "x" + t.height;
-
-                if (isDOOHTemplate(t.name)) {
-                    // DOOH AE format: DOOH_ProjectName_Size_V#_R#
-                    var projectName = campaign || brand;
-                    filename = "DOOH_" + projectName + "_" + size + "_" + version + "_" + revision + ".aep";
-                } else {
-                    // Standard format: Brand_Campaign_Quarter_Size_V#_R#
-                    filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
-                }
+            var filename;
+            if (isDOOHTemplate(t.name)) {
+                filename = "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
             } else {
                 filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
             }
-
             previewText.text = filename;
         }
 
-        brandInput.onChanging = updatePreview;
-        campaignInput.onChanging = updatePreview;
+        // Event bindings
+        brandInput.onChanging = campaignInput.onChanging = versionInput.onChanging = revisionInput.onChanging = updatePreview;
         quarterDropdown.onChange = updatePreview;
-        versionInput.onChanging = updatePreview;
-        revisionInput.onChanging = updatePreview;
-        templateDropdown.onChange = function () { updatePathDisplay(); updatePreview(); };
+        templateDropdown.onChange = function () { updateStatus(); updatePreview(); };
 
-        generateBtn.onClick = function () {
-            if (!confirm("Regenerate ALL template assets?\n\nFolder: " + templatesFolder)) return;
-            statusText.text = "Regenerating...";
+        regenBtn.onClick = function () {
+            if (!confirm("Regenerate ALL templates?\nFolder: " + templatesFolder)) return;
+            setStatus("Regenerating...", [0.6, 0.6, 0.6]);
             for (var i = 0; i < templates.length; i++) templates[i].path = "";
             var result = ensureTemplatesExist(templates, templatesFolder);
             templates = result.templates;
-            statusText.text = "Generated " + result.generated.length + " templates";
+            setStatus("Generated " + result.generated.length, [0.5, 0.8, 0.5]);
             refreshDropdown();
-            updatePathDisplay();
+            updateStatus();
         };
 
         folderBtn.onClick = function () {
             var f = Folder.selectDialog("Select Templates Folder");
             if (f) {
                 templatesFolder = f.fsName;
-                setTemplatesFolder(templatesFolder);
-                statusText.text = "Folder updated";
-                // Optionally regenerate on folder change or just update
+                setSetting(TEMPLATES_FOLDER_KEY, templatesFolder);
+                setStatus("Folder updated", [0.5, 0.8, 0.5]);
             }
         };
 
@@ -448,7 +452,7 @@
                 saveTemplates(templates);
                 refreshDropdown();
                 templateDropdown.selection = templates.length - 1;
-                updatePathDisplay();
+                updateStatus();
                 updatePreview();
             }
         };
@@ -462,43 +466,43 @@
                 saveTemplates(templates);
                 refreshDropdown();
                 templateDropdown.selection = idx;
-                updatePathDisplay();
+                updateStatus();
                 updatePreview();
             }
         };
 
-        deleteBtn.onClick = function () {
+        delBtn.onClick = function () {
             if (!templateDropdown.selection) return;
             var idx = templateDropdown.selection.index;
             if (!confirm("Delete '" + templates[idx].name + "'?")) return;
             templates.splice(idx, 1);
             saveTemplates(templates);
             refreshDropdown();
-            updatePathDisplay();
+            updateStatus();
             updatePreview();
         };
 
-        newProjectBtn.onClick = function () {
+        createBtn.onClick = function () {
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
-            if (!t.path || !fileExists(t.path)) { alert("Template not ready.\nClick 'Regenerate Assets' first."); return; }
+            if (!t.path || !fileExists(t.path)) {
+                alert("Template not ready. Click 'Regenerate' first.");
+                return;
+            }
 
             var brand = sanitizeName(brandInput.text);
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
-            if (!brand) { alert("Please enter a Brand name."); return; }
+            if (!brand) { alert("Enter a Brand name."); return; }
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text) || 1);
             var revision = "R" + (parseInt(revisionInput.text) || 1);
-            var suggestedName;
 
+            var suggestedName;
             if (isDOOHTemplate(t.name)) {
-                // DOOH AE format: DOOH_ProjectName_Size_V#_R#
-                var projectName = campaign || brand;
-                suggestedName = "DOOH_" + projectName + "_" + size + "_" + version + "_" + revision + ".aep";
+                suggestedName = "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
             } else {
-                // Standard format
                 suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
             }
 
@@ -506,10 +510,8 @@
                 if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
                 app.open(new File(t.path));
 
-                // Save As Logic
-                // Try to default to last used save folder
-                var defaultFolder = new Folder(getDefaultSaveFolder());
-                var saveFile = new File(defaultFolder.fsName + "/" + suggestedName).saveDlg("Save New Project As");
+                var defFolder = new Folder(getDefaultSaveFolder());
+                var saveFile = new File(defFolder.fsName + "/" + suggestedName).saveDlg("Save New Project As");
 
                 if (!saveFile) {
                     app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
@@ -520,125 +522,62 @@
                 if (savePath.toLowerCase().indexOf(".aep") === -1) savePath += ".aep";
                 saveFile = new File(savePath);
 
-                // Prevent saving to template folder
-                if (isSameFolder(savePath, t.path)) { alert("Cannot save to templates folder."); return; }
-
-                setDefaultSaveFolder(getParentFolder(savePath));
-                app.project.save(saveFile);
-
-                // Open Main
-                for (var i = 1; i <= app.project.numItems; i++) {
-                    var item = app.project.item(i);
-                    if (item instanceof CompItem && item.name === "Main") {
-                        item.openInViewer();
-                        break;
-                    }
+                if (isSameFolder(savePath, t.path)) {
+                    alert("Cannot save to templates folder.");
+                    return;
                 }
 
-                if (panel instanceof Window) panel.close();
+                setSetting(DEFAULT_SAVE_FOLDER_KEY, getParentFolder(savePath));
+                app.project.save(saveFile);
 
+                var mainComp = findMainComp();
+                if (mainComp) mainComp.openInViewer();
+
+                if (panel instanceof Window) panel.close();
             } catch (e) { alert("Error: " + e.toString()); }
         };
 
-        // --- RENDER QUEUE LOGIC ---
         renderBtn.onClick = function () {
             if (!app.project || !app.project.file) {
                 alert("No project open. Create or open a project first.");
                 return;
             }
 
-            // Find Main comp
-            var mainComp = null;
-            for (var i = 1; i <= app.project.numItems; i++) {
-                var item = app.project.item(i);
-                if (item instanceof CompItem && item.name === "Main") {
-                    mainComp = item;
-                    break;
-                }
-            }
-
+            var mainComp = findMainComp();
             if (!mainComp) {
                 alert("Could not find 'Main' composition.");
                 return;
             }
 
-            // Detect template type by Main comp dimensions
             var projectName = app.project.file.name.replace(/\.aep$/i, "");
-            var compWidth = mainComp.width;
-            var compHeight = mainComp.height;
+            var type = getTemplateType(mainComp.width, mainComp.height);
+            var parsed = parseProjectName(projectName);
 
-            var isSunrise = (compWidth === 750 && compHeight === 300);
-            var isInterScroller = (compWidth === 880 && compHeight === 1912);
-            var isDOOH = (compWidth === 1920 && compHeight === 1080) || (compWidth === 1080 && compHeight === 1920);
+            var renderName, formatInfo;
 
-            // Build render output name and format info
-            var renderName;
-            var formatInfo;
-
-            if (isSunrise) {
-                // Sunrise: PNG sequence with alpha
-                // AE name: Brand_Campaign_Q1_750x300_V1_R1
-                // Render name: Brand_Campaign_CTA_AnimatedSunrise_V1_R1
-                var parts = projectName.split("_");
-                if (parts.length >= 6) {
-                    var brand = parts[0];
-                    var campaign = parts[1];
-                    var version = parts[4];
-                    var revision = parts[5];
-                    renderName = brand + "_" + campaign + "_CTA_AnimatedSunrise_" + version + "_" + revision;
-                } else {
-                    renderName = projectName + "_Sunrise";
-                }
+            if (type === "sunrise" && parsed && parsed.brand) {
+                renderName = parsed.brand + "_" + parsed.campaign + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
                 formatInfo = "PNG Sequence (RGB+Alpha)";
-            } else if (isInterScroller) {
-                // InterScroller: MP4
-                // AE name: Brand_Campaign_Q1_880x1912_V1_R1
-                // Render name: Brand_Campaign_CTA_InterScroller_V1_R1
-                var parts = projectName.split("_");
-                if (parts.length >= 6) {
-                    var brand = parts[0];
-                    var campaign = parts[1];
-                    var version = parts[4];
-                    var revision = parts[5];
-                    renderName = brand + "_" + campaign + "_CTA_InterScroller_" + version + "_" + revision;
-                } else {
-                    renderName = projectName + "_InterScroller";
-                }
+            } else if (type === "interscroller" && parsed && parsed.brand) {
+                renderName = parsed.brand + "_" + parsed.campaign + "_CTA_InterScroller_" + parsed.version + "_" + parsed.revision;
                 formatInfo = "MP4 (H.264)";
-            } else if (isDOOH) {
-                // DOOH: MP4 with date
-                // AE name: DOOH_ProjectName_Size_V#_R#
-                // Render name: DOOH_ProjectName_Size_MMDDYYYY
-                var parts = projectName.split("_");
-                if (parts.length >= 4) {
-                    var prefix = parts.slice(0, parts.length - 2).join("_");
-                    renderName = prefix + "_" + getDateString();
-                } else {
-                    renderName = projectName + "_" + getDateString();
-                }
+            } else if (type === "dooh" && parsed && parsed.prefix) {
+                renderName = parsed.prefix + "_" + getDateString();
                 formatInfo = "MP4 (H.264)";
             } else {
-                // Default: use project name + date
                 renderName = projectName + "_" + getDateString();
                 formatInfo = "MP4 (H.264)";
             }
 
-            // Get project folder for output
             var outputFolder = app.project.file.parent.fsName;
-            var outputPath = outputFolder + "/" + renderName;
-
-            // Add to Render Queue
             var rqItem = app.project.renderQueue.items.add(mainComp);
-            var om = rqItem.outputModule(1);
+            rqItem.outputModule(1).file = new File(outputFolder + "/" + renderName);
 
-            // Set output file
-            om.file = new File(outputPath);
-
-            alert("Added to Render Queue!\n\nOutput: " + renderName + "\nFormat: " + formatInfo + "\n\nNote: Select your render preset in the Render Queue.");
+            alert("Added to Render Queue!\n\nOutput: " + renderName + "\nFormat: " + formatInfo + "\n\nSelect your render preset in Render Queue.");
         };
 
         // Init
-        updatePathDisplay();
+        updateStatus();
         updatePreview();
 
         panel.onResizing = panel.onResize = function () { this.layout.resize(); };
