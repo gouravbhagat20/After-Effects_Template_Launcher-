@@ -346,6 +346,12 @@
         var folderBtn = utilsGroup.add("button", undefined, "Folder...");
         folderBtn.preferredSize.height = 20;
 
+        // --- RENDER BUTTON ---
+        var renderBtn = panel.add("button", undefined, "ADD TO RENDER QUEUE");
+        renderBtn.preferredSize.height = 28;
+        renderBtn.alignment = ["fill", "top"];
+        try { renderBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
+
         // =====================================================================
         // LOGIC
         // =====================================================================
@@ -532,6 +538,64 @@
                 if (panel instanceof Window) panel.close();
 
             } catch (e) { alert("Error: " + e.toString()); }
+        };
+
+        // --- RENDER QUEUE LOGIC ---
+        renderBtn.onClick = function () {
+            if (!app.project || !app.project.file) {
+                alert("No project open. Create or open a project first.");
+                return;
+            }
+
+            // Find Main comp
+            var mainComp = null;
+            for (var i = 1; i <= app.project.numItems; i++) {
+                var item = app.project.item(i);
+                if (item instanceof CompItem && item.name === "Main") {
+                    mainComp = item;
+                    break;
+                }
+            }
+
+            if (!mainComp) {
+                alert("Could not find 'Main' composition.");
+                return;
+            }
+
+            // Detect template type from project filename
+            var projectName = app.project.file.name.replace(/\.aep$/i, "");
+            var isDOOH = projectName.toLowerCase().indexOf("dooh") !== -1;
+
+            // Build render output name
+            var renderName;
+            if (isDOOH) {
+                // Extract parts: DOOH_ProjectName_Size_V#_R# -> DOOH_ProjectName_Size_MMDDYYYY
+                var parts = projectName.split("_");
+                // Remove V#_R# at end, add date
+                if (parts.length >= 4) {
+                    // Keep DOOH, ProjectName, Size
+                    var prefix = parts.slice(0, parts.length - 2).join("_");
+                    renderName = prefix + "_" + getDateString();
+                } else {
+                    renderName = projectName + "_" + getDateString();
+                }
+            } else {
+                // Non-DOOH: use project name + date
+                renderName = projectName + "_" + getDateString();
+            }
+
+            // Get project folder for output
+            var outputFolder = app.project.file.parent.fsName;
+            var outputPath = outputFolder + "/" + renderName;
+
+            // Add to Render Queue
+            var rqItem = app.project.renderQueue.items.add(mainComp);
+            var om = rqItem.outputModule(1);
+
+            // Set output file
+            om.file = new File(outputPath);
+
+            alert("Added to Render Queue!\n\nOutput: " + renderName + ".mp4\n\nNote: Select your render preset in the Render Queue.");
         };
 
         // Init
