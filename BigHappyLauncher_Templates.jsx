@@ -137,9 +137,23 @@
     // Parse project name into parts
     function parseProjectName(projectName) {
         var parts = projectName.split("_");
+
+        // DOOH format: DOOH_Campaign_Size_V#_R#
+        if (parts[0] && parts[0].toUpperCase() === "DOOH" && parts.length >= 5) {
+            return {
+                prefix: parts.slice(0, parts.length - 2).join("_"),
+                campaign: parts[1],
+                version: parts[parts.length - 2],
+                revision: parts[parts.length - 1]
+            };
+        }
+
+        // Standard format: Brand_Campaign_Q#_Size_V#_R#
         if (parts.length >= 6) {
             return { brand: parts[0], campaign: parts[1], version: parts[4], revision: parts[5] };
         }
+
+        // Fallback
         if (parts.length >= 4) {
             return { prefix: parts.slice(0, parts.length - 2).join("_") };
         }
@@ -568,12 +582,12 @@
                     return;
                 }
 
-                var savePath = saveFile.fsName;
-                if (savePath.toLowerCase().indexOf(".aep") === -1) savePath += ".aep";
+                var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep"; // Ensure only one .aep
                 saveFile = new File(savePath);
 
                 if (isSameFolder(savePath, t.path)) {
                     alert("Cannot save to templates folder.");
+                    app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
                     return;
                 }
 
@@ -615,7 +629,7 @@
             if (saveFile) {
                 var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep"; // Ensure only one .aep
                 app.project.save(new File(savePath));
-                alert("Project saved as:\n" + saveFile.name);
+                alert("Project saved as:\n" + new File(savePath).name);
 
                 // Update Inputs to match new file to keep in sync
                 // already in sync because we just used them
