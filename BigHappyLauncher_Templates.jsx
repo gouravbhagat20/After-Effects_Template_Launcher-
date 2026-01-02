@@ -393,9 +393,9 @@
                 size = t.width + "x" + t.height;
 
                 if (isDOOHTemplate(t.name)) {
-                    // DOOH format: DOOH_ProjectName_Size_MMDDYYYY
+                    // DOOH AE format: DOOH_ProjectName_Size_V#_R#
                     var projectName = campaign || brand;
-                    filename = "DOOH_" + projectName + "_" + size + "_" + getDateString() + ".aep";
+                    filename = "DOOH_" + projectName + "_" + size + "_" + version + "_" + revision + ".aep";
                 } else {
                     // Standard format: Brand_Campaign_Quarter_Size_V#_R#
                     filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
@@ -488,9 +488,9 @@
             var suggestedName;
 
             if (isDOOHTemplate(t.name)) {
-                // DOOH format: DOOH_ProjectName_Size_MMDDYYYY
+                // DOOH AE format: DOOH_ProjectName_Size_V#_R#
                 var projectName = campaign || brand;
-                suggestedName = "DOOH_" + projectName + "_" + size + "_" + getDateString() + ".aep";
+                suggestedName = "DOOH_" + projectName + "_" + size + "_" + version + "_" + revision + ".aep";
             } else {
                 // Standard format
                 suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
