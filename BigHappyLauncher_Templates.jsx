@@ -336,23 +336,28 @@
         var brandInput = addRow(mainGrp, "Brand:", "");
         var campaignInput = addRow(mainGrp, "Campaign:", "");
 
-        // Details row
-        var detailsGrp = mainGrp.add("group");
-        detailsGrp.orientation = "row";
-        detailsGrp.alignChildren = ["left", "center"];
-
-        detailsGrp.add("statictext", undefined, "Quarter:");
-        var quarterDropdown = detailsGrp.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+        // Details row 1: Quarter
+        var qRow = mainGrp.add("group");
+        qRow.orientation = "row";
+        qRow.alignChildren = ["left", "center"];
+        var qLbl = qRow.add("statictext", undefined, "Quarter:");
+        qLbl.preferredSize.width = 65;
+        var quarterDropdown = qRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
         quarterDropdown.selection = 0;
-        quarterDropdown.preferredSize.width = 60;
+        quarterDropdown.preferredSize.width = 70;
 
-        detailsGrp.add("statictext", undefined, "  Ver:");
-        var versionInput = detailsGrp.add("edittext", undefined, "1");
-        versionInput.preferredSize.width = 40;
-
-        detailsGrp.add("statictext", undefined, "Rev:");
-        var revisionInput = detailsGrp.add("edittext", undefined, "1");
-        revisionInput.preferredSize.width = 40;
+        // Details row 2: Version & Revision
+        var vrRow = mainGrp.add("group");
+        vrRow.orientation = "row";
+        vrRow.alignChildren = ["left", "center"];
+        var verLbl = vrRow.add("statictext", undefined, "Version:");
+        verLbl.preferredSize.width = 65;
+        var versionInput = vrRow.add("edittext", undefined, "1");
+        versionInput.preferredSize.width = 50;
+        var revLbl = vrRow.add("statictext", undefined, "Revision:");
+        revLbl.preferredSize.width = 60;
+        var revisionInput = vrRow.add("edittext", undefined, "1");
+        revisionInput.preferredSize.width = 50;
 
         // Divider
         var div = panel.add("panel", [0, 0, 100, 1]);
@@ -384,23 +389,22 @@
         statusText.alignment = ["center", "top"];
         try { statusText.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
 
-        // Footer buttons
-        var footerGrp = panel.add("group");
-        footerGrp.orientation = "row";
-        footerGrp.alignChildren = ["center", "center"];
-        footerGrp.spacing = 2;
+        // Footer: Template management
+        var tmplMgmtGrp = panel.add("group");
+        tmplMgmtGrp.orientation = "row";
+        tmplMgmtGrp.alignChildren = ["center", "center"];
+        tmplMgmtGrp.spacing = 5;
 
-        var addBtn = footerGrp.add("button", undefined, "+");
-        addBtn.preferredSize.width = 25;
-        var editBtn = footerGrp.add("button", undefined, "Edit");
-        editBtn.preferredSize.width = 40;
-        var delBtn = footerGrp.add("button", undefined, "Del");
-        delBtn.preferredSize.width = 40;
-        footerGrp.add("statictext", undefined, "|");
-        var regenBtn = footerGrp.add("button", undefined, "Regenerate");
-        regenBtn.preferredSize.height = 20;
-        var folderBtn = footerGrp.add("button", undefined, "Folder...");
-        folderBtn.preferredSize.height = 20;
+        var addBtn = tmplMgmtGrp.add("button", undefined, "+");
+        addBtn.preferredSize = [28, 22];
+        var editBtn = tmplMgmtGrp.add("button", undefined, "Edit");
+        editBtn.preferredSize = [45, 22];
+        var delBtn = tmplMgmtGrp.add("button", undefined, "Del");
+        delBtn.preferredSize = [40, 22];
+        var regenBtn = tmplMgmtGrp.add("button", undefined, "Regenerate");
+        regenBtn.preferredSize.height = 22;
+        var folderBtn = tmplMgmtGrp.add("button", undefined, "Folder...");
+        folderBtn.preferredSize.height = 22;
 
         // Render button
         var renderBtn = panel.add("button", undefined, "ADD TO RENDER QUEUE");
