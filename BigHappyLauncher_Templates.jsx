@@ -565,23 +565,44 @@
             // Detect template type from project filename
             var projectName = app.project.file.name.replace(/\.aep$/i, "");
             var isDOOH = projectName.toLowerCase().indexOf("dooh") !== -1;
+            var isSunrise = projectName.toLowerCase().indexOf("sunrise") !== -1;
 
-            // Build render output name
+            // Build render output name and format info
             var renderName;
-            if (isDOOH) {
-                // Extract parts: DOOH_ProjectName_Size_V#_R# -> DOOH_ProjectName_Size_MMDDYYYY
+            var formatInfo;
+
+            if (isSunrise) {
+                // Sunrise: PNG sequence with alpha
+                // AE name: Brand_Campaign_Q1_750x300_V1_R1
+                // Render name: Brand_Campaign_CTA_AnimatedSunrise_V1_R1
                 var parts = projectName.split("_");
-                // Remove V#_R# at end, add date
+                if (parts.length >= 6) {
+                    // Brand_Campaign_Q#_Size_V#_R#
+                    var brand = parts[0];
+                    var campaign = parts[1];
+                    var version = parts[4]; // V#
+                    var revision = parts[5]; // R#
+                    renderName = brand + "_" + campaign + "_CTA_AnimatedSunrise_" + version + "_" + revision;
+                } else {
+                    renderName = projectName + "_Sunrise";
+                }
+                formatInfo = "PNG Sequence (RGB+Alpha)";
+            } else if (isDOOH) {
+                // DOOH: MP4 with date
+                // AE name: DOOH_ProjectName_Size_V#_R#
+                // Render name: DOOH_ProjectName_Size_MMDDYYYY
+                var parts = projectName.split("_");
                 if (parts.length >= 4) {
-                    // Keep DOOH, ProjectName, Size
                     var prefix = parts.slice(0, parts.length - 2).join("_");
                     renderName = prefix + "_" + getDateString();
                 } else {
                     renderName = projectName + "_" + getDateString();
                 }
+                formatInfo = "MP4 (H.264)";
             } else {
-                // Non-DOOH: use project name + date
+                // Default: use project name + date
                 renderName = projectName + "_" + getDateString();
+                formatInfo = "MP4 (H.264)";
             }
 
             // Get project folder for output
@@ -595,7 +616,7 @@
             // Set output file
             om.file = new File(outputPath);
 
-            alert("Added to Render Queue!\n\nOutput: " + renderName + ".mp4\n\nNote: Select your render preset in the Render Queue.");
+            alert("Added to Render Queue!\n\nOutput: " + renderName + "\nFormat: " + formatInfo + "\n\nNote: Select your render preset in the Render Queue.");
         };
 
         // Init
