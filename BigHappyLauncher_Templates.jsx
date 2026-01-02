@@ -606,15 +606,15 @@
 
             var suggestedName;
             if (isDOOHTemplate(t.name)) {
-                suggestedName = "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
+                suggestedName = "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision;
             } else {
-                suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+                suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision;
             }
 
-            var saveFile = new File(app.project.file.parent.fsName + "/" + suggestedName).saveDlg("Save Project As");
+            var saveFile = new File(app.project.file.parent.fsName + "/" + suggestedName + ".aep").saveDlg("Save Project As");
             if (saveFile) {
-                if (saveFile.fsName.toLowerCase().indexOf(".aep") === -1) saveFile = new File(saveFile.fsName + ".aep");
-                app.project.save(saveFile);
+                var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep"; // Ensure only one .aep
+                app.project.save(new File(savePath));
                 alert("Project saved as:\n" + saveFile.name);
 
                 // Update Inputs to match new file to keep in sync
