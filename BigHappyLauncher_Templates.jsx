@@ -365,6 +365,20 @@
             }
         }
 
+        function getDateString() {
+            var d = new Date();
+            var mm = String(d.getMonth() + 1);
+            if (mm.length < 2) mm = "0" + mm;
+            var dd = String(d.getDate());
+            if (dd.length < 2) dd = "0" + dd;
+            var yyyy = String(d.getFullYear());
+            return mm + dd + yyyy;
+        }
+
+        function isDOOHTemplate(templateName) {
+            return templateName.toLowerCase().indexOf("dooh") !== -1;
+        }
+
         function updatePreview() {
             var brand = sanitizeName(brandInput.text) || "Brand";
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
@@ -372,13 +386,24 @@
             var size = "0x0";
             var version = "V" + (parseInt(versionInput.text) || 1);
             var revision = "R" + (parseInt(revisionInput.text) || 1);
+            var filename = "";
 
             if (templateDropdown.selection && templates.length > 0) {
                 var t = templates[templateDropdown.selection.index];
                 size = t.width + "x" + t.height;
+
+                if (isDOOHTemplate(t.name)) {
+                    // DOOH format: DOOH_ProjectName_Size_MMDDYYYY
+                    var projectName = campaign || brand;
+                    filename = "DOOH_" + projectName + "_" + size + "_" + getDateString() + ".aep";
+                } else {
+                    // Standard format: Brand_Campaign_Quarter_Size_V#_R#
+                    filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+                }
+            } else {
+                filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
             }
 
-            var filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
             previewText.text = filename;
         }
 
@@ -460,7 +485,16 @@
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text) || 1);
             var revision = "R" + (parseInt(revisionInput.text) || 1);
-            var suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+            var suggestedName;
+
+            if (isDOOHTemplate(t.name)) {
+                // DOOH format: DOOH_ProjectName_Size_MMDDYYYY
+                var projectName = campaign || brand;
+                suggestedName = "DOOH_" + projectName + "_" + size + "_" + getDateString() + ".aep";
+            } else {
+                // Standard format
+                suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+            }
 
             try {
                 if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
