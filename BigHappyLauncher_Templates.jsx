@@ -420,10 +420,45 @@
             previewText.text = filename;
         }
 
+        // Check for existing files and auto-increment version
+        function checkVersion() {
+            if (!templateDropdown.selection) return;
+            var t = templates[templateDropdown.selection.index];
+            var brand = sanitizeName(brandInput.text) || "Brand";
+            var campaign = sanitizeName(campaignInput.text) || "Campaign";
+            var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
+            var size = t.width + "x" + t.height;
+            var revision = "R" + (parseInt(revisionInput.text) || 1);
+
+            var saveFolder = getDefaultSaveFolder();
+            var isDOOH = isDOOHTemplate(t.name);
+            var maxV = 50; // Safety limit
+            var foundV = 1;
+
+            for (var v = 1; v <= maxV; v++) {
+                var filename;
+                if (isDOOH) {
+                    filename = "DOOH_" + (campaign || brand) + "_" + size + "_V" + v + "_" + revision + ".aep";
+                } else {
+                    filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_V" + v + "_" + revision + ".aep";
+                }
+
+                if (fileExists(saveFolder + "/" + filename)) {
+                    foundV = v + 1; // Suggest next version
+                } else {
+                    break; // Found free slot
+                }
+            }
+
+            versionInput.text = String(foundV);
+            updatePreview();
+        }
+
         // Event bindings
         brandInput.onChanging = campaignInput.onChanging = versionInput.onChanging = revisionInput.onChanging = updatePreview;
-        quarterDropdown.onChange = updatePreview;
-        templateDropdown.onChange = function () { updateStatus(); updatePreview(); };
+        // Trigger smart versioning when finishing input
+        brandInput.onChange = campaignInput.onChange = quarterDropdown.onChange = function () { checkVersion(); };
+        templateDropdown.onChange = function () { updateStatus(); checkVersion(); }; // Update preview called inside checkVersion
 
         regenBtn.onClick = function () {
             if (!confirm("Regenerate ALL templates?\nFolder: " + templatesFolder)) return;
