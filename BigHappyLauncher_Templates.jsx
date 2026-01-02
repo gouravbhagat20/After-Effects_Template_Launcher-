@@ -152,7 +152,7 @@
 
     function generateTemplateFile(template, folderPath) {
         try {
-            if (app.project) app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
+            if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
             app.newProject();
 
             app.project.items.addFolder("Screens");
