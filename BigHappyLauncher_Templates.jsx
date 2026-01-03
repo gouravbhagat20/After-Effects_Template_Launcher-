@@ -1,11 +1,21 @@
 /*
 ================================================================================
   BigHappyLauncher_Templates.jsx
-  After Effects ScriptUI Panel - Production Ready v2.0
+  After Effects ScriptUI Panel - Production Ready v2.1
+  
+  CHANGELOG v2.1:
+  - Fixed AME export: now uses app.project.renderQueue.queueInAME(true) instead
+    of unreliable BridgeTalk. Falls back to AE Render Queue if unavailable.
+  - Improved parseProjectName(): parses from END with required size pattern
+    (_<width>x<height>_V#_R#). Handles underscores in Brand/Campaign correctly.
+  - Fixed template reorder UX: Up/Down buttons now call updateStatus() and
+    updatePreview() after reordering.
+  - Corrected format claims: says "format depends on Output Module preset"
+    instead of claiming specific formats.
   
   CHANGELOG v2.0:
   - Added joinPath() for cross-platform path handling (Win/Mac)
-  - Implemented robust regex-based parseProjectName() that handles underscores
+  - Implemented robust regex-based parseProjectName()
   - Added input validation in Add/Edit Template dialog
   - Added Duplicate Template button
   - Added Move Up/Down buttons for template reordering
@@ -13,7 +23,6 @@
   - Added comprehensive try/catch error handling
   - Refactored code into clear sections
   - Fixed all hardcoded "/" path separators
-  - Corrected format info claims in render alerts
   
   Features:
   - Cross-platform (Windows + macOS)
@@ -204,15 +213,19 @@
     }
 
     /**
-     * Robust regex-based project name parser
-     * Parses from the END to handle underscores in Brand/Campaign names
+     * Robust project name parser - parses from the END
+     * 
+     * REQUIRED pattern at end: _<width>x<height>_V<n>_R<n>
      * 
      * Supported formats:
      * - Standard: Brand_Campaign_Q#_<size>_V#_R#
+     * - Standard without quarter: Brand_Campaign_<size>_V#_R#
      * - DOOH: DOOH_<anything>_<size>_V#_R#
      * 
+     * Handles underscores in Brand/Campaign by parsing from END first.
+     * 
      * @param {string} projectName - Filename without .aep extension
-     * @returns {object|null} Parsed components
+     * @returns {object|null} Parsed components or null if pattern not matched
      */
     function parseProjectName(projectName) {
         if (!projectName) return null;
@@ -220,54 +233,55 @@
         var result = {};
         var remaining = projectName;
 
-        // Step 1: Extract _V#_R# from end (required pattern)
+        // Step 1: Extract _V#_R# from end (REQUIRED)
         var versionMatch = remaining.match(/_V(\d+)_R(\d+)$/i);
-        if (versionMatch) {
-            result.version = "V" + versionMatch[1];
-            result.revision = "R" + versionMatch[2];
-            remaining = remaining.replace(/_V\d+_R\d+$/i, "");
-        } else {
-            // No version/revision pattern found
-            return null;
+        if (!versionMatch) {
+            return null; // Pattern not matched
         }
+        result.version = "V" + versionMatch[1];
+        result.revision = "R" + versionMatch[2];
+        remaining = remaining.replace(/_V\d+_R\d+$/i, "");
 
-        // Step 2: Extract size _<width>x<height> from end
+        // Step 2: Extract _<width>x<height> from end (REQUIRED)
         var sizeMatch = remaining.match(/_(\d+x\d+)$/i);
-        if (sizeMatch) {
-            result.size = sizeMatch[1];
-            remaining = remaining.replace(/_\d+x\d+$/i, "");
+        if (!sizeMatch) {
+            return null; // Size is required
         }
+        result.size = sizeMatch[1];
+        remaining = remaining.replace(/_\d+x\d+$/i, "");
 
         // Step 3: Check for DOOH prefix
-        if (remaining.match(/^DOOH_/i)) {
+        if (remaining.match(/^DOOH/i)) {
             result.isDOOH = true;
-            result.prefix = projectName.replace(/_V\d+_R\d+$/i, ""); // Everything before V#_R#
-            // Extract campaign (everything between DOOH_ and size)
-            var doohContent = remaining.replace(/^DOOH_/i, "");
+            // prefix = everything before _<size>_V#_R#
+            result.prefix = projectName.replace(/_\d+x\d+_V\d+_R\d+$/i, "");
+            // campaign = everything after "DOOH_"
+            var doohContent = remaining.replace(/^DOOH_?/i, "");
             if (doohContent) {
                 result.campaign = doohContent;
             }
             return result;
         }
 
-        // Step 4: Extract quarter _Q# (optional, for standard format)
+        // Step 4: Extract _Q# quarter (OPTIONAL, for standard format)
         var quarterMatch = remaining.match(/_Q([1-4])$/i);
         if (quarterMatch) {
             result.quarter = "Q" + quarterMatch[1];
             remaining = remaining.replace(/_Q[1-4]$/i, "");
         }
 
-        // Step 5: Split remaining into Brand_Campaign
-        // The remaining string is "Brand_Campaign" or just "Brand"
-        var underscoreIdx = remaining.indexOf("_");
-        if (underscoreIdx > 0) {
-            result.brand = remaining.substring(0, underscoreIdx);
-            result.campaign = remaining.substring(underscoreIdx + 1);
+        // Step 5: Split remaining into Brand and Campaign
+        // Remaining is now "Brand_Campaign" or "Brand_Some_Long_Campaign" or just "Brand"
+        var firstUnderscore = remaining.indexOf("_");
+        if (firstUnderscore > 0) {
+            result.brand = remaining.substring(0, firstUnderscore);
+            result.campaign = remaining.substring(firstUnderscore + 1);
         } else {
             result.brand = remaining;
             result.campaign = "";
         }
 
+        result.isDOOH = false;
         return result;
     }
 
@@ -445,47 +459,49 @@
     // SECTION 6: RENDER & EXPORT
     // =========================================================================
 
-    function isAMEAvailable() {
+    /**
+     * Check if queueInAME is available (AE CC 2014+)
+     */
+    function canQueueInAME() {
         try {
-            var bt = new BridgeTalk();
-            bt.target = "ame";
-            return BridgeTalk.isRunning("ame");
+            return typeof app.project.renderQueue.queueInAME === "function";
         } catch (e) {
             return false;
         }
     }
 
-    function queueToAME(comp, outputPath) {
-        try {
-            // Add to AE render queue first
-            var rqItem = app.project.renderQueue.items.add(comp);
-            var om = rqItem.outputModule(1);
-            om.file = new File(outputPath);
-
-            // Use BridgeTalk to communicate with AME
-            var bt = new BridgeTalk();
-            bt.target = "ame";
-
-            var script = 'var frontend = app.getFrontend();';
-            script += 'frontend.addItemToBatch("' + outputPath.replace(/\\/g, "\\\\") + '");';
-
-            bt.body = script;
-            bt.send();
-
-            return true;
-        } catch (e) {
-            return false;
-        }
-    }
-
+    /**
+     * Add composition to Render Queue
+     * @param {CompItem} comp
+     * @param {string} outputPath - Full path without extension (extension set by Output Module)
+     * @returns {RenderQueueItem|null}
+     */
     function addToRenderQueue(comp, outputPath) {
         try {
             var rqItem = app.project.renderQueue.items.add(comp);
             var om = rqItem.outputModule(1);
             om.file = new File(outputPath);
-            return true;
+            return rqItem;
         } catch (e) {
             alert("Error adding to Render Queue:\n" + e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * Queue to Adobe Media Encoder using queueInAME(true)
+     * This is the most reliable method for AME export in After Effects.
+     * @returns {boolean} success
+     */
+    function queueToAME() {
+        try {
+            if (canQueueInAME()) {
+                // queueInAME(true) sends all queued items to AME and renders immediately
+                app.project.renderQueue.queueInAME(true);
+                return true;
+            }
+            return false;
+        } catch (e) {
             return false;
         }
     }
@@ -643,7 +659,7 @@
         // AME checkbox
         var ameGrp = panel.add("group");
         ameGrp.alignment = ["center", "top"];
-        var ameCheckbox = ameGrp.add("checkbox", undefined, "Export via AME (H.264)");
+        var ameCheckbox = ameGrp.add("checkbox", undefined, "Send to AME after queuing");
         ameCheckbox.value = getSetting(AME_ENABLED_KEY, "false") === "true";
 
         // Render button
@@ -819,6 +835,8 @@
             saveTemplates(templates);
             refreshDropdown();
             templateDropdown.selection = idx - 1;
+            updateStatus();
+            updatePreview();
         };
 
         downBtn.onClick = function () {
@@ -831,6 +849,8 @@
             saveTemplates(templates);
             refreshDropdown();
             templateDropdown.selection = idx + 1;
+            updateStatus();
+            updatePreview();
         };
 
         createBtn.onClick = function () {
@@ -933,41 +953,48 @@
             var type = getTemplateType(mainComp.width, mainComp.height);
             var parsed = parseProjectName(projectName);
 
-            var renderName, formatInfo;
+            var renderName;
 
             if (type === "sunrise" && parsed && parsed.brand) {
-                renderName = parsed.brand + "_" + parsed.campaign + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
-                formatInfo = "PNG Sequence (select preset in Render Queue)";
+                // Sunrise: Brand_Campaign_CTA_AnimatedSunrise_V#_R#
+                renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
             } else if (type === "interscroller" && parsed && parsed.brand) {
-                renderName = parsed.brand + "_" + parsed.campaign + "_CTA_InterScroller_" + parsed.version + "_" + parsed.revision;
-                formatInfo = "Video (select preset in Render Queue)";
-            } else if (type === "dooh" && parsed && parsed.prefix) {
-                renderName = parsed.prefix + "_" + getDateString();
-                formatInfo = "Video (select preset in Render Queue)";
+                // InterScroller: Brand_Campaign_CTA_InterScroller_V#_R#
+                renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_InterScroller_" + parsed.version + "_" + parsed.revision;
+            } else if (type === "dooh" || (parsed && parsed.isDOOH)) {
+                // DOOH: DOOH_ProjectName_Size_MMDDYYYY
+                var doohSize = mainComp.width + "x" + mainComp.height;
+                var doohName = (parsed && parsed.campaign) ? parsed.campaign : projectName.replace(/^DOOH_?/i, "").replace(/_\d+x\d+.*$/i, "");
+                renderName = "DOOH_" + doohName + "_" + doohSize + "_" + getDateString();
             } else {
+                // Default: ProjectName_MMDDYYYY
                 renderName = projectName + "_" + getDateString();
-                formatInfo = "Video (select preset in Render Queue)";
             }
 
             var outputFolder = app.project.file.parent.fsName;
             var outputPath = joinPath(outputFolder, renderName);
 
-            // Check if AME export is enabled
+            // Add to AE Render Queue first
+            var rqItem = addToRenderQueue(mainComp, outputPath);
+            if (!rqItem) return;
+
+            // Check if user wants to send to AME
             if (ameCheckbox.value) {
-                if (isAMEAvailable()) {
-                    if (queueToAME(mainComp, outputPath)) {
-                        alert("Queued to Adobe Media Encoder!\n\nOutput: " + renderName + "\n\nCheck AME for render settings.");
+                if (canQueueInAME()) {
+                    if (queueToAME()) {
+                        alert("Sent to Adobe Media Encoder!\n\nOutput: " + renderName + "\n\nFormat depends on AME preset settings.");
                         return;
+                    } else {
+                        alert("Failed to send to AME.\nItem remains in AE Render Queue.");
                     }
+                } else {
+                    alert("queueInAME not available in this AE version.\nItem added to AE Render Queue instead.\n\nOutput: " + renderName);
+                    return;
                 }
-                // AME not available or failed - fall back
-                alert("Adobe Media Encoder not available.\nFalling back to After Effects Render Queue.");
             }
 
-            // Add to AE Render Queue
-            if (addToRenderQueue(mainComp, outputPath)) {
-                alert("Added to Render Queue!\n\nOutput: " + renderName + "\n" + formatInfo);
-            }
+            // Standard RQ alert
+            alert("Added to Render Queue!\n\nOutput: " + renderName + "\n\nFormat depends on your Output Module preset.");
         };
 
         // =====================================================================
