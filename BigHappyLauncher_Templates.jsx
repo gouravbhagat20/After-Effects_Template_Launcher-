@@ -1,27 +1,41 @@
 /*
 ================================================================================
   BigHappyLauncher_Templates.jsx
-  After Effects ScriptUI Panel - Auto-Generated Templates
+  After Effects ScriptUI Panel - Production Ready v2.0
+  
+  CHANGELOG v2.0:
+  - Added joinPath() for cross-platform path handling (Win/Mac)
+  - Implemented robust regex-based parseProjectName() that handles underscores
+  - Added input validation in Add/Edit Template dialog
+  - Added Duplicate Template button
+  - Added Move Up/Down buttons for template reordering
+  - Added AME export option with fallback to AE Render Queue
+  - Added comprehensive try/catch error handling
+  - Refactored code into clear sections
+  - Fixed all hardcoded "/" path separators
+  - Corrected format info claims in render alerts
   
   Features:
-  - Minimalist UI
+  - Cross-platform (Windows + macOS)
   - Auto-generate template .aep files
-  - Template Protection (Save As)
   - Smart naming by template type
-  - Render queue automation
+  - Render queue automation + AME export
+  - Template management (Add/Edit/Delete/Duplicate/Reorder)
+  - Auto-detect project details on open
 ================================================================================
 */
 
 (function (thisObj) {
 
     // =========================================================================
-    // CONFIG & STORAGE
+    // SECTION 1: CONFIGURATION & SETTINGS
     // =========================================================================
 
     var SETTINGS_SECTION = "BigHappyLauncher";
     var TEMPLATES_KEY = "templates_data";
     var TEMPLATES_FOLDER_KEY = "templates_folder";
     var DEFAULT_SAVE_FOLDER_KEY = "default_save_folder";
+    var AME_ENABLED_KEY = "ame_enabled";
 
     var DEFAULT_TEMPLATES = [
         { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "" },
@@ -30,8 +44,52 @@
         { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "" }
     ];
 
+    // Validation limits
+    var LIMITS = {
+        WIDTH_MIN: 1, WIDTH_MAX: 8192,
+        HEIGHT_MIN: 1, HEIGHT_MAX: 8192,
+        FPS_MIN: 1, FPS_MAX: 120,
+        DURATION_MIN: 0.1, DURATION_MAX: 3600
+    };
+
     // =========================================================================
-    // SETTINGS HELPERS
+    // SECTION 2: PATH & IO UTILITIES
+    // =========================================================================
+
+    var SEP = Folder.separator; // "/" on Mac, "\\" on Windows
+
+    function joinPath(a, b) {
+        if (!a) return b;
+        if (!b) return a;
+        // Remove trailing separator from a, leading from b
+        a = String(a).replace(/[\/\\]$/, "");
+        b = String(b).replace(/^[\/\\]/, "");
+        return a + SEP + b;
+    }
+
+    function fileExists(path) {
+        try {
+            return path && new File(path).exists;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function getParentFolder(path) {
+        try {
+            var f = new File(path);
+            return f.parent ? f.parent.fsName : "";
+        } catch (e) {
+            return "";
+        }
+    }
+
+    function isSameFolder(p1, p2) {
+        return getParentFolder(p1).toLowerCase() === getParentFolder(p2).toLowerCase();
+    }
+
+    // =========================================================================
+    // SECTION 2B: SETTINGS HELPERS
     // =========================================================================
 
     function getSetting(key, defaultVal) {
@@ -44,7 +102,9 @@
     }
 
     function setSetting(key, value) {
-        try { app.settings.saveSetting(SETTINGS_SECTION, key, value); } catch (e) { }
+        try {
+            app.settings.saveSetting(SETTINGS_SECTION, key, String(value));
+        } catch (e) { }
     }
 
     function loadTemplates() {
@@ -63,7 +123,7 @@
     }
 
     function getTemplatesFolder() {
-        return getSetting(TEMPLATES_FOLDER_KEY, Folder.myDocuments.fsName + "/BH_Templates");
+        return getSetting(TEMPLATES_FOLDER_KEY, joinPath(Folder.myDocuments.fsName, "BH_Templates"));
     }
 
     function getDefaultSaveFolder() {
@@ -71,28 +131,42 @@
     }
 
     // =========================================================================
-    // UTILITY FUNCTIONS
+    // SECTION 2C: JSON STRINGIFY (ES3 Compatible)
     // =========================================================================
 
     function jsonStringify(obj) {
         if (obj === null) return "null";
+        if (typeof obj === "undefined") return "null";
         if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
-        if (typeof obj === "string") return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n") + '"';
+        if (typeof obj === "string") {
+            return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
+        }
         if (obj instanceof Array) {
             var arr = [];
-            for (var i = 0; i < obj.length; i++) arr.push(jsonStringify(obj[i]));
+            for (var i = 0; i < obj.length; i++) {
+                arr.push(jsonStringify(obj[i]));
+            }
             return "[" + arr.join(",") + "]";
         }
         if (typeof obj === "object") {
             var pairs = [];
-            for (var k in obj) if (obj.hasOwnProperty(k)) pairs.push('"' + k + '":' + jsonStringify(obj[k]));
+            for (var k in obj) {
+                if (obj.hasOwnProperty(k)) {
+                    pairs.push('"' + k + '":' + jsonStringify(obj[k]));
+                }
+            }
             return "{" + pairs.join(",") + "}";
         }
         return String(obj);
     }
 
+    // =========================================================================
+    // SECTION 3: NAMING & PARSING
+    // =========================================================================
+
     function sanitizeName(name) {
-        var result = "", invalid = "<>:\"/\\|?*";
+        var result = "";
+        var invalid = "<>:\"/\\|?*";
         for (var i = 0; i < name.length; i++) {
             var c = name.charAt(i);
             if (invalid.indexOf(c) === -1 && name.charCodeAt(i) >= 32) {
@@ -108,12 +182,16 @@
         return pad(d.getMonth() + 1) + pad(d.getDate()) + d.getFullYear();
     }
 
-    function fileExists(path) { return path && new File(path).exists; }
-    function getParentFolder(path) { var f = new File(path); return f.parent ? f.parent.fsName : ""; }
-    function isSameFolder(p1, p2) { return getParentFolder(p1).toLowerCase() === getParentFolder(p2).toLowerCase(); }
-    function getTemplateLabel(t) { return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)"; }
+    function getTemplateLabel(t) {
+        return t.name + " (" + t.width + "x" + t.height + " | " + t.fps + "fps)";
+    }
 
-    // Template type detection by dimensions
+    /**
+     * Detect template type by dimensions
+     * @param {number} width
+     * @param {number} height
+     * @returns {string} "sunrise" | "interscroller" | "dooh" | "default"
+     */
     function getTemplateType(width, height) {
         if (width === 750 && height === 300) return "sunrise";
         if (width === 880 && height === 1912) return "interscroller";
@@ -125,48 +203,93 @@
         return name.toLowerCase().indexOf("dooh") !== -1;
     }
 
-    // Find Main comp in project
-    function findMainComp() {
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === "Main") return item;
-        }
-        return null;
-    }
-
-    // Parse project name into parts
+    /**
+     * Robust regex-based project name parser
+     * Parses from the END to handle underscores in Brand/Campaign names
+     * 
+     * Supported formats:
+     * - Standard: Brand_Campaign_Q#_<size>_V#_R#
+     * - DOOH: DOOH_<anything>_<size>_V#_R#
+     * 
+     * @param {string} projectName - Filename without .aep extension
+     * @returns {object|null} Parsed components
+     */
     function parseProjectName(projectName) {
-        var parts = projectName.split("_");
+        if (!projectName) return null;
 
-        // DOOH format: DOOH_Campaign_Size_V#_R#
-        if (parts[0] && parts[0].toUpperCase() === "DOOH" && parts.length >= 5) {
-            return {
-                prefix: parts.slice(0, parts.length - 2).join("_"),
-                campaign: parts[1],
-                version: parts[parts.length - 2],
-                revision: parts[parts.length - 1]
-            };
+        var result = {};
+        var remaining = projectName;
+
+        // Step 1: Extract _V#_R# from end (required pattern)
+        var versionMatch = remaining.match(/_V(\d+)_R(\d+)$/i);
+        if (versionMatch) {
+            result.version = "V" + versionMatch[1];
+            result.revision = "R" + versionMatch[2];
+            remaining = remaining.replace(/_V\d+_R\d+$/i, "");
+        } else {
+            // No version/revision pattern found
+            return null;
         }
 
-        // Standard format: Brand_Campaign_Q#_Size_V#_R#
-        if (parts.length >= 6) {
-            return { brand: parts[0], campaign: parts[1], version: parts[4], revision: parts[5] };
+        // Step 2: Extract size _<width>x<height> from end
+        var sizeMatch = remaining.match(/_(\d+x\d+)$/i);
+        if (sizeMatch) {
+            result.size = sizeMatch[1];
+            remaining = remaining.replace(/_\d+x\d+$/i, "");
         }
 
-        // Fallback
-        if (parts.length >= 4) {
-            return { prefix: parts.slice(0, parts.length - 2).join("_") };
+        // Step 3: Check for DOOH prefix
+        if (remaining.match(/^DOOH_/i)) {
+            result.isDOOH = true;
+            result.prefix = projectName.replace(/_V\d+_R\d+$/i, ""); // Everything before V#_R#
+            // Extract campaign (everything between DOOH_ and size)
+            var doohContent = remaining.replace(/^DOOH_/i, "");
+            if (doohContent) {
+                result.campaign = doohContent;
+            }
+            return result;
         }
-        return null;
+
+        // Step 4: Extract quarter _Q# (optional, for standard format)
+        var quarterMatch = remaining.match(/_Q([1-4])$/i);
+        if (quarterMatch) {
+            result.quarter = "Q" + quarterMatch[1];
+            remaining = remaining.replace(/_Q[1-4]$/i, "");
+        }
+
+        // Step 5: Split remaining into Brand_Campaign
+        // The remaining string is "Brand_Campaign" or just "Brand"
+        var underscoreIdx = remaining.indexOf("_");
+        if (underscoreIdx > 0) {
+            result.brand = remaining.substring(0, underscoreIdx);
+            result.campaign = remaining.substring(underscoreIdx + 1);
+        } else {
+            result.brand = remaining;
+            result.campaign = "";
+        }
+
+        return result;
     }
 
     // =========================================================================
-    // TEMPLATE GENERATION
+    // SECTION 4: TEMPLATE MANAGEMENT
     // =========================================================================
+
+    function findMainComp() {
+        try {
+            for (var i = 1; i <= app.project.numItems; i++) {
+                var item = app.project.item(i);
+                if (item instanceof CompItem && item.name === "Main") return item;
+            }
+        } catch (e) { }
+        return null;
+    }
 
     function generateTemplateFile(template, folderPath) {
         try {
-            if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
+            if (app.project) {
+                app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
+            }
             app.newProject();
 
             app.project.items.addFolder("Screens");
@@ -179,20 +302,27 @@
 
             var infoText = template.name + "\n" + template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s";
             var textLayer = mainComp.layers.addText(infoText);
-            var textProp = textLayer.property("Source Text");
-            var textDoc = textProp.value;
-            textDoc.justification = ParagraphJustification.CENTER_JUSTIFY;
-            textProp.setValue(textDoc);
+
+            try {
+                var textProp = textLayer.property("Source Text");
+                var textDoc = textProp.value;
+                textDoc.justification = ParagraphJustification.CENTER_JUSTIFY;
+                textProp.setValue(textDoc);
+            } catch (e) { }
 
             textLayer.property("Position").setValue([template.width / 2, template.height / 2]);
 
             var fileName = template.name.replace(/\s+/g, "_") + "_" + template.width + "x" + template.height + ".aep";
-            var filePath = folderPath + "/" + fileName;
+            var filePath = joinPath(folderPath, fileName);
+
             app.project.save(new File(filePath));
             app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
 
             return filePath;
-        } catch (e) { return null; }
+        } catch (e) {
+            alert("Error generating template:\n" + e.toString());
+            return null;
+        }
     }
 
     function ensureTemplatesExist(templates, folderPath) {
@@ -205,7 +335,7 @@
             if (t.path && new File(t.path).exists) continue;
 
             var expectedName = t.name.replace(/\s+/g, "_") + "_" + t.width + "x" + t.height + ".aep";
-            var expectedPath = folderPath + "/" + expectedName;
+            var expectedPath = joinPath(folderPath, expectedName);
 
             if (new File(expectedPath).exists) {
                 templates[i].path = expectedPath;
@@ -224,7 +354,7 @@
     }
 
     // =========================================================================
-    // DIALOGS
+    // SECTION 5: DIALOGS
     // =========================================================================
 
     function showTemplateDialog(template, isNew) {
@@ -255,38 +385,126 @@
         var durInput = fpsGrp.add("edittext", undefined, String(template.duration || 15));
         durInput.characters = 6;
 
+        // Validation info
+        var infoText = dlg.add("statictext", undefined, "Width/Height: 1-8192 | FPS: 1-120 | Duration: 0.1-3600");
+        try { infoText.graphics.foregroundColor = infoText.graphics.newPen(infoText.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
+
         var btnGrp = dlg.add("group");
         btnGrp.alignment = ["center", "top"];
-        btnGrp.add("button", undefined, "OK", { name: "ok" });
+        var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
         btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
 
         var result = null;
-        dlg.findElement("ok").onClick = function () {
+
+        okBtn.onClick = function () {
             var name = nameInput.text.replace(/^\s+|\s+$/g, "");
-            if (!name) { alert("Enter a name."); return; }
+            if (!name) {
+                alert("Please enter a template name.");
+                return;
+            }
+
+            var width = parseInt(widthInput.text, 10);
+            var height = parseInt(heightInput.text, 10);
+            var fps = parseFloat(fpsInput.text);
+            var duration = parseFloat(durInput.text);
+
+            // Validation
+            if (isNaN(width) || width < LIMITS.WIDTH_MIN || width > LIMITS.WIDTH_MAX) {
+                alert("Width must be a number between " + LIMITS.WIDTH_MIN + " and " + LIMITS.WIDTH_MAX);
+                return;
+            }
+            if (isNaN(height) || height < LIMITS.HEIGHT_MIN || height > LIMITS.HEIGHT_MAX) {
+                alert("Height must be a number between " + LIMITS.HEIGHT_MIN + " and " + LIMITS.HEIGHT_MAX);
+                return;
+            }
+            if (isNaN(fps) || fps < LIMITS.FPS_MIN || fps > LIMITS.FPS_MAX) {
+                alert("FPS must be a number between " + LIMITS.FPS_MIN + " and " + LIMITS.FPS_MAX);
+                return;
+            }
+            if (isNaN(duration) || duration < LIMITS.DURATION_MIN || duration > LIMITS.DURATION_MAX) {
+                alert("Duration must be a number between " + LIMITS.DURATION_MIN + " and " + LIMITS.DURATION_MAX);
+                return;
+            }
+
             result = {
                 name: name,
-                width: parseInt(widthInput.text) || 1920,
-                height: parseInt(heightInput.text) || 1080,
-                fps: parseFloat(fpsInput.text) || 24,
-                duration: parseFloat(durInput.text) || 15,
+                width: width,
+                height: height,
+                fps: fps,
+                duration: duration,
                 path: template.path || ""
             };
             dlg.close();
         };
+
         dlg.show();
         return result;
     }
 
     // =========================================================================
-    // BUILD UI
+    // SECTION 6: RENDER & EXPORT
+    // =========================================================================
+
+    function isAMEAvailable() {
+        try {
+            var bt = new BridgeTalk();
+            bt.target = "ame";
+            return BridgeTalk.isRunning("ame");
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function queueToAME(comp, outputPath) {
+        try {
+            // Add to AE render queue first
+            var rqItem = app.project.renderQueue.items.add(comp);
+            var om = rqItem.outputModule(1);
+            om.file = new File(outputPath);
+
+            // Use BridgeTalk to communicate with AME
+            var bt = new BridgeTalk();
+            bt.target = "ame";
+
+            var script = 'var frontend = app.getFrontend();';
+            script += 'frontend.addItemToBatch("' + outputPath.replace(/\\/g, "\\\\") + '");';
+
+            bt.body = script;
+            bt.send();
+
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function addToRenderQueue(comp, outputPath) {
+        try {
+            var rqItem = app.project.renderQueue.items.add(comp);
+            var om = rqItem.outputModule(1);
+            om.file = new File(outputPath);
+            return true;
+        } catch (e) {
+            alert("Error adding to Render Queue:\n" + e.toString());
+            return false;
+        }
+    }
+
+    // =========================================================================
+    // SECTION 7: BUILD UI
     // =========================================================================
 
     function buildUI(thisObj) {
         var templates = loadTemplates();
         var templatesFolder = getTemplatesFolder();
 
-        var panel = (thisObj instanceof Panel) ? thisObj : new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
+        var panel;
+        if (thisObj instanceof Panel) {
+            panel = thisObj;
+        } else {
+            panel = new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
+        }
+
         panel.orientation = "column";
         panel.alignChildren = ["fill", "top"];
         panel.spacing = 10;
@@ -325,18 +543,21 @@
         templateDropdown.preferredSize.height = 25;
 
         function refreshDropdown() {
+            var prevIdx = templateDropdown.selection ? templateDropdown.selection.index : 0;
             templateDropdown.removeAll();
             for (var i = 0; i < templates.length; i++) {
                 templateDropdown.add("item", getTemplateLabel(templates[i]));
             }
-            if (templates.length > 0) templateDropdown.selection = 0;
+            if (templates.length > 0) {
+                templateDropdown.selection = Math.min(prevIdx, templates.length - 1);
+            }
         }
         refreshDropdown();
 
         var brandInput = addRow(mainGrp, "Brand:", "");
         var campaignInput = addRow(mainGrp, "Campaign:", "");
 
-        // Details row 1: Quarter
+        // Quarter row
         var qRow = mainGrp.add("group");
         qRow.orientation = "row";
         qRow.alignChildren = ["left", "center"];
@@ -346,7 +567,7 @@
         quarterDropdown.selection = 0;
         quarterDropdown.preferredSize.width = 70;
 
-        // Details row 2: Version & Revision
+        // Version & Revision row
         var vrRow = mainGrp.add("group");
         vrRow.orientation = "row";
         vrRow.alignChildren = ["left", "center"];
@@ -368,7 +589,7 @@
         previewText.alignment = ["center", "top"];
         try { previewText.graphics.foregroundColor = previewText.graphics.newPen(previewText.graphics.PenType.SOLID_COLOR, [0.4, 0.7, 1], 1); } catch (e) { }
 
-        // Main button
+        // Main buttons
         var btnGroup = panel.add("group");
         btnGroup.orientation = "row";
         btnGroup.alignChildren = ["fill", "top"];
@@ -389,22 +610,41 @@
         statusText.alignment = ["center", "top"];
         try { statusText.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
 
-        // Footer: Template management
-        var tmplMgmtGrp = panel.add("group");
-        tmplMgmtGrp.orientation = "row";
-        tmplMgmtGrp.alignChildren = ["center", "center"];
-        tmplMgmtGrp.spacing = 5;
+        // Template management row 1
+        var tmplMgmt1 = panel.add("group");
+        tmplMgmt1.orientation = "row";
+        tmplMgmt1.alignChildren = ["center", "center"];
+        tmplMgmt1.spacing = 3;
 
-        var addBtn = tmplMgmtGrp.add("button", undefined, "+");
-        addBtn.preferredSize = [28, 22];
-        var editBtn = tmplMgmtGrp.add("button", undefined, "Edit");
-        editBtn.preferredSize = [45, 22];
-        var delBtn = tmplMgmtGrp.add("button", undefined, "Del");
-        delBtn.preferredSize = [40, 22];
-        var regenBtn = tmplMgmtGrp.add("button", undefined, "Regenerate");
+        var addBtn = tmplMgmt1.add("button", undefined, "+");
+        addBtn.preferredSize = [25, 22];
+        var editBtn = tmplMgmt1.add("button", undefined, "Edit");
+        editBtn.preferredSize = [40, 22];
+        var dupBtn = tmplMgmt1.add("button", undefined, "Dup");
+        dupBtn.preferredSize = [35, 22];
+        var delBtn = tmplMgmt1.add("button", undefined, "Del");
+        delBtn.preferredSize = [35, 22];
+        var upBtn = tmplMgmt1.add("button", undefined, "▲");
+        upBtn.preferredSize = [22, 22];
+        var downBtn = tmplMgmt1.add("button", undefined, "▼");
+        downBtn.preferredSize = [22, 22];
+
+        // Template management row 2
+        var tmplMgmt2 = panel.add("group");
+        tmplMgmt2.orientation = "row";
+        tmplMgmt2.alignChildren = ["center", "center"];
+        tmplMgmt2.spacing = 5;
+
+        var regenBtn = tmplMgmt2.add("button", undefined, "Regenerate");
         regenBtn.preferredSize.height = 22;
-        var folderBtn = tmplMgmtGrp.add("button", undefined, "Folder...");
+        var folderBtn = tmplMgmt2.add("button", undefined, "Folder...");
         folderBtn.preferredSize.height = 22;
+
+        // AME checkbox
+        var ameGrp = panel.add("group");
+        ameGrp.alignment = ["center", "top"];
+        var ameCheckbox = ameGrp.add("checkbox", undefined, "Export via AME (H.264)");
+        ameCheckbox.value = getSetting(AME_ENABLED_KEY, "false") === "true";
 
         // Render button
         var renderBtn = panel.add("button", undefined, "ADD TO RENDER QUEUE");
@@ -434,6 +674,14 @@
             }
         }
 
+        function buildFilename(brand, campaign, quarter, size, version, revision, isDOOH) {
+            if (isDOOH) {
+                return "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
+            } else {
+                return brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+            }
+        }
+
         function updatePreview() {
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
@@ -441,19 +689,13 @@
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
-            var version = "V" + (parseInt(versionInput.text) || 1);
-            var revision = "R" + (parseInt(revisionInput.text) || 1);
+            var version = "V" + (parseInt(versionInput.text, 10) || 1);
+            var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
 
-            var filename;
-            if (isDOOHTemplate(t.name)) {
-                filename = "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
-            } else {
-                filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
-            }
+            var filename = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
             previewText.text = filename;
         }
 
-        // Check for existing files and auto-increment version
         function checkVersion() {
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
@@ -461,25 +703,19 @@
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
-            var revision = "R" + (parseInt(revisionInput.text) || 1);
+            var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
 
             var saveFolder = getDefaultSaveFolder();
             var isDOOH = isDOOHTemplate(t.name);
-            var maxV = 50; // Safety limit
+            var maxV = 50;
             var foundV = 1;
 
             for (var v = 1; v <= maxV; v++) {
-                var filename;
-                if (isDOOH) {
-                    filename = "DOOH_" + (campaign || brand) + "_" + size + "_V" + v + "_" + revision + ".aep";
+                var filename = buildFilename(brand, campaign, quarter, size, "V" + v, revision, isDOOH);
+                if (fileExists(joinPath(saveFolder, filename))) {
+                    foundV = v + 1;
                 } else {
-                    filename = brand + "_" + campaign + "_" + quarter + "_" + size + "_V" + v + "_" + revision + ".aep";
-                }
-
-                if (fileExists(saveFolder + "/" + filename)) {
-                    foundV = v + 1; // Suggest next version
-                } else {
-                    break; // Found free slot
+                    break;
                 }
             }
 
@@ -489,9 +725,12 @@
 
         // Event bindings
         brandInput.onChanging = campaignInput.onChanging = versionInput.onChanging = revisionInput.onChanging = updatePreview;
-        // Trigger smart versioning when finishing input
         brandInput.onChange = campaignInput.onChange = quarterDropdown.onChange = function () { checkVersion(); };
-        templateDropdown.onChange = function () { updateStatus(); checkVersion(); }; // Update preview called inside checkVersion
+        templateDropdown.onChange = function () { updateStatus(); checkVersion(); };
+
+        ameCheckbox.onClick = function () {
+            setSetting(AME_ENABLED_KEY, String(ameCheckbox.value));
+        };
 
         regenBtn.onClick = function () {
             if (!confirm("Regenerate ALL templates?\nFolder: " + templatesFolder)) return;
@@ -539,6 +778,26 @@
             }
         };
 
+        dupBtn.onClick = function () {
+            if (!templateDropdown.selection) return;
+            var idx = templateDropdown.selection.index;
+            var orig = templates[idx];
+            var copy = {
+                name: orig.name + " Copy",
+                width: orig.width,
+                height: orig.height,
+                fps: orig.fps,
+                duration: orig.duration,
+                path: "" // New template needs regeneration
+            };
+            templates.splice(idx + 1, 0, copy);
+            saveTemplates(templates);
+            refreshDropdown();
+            templateDropdown.selection = idx + 1;
+            updateStatus();
+            updatePreview();
+        };
+
         delBtn.onClick = function () {
             if (!templateDropdown.selection) return;
             var idx = templateDropdown.selection.index;
@@ -548,6 +807,30 @@
             refreshDropdown();
             updateStatus();
             updatePreview();
+        };
+
+        upBtn.onClick = function () {
+            if (!templateDropdown.selection) return;
+            var idx = templateDropdown.selection.index;
+            if (idx === 0) return; // Already at top
+            var temp = templates[idx];
+            templates[idx] = templates[idx - 1];
+            templates[idx - 1] = temp;
+            saveTemplates(templates);
+            refreshDropdown();
+            templateDropdown.selection = idx - 1;
+        };
+
+        downBtn.onClick = function () {
+            if (!templateDropdown.selection) return;
+            var idx = templateDropdown.selection.index;
+            if (idx >= templates.length - 1) return; // Already at bottom
+            var temp = templates[idx];
+            templates[idx] = templates[idx + 1];
+            templates[idx + 1] = temp;
+            saveTemplates(templates);
+            refreshDropdown();
+            templateDropdown.selection = idx + 1;
         };
 
         createBtn.onClick = function () {
@@ -564,29 +847,24 @@
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
-            var version = "V" + (parseInt(versionInput.text) || 1);
-            var revision = "R" + (parseInt(revisionInput.text) || 1);
+            var version = "V" + (parseInt(versionInput.text, 10) || 1);
+            var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
 
-            var suggestedName;
-            if (isDOOHTemplate(t.name)) {
-                suggestedName = "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
-            } else {
-                suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
-            }
+            var suggestedName = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
 
             try {
                 if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
                 app.open(new File(t.path));
 
                 var defFolder = new Folder(getDefaultSaveFolder());
-                var saveFile = new File(defFolder.fsName + "/" + suggestedName).saveDlg("Save New Project As");
+                var saveFile = new File(joinPath(defFolder.fsName, suggestedName)).saveDlg("Save New Project As");
 
                 if (!saveFile) {
                     app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
                     return;
                 }
 
-                var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep"; // Ensure only one .aep
+                var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep";
                 saveFile = new File(savePath);
 
                 if (isSameFolder(savePath, t.path)) {
@@ -602,7 +880,9 @@
                 if (mainComp) mainComp.openInViewer();
 
                 if (panel instanceof Window) panel.close();
-            } catch (e) { alert("Error: " + e.toString()); }
+            } catch (e) {
+                alert("Error creating project:\n" + e.toString());
+            }
         };
 
         saveAsBtn.onClick = function () {
@@ -619,24 +899,21 @@
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
-            var version = "V" + (parseInt(versionInput.text) || 1);
-            var revision = "R" + (parseInt(revisionInput.text) || 1);
+            var version = "V" + (parseInt(versionInput.text, 10) || 1);
+            var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
 
-            var suggestedName;
-            if (isDOOHTemplate(t.name)) {
-                suggestedName = "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision;
-            } else {
-                suggestedName = brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision;
-            }
+            var suggestedName = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
+            suggestedName = suggestedName.replace(/\.aep$/i, ""); // Remove .aep for dialog
 
-            var saveFile = new File(app.project.file.parent.fsName + "/" + suggestedName + ".aep").saveDlg("Save Project As");
+            var saveFile = new File(joinPath(app.project.file.parent.fsName, suggestedName + ".aep")).saveDlg("Save Project As");
             if (saveFile) {
-                var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep"; // Ensure only one .aep
-                app.project.save(new File(savePath));
-                alert("Project saved as:\n" + new File(savePath).name);
-
-                // Update Inputs to match new file to keep in sync
-                // already in sync because we just used them
+                try {
+                    var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep";
+                    app.project.save(new File(savePath));
+                    alert("Project saved as:\n" + new File(savePath).name);
+                } catch (e) {
+                    alert("Error saving project:\n" + e.toString());
+                }
             }
         };
 
@@ -660,77 +937,91 @@
 
             if (type === "sunrise" && parsed && parsed.brand) {
                 renderName = parsed.brand + "_" + parsed.campaign + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
-                formatInfo = "PNG Sequence (RGB+Alpha)";
+                formatInfo = "PNG Sequence (select preset in Render Queue)";
             } else if (type === "interscroller" && parsed && parsed.brand) {
                 renderName = parsed.brand + "_" + parsed.campaign + "_CTA_InterScroller_" + parsed.version + "_" + parsed.revision;
-                formatInfo = "MP4 (H.264)";
+                formatInfo = "Video (select preset in Render Queue)";
             } else if (type === "dooh" && parsed && parsed.prefix) {
                 renderName = parsed.prefix + "_" + getDateString();
-                formatInfo = "MP4 (H.264)";
+                formatInfo = "Video (select preset in Render Queue)";
             } else {
                 renderName = projectName + "_" + getDateString();
-                formatInfo = "MP4 (H.264)";
+                formatInfo = "Video (select preset in Render Queue)";
             }
 
             var outputFolder = app.project.file.parent.fsName;
-            var rqItem = app.project.renderQueue.items.add(mainComp);
-            rqItem.outputModule(1).file = new File(outputFolder + "/" + renderName);
+            var outputPath = joinPath(outputFolder, renderName);
 
-            alert("Added to Render Queue!\n\nOutput: " + renderName + "\nFormat: " + formatInfo + "\n\nSelect your render preset in Render Queue.");
+            // Check if AME export is enabled
+            if (ameCheckbox.value) {
+                if (isAMEAvailable()) {
+                    if (queueToAME(mainComp, outputPath)) {
+                        alert("Queued to Adobe Media Encoder!\n\nOutput: " + renderName + "\n\nCheck AME for render settings.");
+                        return;
+                    }
+                }
+                // AME not available or failed - fall back
+                alert("Adobe Media Encoder not available.\nFalling back to After Effects Render Queue.");
+            }
+
+            // Add to AE Render Queue
+            if (addToRenderQueue(mainComp, outputPath)) {
+                alert("Added to Render Queue!\n\nOutput: " + renderName + "\n" + formatInfo);
+            }
         };
 
-        // Init
-        // Auto-detect from open project
+        // =====================================================================
+        // INIT: Auto-detect from open project
+        // =====================================================================
         if (app.project && app.project.file) {
-            var currentName = app.project.file.name.replace(/\.aep$/i, "");
-            var parsed = parseProjectName(currentName);
-            var mainComp = findMainComp();
+            try {
+                var currentName = app.project.file.name.replace(/\.aep$/i, "");
+                var parsed = parseProjectName(currentName);
+                var mainComp = findMainComp();
 
-            if (parsed && parsed.brand) {
-                // Determine template based on main comp size (most reliable)
-                if (mainComp) {
-                    var type = getTemplateType(mainComp.width, mainComp.height);
-                    for (var i = 0; i < templates.length; i++) {
-                        var t = templates[i];
-                        if (type === "sunrise" && t.width === 750 && t.height === 300) { templateDropdown.selection = i; break; }
-                        if (type === "interscroller" && t.width === 880 && t.height === 1912) { templateDropdown.selection = i; break; }
-                        if (type === "dooh" && t.width === 1920 && t.height === 1080 && mainComp.width === 1920) { templateDropdown.selection = i; break; }
-                        if (type === "dooh" && t.width === 1080 && t.height === 1920 && mainComp.width === 1080) { templateDropdown.selection = i; break; }
-                    }
-                }
-
-                // Pre-fill inputs
-                brandInput.text = parsed.brand;
-                if (parsed.campaign) campaignInput.text = parsed.campaign;
-                if (parsed.version) versionInput.text = parsed.version.replace("V", "");
-                if (parsed.revision) revisionInput.text = parsed.revision.replace("R", "");
-
-                // Attempt to find quarter if present
-                var parts = currentName.split("_");
-                if (parts.length > 2) {
-                    var q = parts[2]; // usually Brand_Camp_Q1_...
-                    for (var x = 0; x < quarterDropdown.items.length; x++) {
-                        if (quarterDropdown.items[x].text === q) {
-                            quarterDropdown.selection = x;
-                            break;
+                if (parsed && parsed.brand) {
+                    if (mainComp) {
+                        var type = getTemplateType(mainComp.width, mainComp.height);
+                        for (var i = 0; i < templates.length; i++) {
+                            var t = templates[i];
+                            if (type === "sunrise" && t.width === 750 && t.height === 300) { templateDropdown.selection = i; break; }
+                            if (type === "interscroller" && t.width === 880 && t.height === 1912) { templateDropdown.selection = i; break; }
+                            if (type === "dooh" && t.width === 1920 && t.height === 1080 && mainComp.width === 1920) { templateDropdown.selection = i; break; }
+                            if (type === "dooh" && t.width === 1080 && t.height === 1920 && mainComp.width === 1080) { templateDropdown.selection = i; break; }
                         }
                     }
+
+                    brandInput.text = parsed.brand;
+                    if (parsed.campaign) campaignInput.text = parsed.campaign;
+                    if (parsed.version) versionInput.text = parsed.version.replace(/^V/i, "");
+                    if (parsed.revision) revisionInput.text = parsed.revision.replace(/^R/i, "");
+
+                    if (parsed.quarter) {
+                        for (var x = 0; x < quarterDropdown.items.length; x++) {
+                            if (quarterDropdown.items[x].text === parsed.quarter) {
+                                quarterDropdown.selection = x;
+                                break;
+                            }
+                        }
+                    }
+                } else if (parsed && parsed.isDOOH && mainComp) {
+                    if (parsed.campaign) {
+                        brandInput.text = parsed.campaign;
+                    }
                 }
-            } else if (parsed && parsed.prefix && mainComp) {
-                // DOOH format: DOOH_ProjectName...
-                // Try to infer inputs
-                var p = parsed.prefix.split("_");
-                if (p.length >= 2) { // DOOH_Brand...
-                    brandInput.text = p[1]; // Guess brand is second part
-                }
-            }
+            } catch (e) { }
         }
 
         updateStatus();
         updatePreview();
 
         panel.onResizing = panel.onResize = function () { this.layout.resize(); };
-        if (panel instanceof Window) { panel.center(); panel.show(); } else { panel.layout.layout(true); }
+        if (panel instanceof Window) {
+            panel.center();
+            panel.show();
+        } else {
+            panel.layout.layout(true);
+        }
 
         return panel;
     }
@@ -738,3 +1029,37 @@
     buildUI(thisObj);
 
 })(this);
+
+/*
+================================================================================
+  HOW TO INSTALL & RUN
+================================================================================
+
+1. SAVE THE FILE:
+   - Save this file as "BigHappyLauncher_Templates.jsx"
+
+2. INSTALL LOCATION (choose one):
+   
+   A) For Panel (recommended - dockable):
+      - macOS: /Applications/Adobe After Effects [version]/Scripts/ScriptUI Panels/
+      - Windows: C:\Program Files\Adobe\Adobe After Effects [version]\Support Files\Scripts\ScriptUI Panels\
+   
+   B) For Script (run once):
+      - macOS: /Applications/Adobe After Effects [version]/Scripts/
+      - Windows: C:\Program Files\Adobe\Adobe After Effects [version]\Support Files\Scripts\
+
+3. ENABLE SCRIPT ACCESS:
+   - After Effects > Preferences > Scripting & Expressions
+   - Enable "Allow Scripts to Write Files and Access Network"
+
+4. RUN THE PANEL:
+   - Restart After Effects
+   - Go to Window > BigHappyLauncher_Templates.jsx
+   - Dock the panel wherever you prefer
+
+5. FIRST RUN:
+   - Click "Regenerate" to create template .aep files
+   - The templates will be saved to Documents/BH_Templates/
+
+================================================================================
+*/
