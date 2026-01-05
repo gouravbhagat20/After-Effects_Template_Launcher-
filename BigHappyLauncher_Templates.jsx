@@ -691,57 +691,6 @@
         title.alignment = ["center", "top"];
         try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
 
-        // Recent Files Dropdown (only show if there are recent files)
-        var recentFiles = loadRecentFiles();
-        var recentGrp = panel.add("group");
-        recentGrp.orientation = "row";
-        recentGrp.alignChildren = ["left", "center"];
-        recentGrp.alignment = ["fill", "top"];
-
-        var recentDropdown = recentGrp.add("dropdownlist", undefined, []);
-        recentDropdown.alignment = ["fill", "center"];
-        recentDropdown.helpTip = "Open a recently created/saved project";
-
-        function refreshRecentDropdown() {
-            var recents = loadRecentFiles();
-            recentDropdown.removeAll();
-            recentDropdown.add("item", "[ Open Recent Project... ]");
-            for (var i = 0; i < recents.length; i++) {
-                var f = new File(recents[i]);
-                recentDropdown.add("item", f.name); // Show just filename
-            }
-            recentDropdown.selection = 0;
-            // Hide if empty (only header exists)
-            // recentGrp.visible = recents.length > 0; // Optional: auto-hide
-        }
-        refreshRecentDropdown();
-
-        recentDropdown.onChange = function () {
-            if (recentDropdown.selection && recentDropdown.selection.index > 0) {
-                var recents = loadRecentFiles();
-                var path = recents[recentDropdown.selection.index - 1]; // -1 because of header
-                if (fileExists(path)) {
-                    if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
-                    app.open(new File(path));
-                    // Move to top of recent list since we just opened it
-                    addToRecentFiles(path);
-                    refreshRecentDropdown();
-
-                    // Sync UI with the newly opened project
-                    syncUIWithProject();
-
-                } else {
-                    showError("BH-2004", "File not found:\n" + path);
-                    // Remove from list if missing
-                    var cleanList = [];
-                    for (var k = 0; k < recents.length; k++) {
-                        if (recents[k] !== path) cleanList.push(recents[k]);
-                    }
-                    saveRecentFiles(cleanList);
-                    refreshRecentDropdown();
-                }
-            }
-        };
 
         // Main inputs container
         var mainGrp = panel.add("group");
@@ -1140,8 +1089,8 @@
 
                 // Add to recent files
                 addToRecentFiles(savePath);
-                // If the panel is persistent (palette), refresh the list
-                if (typeof refreshRecentDropdown === "function") refreshRecentDropdown();
+                // If the panel is persistent (palette), refresh the buttons
+                if (typeof refreshRecentButtons === "function") refreshRecentButtons();
 
             } catch (e) {
                 showError("BH-2004", e.toString());
@@ -1177,7 +1126,7 @@
 
                     // Add to recent files
                     addToRecentFiles(savePath);
-                    if (typeof refreshRecentDropdown === "function") refreshRecentDropdown();
+                    if (typeof refreshRecentButtons === "function") refreshRecentButtons();
                 } catch (e) {
                     showError("BH-2001", e.toString());
                 }
