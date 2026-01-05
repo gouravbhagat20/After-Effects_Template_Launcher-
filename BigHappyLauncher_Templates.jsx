@@ -1006,8 +1006,21 @@
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
-            var version = "V" + (parseInt(versionInput.text, 10) || 1);
-            var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
+
+            // Validate version and revision
+            var versionNum = parseInt(versionInput.text, 10);
+            var revisionNum = parseInt(revisionInput.text, 10);
+            if (isNaN(versionNum) || versionNum < 1 || versionNum > 999) {
+                showError("BH-4007");
+                return;
+            }
+            if (isNaN(revisionNum) || revisionNum < 1 || revisionNum > 999) {
+                showError("BH-4008");
+                return;
+            }
+
+            var version = "V" + versionNum;
+            var revision = "R" + revisionNum;
 
             var suggestedName = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
 
