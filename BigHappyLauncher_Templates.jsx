@@ -65,15 +65,25 @@
     // SECTION 2: PATH & IO UTILITIES
     // =========================================================================
 
-    var SEP = Folder.separator; // "/" on Mac, "\\" on Windows
+    // Get separator with fallback - Folder.separator can be undefined at load time
+    function getSeparator() {
+        try {
+            if (Folder.separator) return Folder.separator;
+        } catch (e) { }
+        // Fallback: detect OS
+        return ($.os && $.os.indexOf("Windows") !== -1) ? "\\" : "/";
+    }
+    var SEP = getSeparator();
 
     function joinPath(a, b) {
         if (!a) return b;
         if (!b) return a;
+        // Ensure SEP is valid
+        var sep = SEP || "\\";
         // Remove trailing separator from a, leading from b
         a = String(a).replace(/[\/\\]$/, "");
         b = String(b).replace(/^[\/\\]/, "");
-        return a + SEP + b;
+        return a + sep + b;
     }
 
     function fileExists(path) {
