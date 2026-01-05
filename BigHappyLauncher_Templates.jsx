@@ -91,6 +91,8 @@
         "BH-4004": { msg: "Invalid height value", fix: "Height must be between " + LIMITS.HEIGHT_MIN + " and " + LIMITS.HEIGHT_MAX },
         "BH-4005": { msg: "Invalid FPS value", fix: "FPS must be between " + LIMITS.FPS_MIN + " and " + LIMITS.FPS_MAX },
         "BH-4006": { msg: "Invalid duration value", fix: "Duration must be between " + LIMITS.DURATION_MIN + " and " + LIMITS.DURATION_MAX + " seconds" },
+        "BH-4007": { msg: "Invalid version number", fix: "Version must be a positive number (1-999)" },
+        "BH-4008": { msg: "Invalid revision number", fix: "Revision must be a positive number (1-999)" },
 
         // 5xxx - Settings Errors
         "BH-5001": { msg: "Failed to save settings", fix: "After Effects preferences may be locked or corrupted" },
