@@ -62,6 +62,81 @@
     };
 
     // =========================================================================
+    // SECTION 1B: ERROR CODES & HANDLING
+    // =========================================================================
+
+    var ERROR_CODES = {
+        // 1xxx - Template Errors
+        "BH-1001": { msg: "Template file not found", fix: "Click 'Regenerate' to recreate template files" },
+        "BH-1002": { msg: "Template folder does not exist", fix: "Click 'Folder...' to select or create a templates folder" },
+        "BH-1003": { msg: "Failed to generate template file", fix: "Check disk space and folder permissions" },
+        "BH-1004": { msg: "No templates available", fix: "Add a template using the '+' button" },
+
+        // 2xxx - Project Errors
+        "BH-2001": { msg: "Failed to save project", fix: "Check disk space, file permissions, or if file is in use" },
+        "BH-2002": { msg: "Cannot save to templates folder", fix: "Choose a different folder - templates folder is protected" },
+        "BH-2003": { msg: "No project currently open", fix: "Create a new project or open an existing one" },
+        "BH-2004": { msg: "Failed to open template", fix: "Regenerate templates or check file permissions" },
+
+        // 3xxx - Render Errors
+        "BH-3001": { msg: "Main composition not found", fix: "Ensure your project has a composition named 'Main'" },
+        "BH-3002": { msg: "Failed to add to Render Queue", fix: "Check After Effects render settings and try again" },
+        "BH-3003": { msg: "Adobe Media Encoder not available", fix: "AME requires AE CC 2014+. Item added to AE Render Queue instead" },
+        "BH-3004": { msg: "Failed to send to Adobe Media Encoder", fix: "Make sure AME is installed. Item remains in AE Render Queue" },
+
+        // 4xxx - Input/Validation Errors
+        "BH-4001": { msg: "Brand name is required", fix: "Enter a brand/client name in the Brand field" },
+        "BH-4002": { msg: "Template name is required", fix: "Enter a name for the template" },
+        "BH-4003": { msg: "Invalid width value", fix: "Width must be between " + LIMITS.WIDTH_MIN + " and " + LIMITS.WIDTH_MAX },
+        "BH-4004": { msg: "Invalid height value", fix: "Height must be between " + LIMITS.HEIGHT_MIN + " and " + LIMITS.HEIGHT_MAX },
+        "BH-4005": { msg: "Invalid FPS value", fix: "FPS must be between " + LIMITS.FPS_MIN + " and " + LIMITS.FPS_MAX },
+        "BH-4006": { msg: "Invalid duration value", fix: "Duration must be between " + LIMITS.DURATION_MIN + " and " + LIMITS.DURATION_MAX + " seconds" },
+
+        // 5xxx - Settings Errors
+        "BH-5001": { msg: "Failed to save settings", fix: "After Effects preferences may be locked or corrupted" },
+        "BH-5002": { msg: "Failed to load templates data", fix: "Using default templates. Your custom templates may have been reset" }
+    };
+
+    /**
+     * Show error alert with code, description, and solution
+     * @param {string} code - Error code like "BH-1001"
+     * @param {string} [details] - Optional additional details about the error
+     */
+    function showError(code, details) {
+        var error = ERROR_CODES[code];
+        if (!error) {
+            alert("Unknown Error\n\nCode: " + code + (details ? "\n\nDetails: " + details : ""));
+            return;
+        }
+
+        var message = "Error " + code + "\n";
+        message += "─────────────────────\n\n";
+        message += error.msg + "\n\n";
+        if (details) {
+            message += "Details: " + details + "\n\n";
+        }
+        message += "Solution:\n" + error.fix;
+
+        alert(message);
+    }
+
+    /**
+     * Show warning (non-critical issue)
+     * @param {string} code - Error code
+     * @param {string} [details] - Optional details
+     */
+    function showWarning(code, details) {
+        var error = ERROR_CODES[code];
+        if (!error) return;
+
+        var message = "Warning " + code + ": " + error.msg;
+        if (details) message += "\n" + details;
+        message += "\n\n" + error.fix;
+
+        alert(message);
+    }
+
+    // =========================================================================
     // SECTION 2: PATH & IO UTILITIES
     // =========================================================================
 
@@ -362,7 +437,7 @@
 
             return filePath;
         } catch (e) {
-            alert("Error generating template:\n" + e.toString());
+            showError("BH-1003", e.toString());
             return null;
         }
     }
@@ -450,7 +525,7 @@
         okBtn.onClick = function () {
             var name = nameInput.text.replace(/^\s+|\s+$/g, "");
             if (!name) {
-                alert("Please enter a template name.");
+                showError("BH-4002");
                 return;
             }
 
@@ -461,19 +536,19 @@
 
             // Validation
             if (isNaN(width) || width < LIMITS.WIDTH_MIN || width > LIMITS.WIDTH_MAX) {
-                alert("Width must be a number between " + LIMITS.WIDTH_MIN + " and " + LIMITS.WIDTH_MAX);
+                showError("BH-4003");
                 return;
             }
             if (isNaN(height) || height < LIMITS.HEIGHT_MIN || height > LIMITS.HEIGHT_MAX) {
-                alert("Height must be a number between " + LIMITS.HEIGHT_MIN + " and " + LIMITS.HEIGHT_MAX);
+                showError("BH-4004");
                 return;
             }
             if (isNaN(fps) || fps < LIMITS.FPS_MIN || fps > LIMITS.FPS_MAX) {
-                alert("FPS must be a number between " + LIMITS.FPS_MIN + " and " + LIMITS.FPS_MAX);
+                showError("BH-4005");
                 return;
             }
             if (isNaN(duration) || duration < LIMITS.DURATION_MIN || duration > LIMITS.DURATION_MAX) {
-                alert("Duration must be a number between " + LIMITS.DURATION_MIN + " and " + LIMITS.DURATION_MAX);
+                showError("BH-4006");
                 return;
             }
 
@@ -520,7 +595,7 @@
             om.file = new File(outputPath);
             return rqItem;
         } catch (e) {
-            alert("Error adding to Render Queue:\n" + e.toString());
+            showError("BH-3002", e.toString());
             return null;
         }
     }
@@ -919,13 +994,13 @@
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
             if (!t.path || !fileExists(t.path)) {
-                alert("Template not ready. Click 'Regenerate' first.");
+                showError("BH-1001", t.path);
                 return;
             }
 
             var brand = sanitizeName(brandInput.text);
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
-            if (!brand) { alert("Enter a Brand name."); return; }
+            if (!brand) { showError("BH-4001"); return; }
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
@@ -950,7 +1025,7 @@
                 saveFile = new File(savePath);
 
                 if (isSameFolder(savePath, t.path)) {
-                    alert("Cannot save to templates folder.");
+                    showError("BH-2002");
                     app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
                     return;
                 }
@@ -963,13 +1038,13 @@
 
                 if (panel instanceof Window) panel.close();
             } catch (e) {
-                alert("Error creating project:\n" + e.toString());
+                showError("BH-2004", e.toString());
             }
         };
 
         saveAsBtn.onClick = function () {
             if (!app.project || !app.project.file) {
-                alert("No project open.");
+                showError("BH-2003");
                 return;
             }
             if (!templateDropdown.selection) return;
@@ -977,7 +1052,7 @@
 
             var brand = sanitizeName(brandInput.text);
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
-            if (!brand) { alert("Enter a Brand name."); return; }
+            if (!brand) { showError("BH-4001"); return; }
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
@@ -994,20 +1069,20 @@
                     app.project.save(new File(savePath));
                     alert("Project saved as:\n" + new File(savePath).name);
                 } catch (e) {
-                    alert("Error saving project:\n" + e.toString());
+                    showError("BH-2001", e.toString());
                 }
             }
         };
 
         renderBtn.onClick = function () {
             if (!app.project || !app.project.file) {
-                alert("No project open. Create or open a project first.");
+                showError("BH-2003");
                 return;
             }
 
             var mainComp = findMainComp();
             if (!mainComp) {
-                alert("Could not find 'Main' composition.");
+                showError("BH-3001");
                 return;
             }
 
@@ -1047,10 +1122,10 @@
                         alert("Sent to Adobe Media Encoder!\n\nOutput: " + renderName + "\n\nFormat depends on AME preset settings.");
                         return;
                     } else {
-                        alert("Failed to send to AME.\nItem remains in AE Render Queue.");
+                        showError("BH-3004");
                     }
                 } else {
-                    alert("queueInAME not available in this AE version.\nItem added to AE Render Queue instead.\n\nOutput: " + renderName);
+                    showWarning("BH-3003", "Output: " + renderName);
                     return;
                 }
             }
