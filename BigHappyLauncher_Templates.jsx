@@ -324,17 +324,35 @@
             var mainComp = app.project.items.addComp("Main", template.width, template.height, 1, template.duration, template.fps);
             mainComp.parentFolder = compsFolder;
 
-            var infoText = template.name + "\n" + template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s";
-            var textLayer = mainComp.layers.addText(infoText);
+            // Create two separate text layers to avoid leading/overlap issues
+            var titleText = template.name;
+            var detailsText = template.width + "x" + template.height + " | " + template.fps + "fps | " + template.duration + "s";
 
+            // Title layer (top)
+            var titleLayer = mainComp.layers.addText(titleText);
             try {
-                var textProp = textLayer.property("Source Text");
-                var textDoc = textProp.value;
-                textDoc.justification = ParagraphJustification.CENTER_JUSTIFY;
-                textProp.setValue(textDoc);
+                var titleProp = titleLayer.property("Source Text");
+                var titleDoc = titleProp.value;
+                titleDoc.fontSize = 55;
+                titleDoc.tracking = -10;
+                titleDoc.justification = ParagraphJustification.CENTER_JUSTIFY;
+                titleDoc.fillColor = [1, 0, 0];
+                titleProp.setValue(titleDoc);
             } catch (e) { }
+            titleLayer.property("Position").setValue([template.width / 2, template.height / 2 - 35]);
 
-            textLayer.property("Position").setValue([template.width / 2, template.height / 2]);
+            // Details layer (bottom)
+            var detailsLayer = mainComp.layers.addText(detailsText);
+            try {
+                var detailsProp = detailsLayer.property("Source Text");
+                var detailsDoc = detailsProp.value;
+                detailsDoc.fontSize = 55;
+                detailsDoc.tracking = -10;
+                detailsDoc.justification = ParagraphJustification.CENTER_JUSTIFY;
+                detailsDoc.fillColor = [1, 0, 0];
+                detailsProp.setValue(detailsDoc);
+            } catch (e) { }
+            detailsLayer.property("Position").setValue([template.width / 2, template.height / 2 + 35]);
 
             var fileName = template.name.replace(/\s+/g, "_") + "_" + template.width + "x" + template.height + ".aep";
             var filePath = joinPath(folderPath, fileName);
@@ -349,22 +367,31 @@
         }
     }
 
-    function ensureTemplatesExist(templates, folderPath) {
+    function ensureTemplatesExist(templates, folderPath, forceRegenerate) {
         var folder = new Folder(folderPath);
         if (!folder.exists) folder.create();
 
         var generated = [];
         for (var i = 0; i < templates.length; i++) {
             var t = templates[i];
-            if (t.path && new File(t.path).exists) continue;
 
             var expectedName = t.name.replace(/\s+/g, "_") + "_" + t.width + "x" + t.height + ".aep";
             var expectedPath = joinPath(folderPath, expectedName);
 
-            if (new File(expectedPath).exists) {
-                templates[i].path = expectedPath;
-                generated.push(t.name);
-                continue;
+            // If force regenerate, delete existing file first
+            if (forceRegenerate) {
+                try {
+                    var existingFile = new File(expectedPath);
+                    if (existingFile.exists) existingFile.remove();
+                } catch (e) { }
+            } else {
+                // Skip if file already exists
+                if (t.path && new File(t.path).exists) continue;
+                if (new File(expectedPath).exists) {
+                    templates[i].path = expectedPath;
+                    generated.push(t.name);
+                    continue;
+                }
             }
 
             var newPath = generateTemplateFile(t, folderPath);
@@ -722,47 +749,54 @@
             previewText.text = filename;
         }
 
-        function checkVersion() {
+        function checkRevision() {
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
             var brand = sanitizeName(brandInput.text) || "Brand";
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
-            var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
+            var version = "V" + (parseInt(versionInput.text, 10) || 1);
 
             var saveFolder = getDefaultSaveFolder();
             var isDOOH = isDOOHTemplate(t.name);
-            var maxV = 50;
-            var foundV = 1;
+            var maxR = 50;
+            var foundR = 1;
 
-            for (var v = 1; v <= maxV; v++) {
-                var filename = buildFilename(brand, campaign, quarter, size, "V" + v, revision, isDOOH);
+            // Find next available revision for the current version
+            for (var r = 1; r <= maxR; r++) {
+                var filename = buildFilename(brand, campaign, quarter, size, version, "R" + r, isDOOH);
                 if (fileExists(joinPath(saveFolder, filename))) {
-                    foundV = v + 1;
+                    foundR = r + 1;
                 } else {
                     break;
                 }
             }
 
-            versionInput.text = String(foundV);
+            revisionInput.text = String(foundR);
             updatePreview();
         }
 
         // Event bindings
         brandInput.onChanging = campaignInput.onChanging = versionInput.onChanging = revisionInput.onChanging = updatePreview;
-        brandInput.onChange = campaignInput.onChange = quarterDropdown.onChange = function () { checkVersion(); };
-        templateDropdown.onChange = function () { updateStatus(); checkVersion(); };
+        brandInput.onChange = campaignInput.onChange = quarterDropdown.onChange = function () { checkRevision(); };
+        templateDropdown.onChange = function () { updateStatus(); checkRevision(); };
+
+        // When Version is manually changed, reset Revision to 1 and find next available
+        versionInput.onChange = function () {
+            revisionInput.text = "1";
+            checkRevision();
+        };
 
         ameCheckbox.onClick = function () {
             setSetting(AME_ENABLED_KEY, String(ameCheckbox.value));
         };
 
         regenBtn.onClick = function () {
-            if (!confirm("Regenerate ALL templates?\nFolder: " + templatesFolder)) return;
+            if (!confirm("Regenerate ALL templates?\\nThis will delete and recreate template files.\\nFolder: " + templatesFolder)) return;
             setStatus("Regenerating...", [0.6, 0.6, 0.6]);
             for (var i = 0; i < templates.length; i++) templates[i].path = "";
-            var result = ensureTemplatesExist(templates, templatesFolder);
+            var result = ensureTemplatesExist(templates, templatesFolder, true); // Force regenerate
             templates = result.templates;
             setStatus("Generated " + result.generated.length, [0.5, 0.8, 0.5]);
             refreshDropdown();
