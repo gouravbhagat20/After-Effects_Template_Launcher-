@@ -1249,13 +1249,10 @@
         // INIT: Auto-detect from open project
         // =====================================================================
         function syncUIWithProject() {
-            alert("syncUIWithProject called"); // DEBUG
             if (app.project && app.project.file) {
                 try {
                     var currentName = app.project.file.name.replace(/\.aep$/i, "");
-                    alert("Project Name: " + currentName); // DEBUG
                     var parsed = parseProjectName(currentName);
-                    alert("Parsed: " + (parsed ? "Yes" : "No")); // DEBUG
                     var mainComp = findMainComp();
 
                     if (parsed && parsed.brand) {
@@ -1288,12 +1285,8 @@
                         if (parsed.campaign) {
                             brandInput.text = parsed.campaign;
                         }
-                    } else {
-                        // alert("Project name did not match expected pattern (_V#_R# at end)"); // DEBUG
                     }
-                } catch (e) {
-                    alert("Error in syncUIWithProject: " + e.toString());
-                }
+                } catch (e) { }
             }
             updateStatus();
             updatePreview();
