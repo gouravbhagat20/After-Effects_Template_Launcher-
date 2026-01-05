@@ -45,6 +45,8 @@
     var TEMPLATES_FOLDER_KEY = "templates_folder";
     var DEFAULT_SAVE_FOLDER_KEY = "default_save_folder";
     var AME_ENABLED_KEY = "ame_enabled";
+    var RECENT_FILES_KEY = "recent_files";
+    var MAX_RECENT_FILES = 10;
 
     var DEFAULT_TEMPLATES = [
         { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "" },
@@ -91,8 +93,6 @@
         "BH-4004": { msg: "Invalid height value", fix: "Height must be between " + LIMITS.HEIGHT_MIN + " and " + LIMITS.HEIGHT_MAX },
         "BH-4005": { msg: "Invalid FPS value", fix: "FPS must be between " + LIMITS.FPS_MIN + " and " + LIMITS.FPS_MAX },
         "BH-4006": { msg: "Invalid duration value", fix: "Duration must be between " + LIMITS.DURATION_MIN + " and " + LIMITS.DURATION_MAX + " seconds" },
-        "BH-4007": { msg: "Invalid version number", fix: "Version must be a positive number (1-999)" },
-        "BH-4008": { msg: "Invalid revision number", fix: "Revision must be a positive number (1-999)" },
 
         // 5xxx - Settings Errors
         "BH-5001": { msg: "Failed to save settings", fix: "After Effects preferences may be locked or corrupted" },
@@ -224,6 +224,52 @@
 
     function getDefaultSaveFolder() {
         return getSetting(DEFAULT_SAVE_FOLDER_KEY, Folder.myDocuments.fsName);
+    }
+
+    // =========================================================================
+    // SECTION 2C: RECENT FILES
+    // =========================================================================
+
+    function loadRecentFiles() {
+        try {
+            var data = getSetting(RECENT_FILES_KEY, "[]");
+            var list = eval("(" + data + ")");
+            // Filter out non-existing files to keep list clean
+            var cleanList = [];
+            for (var i = 0; i < list.length; i++) {
+                if (fileExists(list[i])) cleanList.push(list[i]);
+            }
+            if (cleanList.length !== list.length) saveRecentFiles(cleanList);
+            return cleanList;
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveRecentFiles(list) {
+        setSetting(RECENT_FILES_KEY, jsonStringify(list));
+    }
+
+    function addToRecentFiles(path) {
+        if (!path) return;
+        var list = loadRecentFiles();
+
+        // Remove if already exists (to move to top)
+        for (var i = list.length - 1; i >= 0; i--) {
+            if (list[i].toLowerCase() === path.toLowerCase()) {
+                list.splice(i, 1);
+            }
+        }
+
+        // Add to top
+        list.unshift(path);
+
+        // Limit size
+        if (list.length > MAX_RECENT_FILES) {
+            list = list.slice(0, MAX_RECENT_FILES);
+        }
+
+        saveRecentFiles(list);
     }
 
     // =========================================================================
@@ -645,6 +691,54 @@
         title.alignment = ["center", "top"];
         try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
 
+        // Recent Files Dropdown (only show if there are recent files)
+        var recentFiles = loadRecentFiles();
+        var recentGrp = panel.add("group");
+        recentGrp.orientation = "row";
+        recentGrp.alignChildren = ["left", "center"];
+        recentGrp.alignment = ["fill", "top"];
+
+        var recentDropdown = recentGrp.add("dropdownlist", undefined, []);
+        recentDropdown.alignment = ["fill", "center"];
+        recentDropdown.helpTip = "Open a recently created/saved project";
+
+        function refreshRecentDropdown() {
+            var recents = loadRecentFiles();
+            recentDropdown.removeAll();
+            recentDropdown.add("item", "[ Open Recent Project... ]");
+            for (var i = 0; i < recents.length; i++) {
+                var f = new File(recents[i]);
+                recentDropdown.add("item", f.name); // Show just filename
+            }
+            recentDropdown.selection = 0;
+            // Hide if empty (only header exists)
+            // recentGrp.visible = recents.length > 0; // Optional: auto-hide
+        }
+        refreshRecentDropdown();
+
+        recentDropdown.onChange = function () {
+            if (recentDropdown.selection && recentDropdown.selection.index > 0) {
+                var recents = loadRecentFiles();
+                var path = recents[recentDropdown.selection.index - 1]; // -1 because of header
+                if (fileExists(path)) {
+                    if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
+                    app.open(new File(path));
+                    // Move to top of recent list since we just opened it
+                    addToRecentFiles(path);
+                    refreshRecentDropdown();
+                } else {
+                    showError("BH-2004", "File not found:\n" + path);
+                    // Remove from list if missing
+                    var cleanList = [];
+                    for (var k = 0; k < recents.length; k++) {
+                        if (recents[k] !== path) cleanList.push(recents[k]);
+                    }
+                    saveRecentFiles(cleanList);
+                    refreshRecentDropdown();
+                }
+            }
+        };
+
         // Main inputs container
         var mainGrp = panel.add("group");
         mainGrp.orientation = "column";
@@ -1006,21 +1100,8 @@
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var size = t.width + "x" + t.height;
-
-            // Validate version and revision
-            var versionNum = parseInt(versionInput.text, 10);
-            var revisionNum = parseInt(revisionInput.text, 10);
-            if (isNaN(versionNum) || versionNum < 1 || versionNum > 999) {
-                showError("BH-4007");
-                return;
-            }
-            if (isNaN(revisionNum) || revisionNum < 1 || revisionNum > 999) {
-                showError("BH-4008");
-                return;
-            }
-
-            var version = "V" + versionNum;
-            var revision = "R" + revisionNum;
+            var version = "V" + (parseInt(versionInput.text, 10) || 1);
+            var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
 
             var suggestedName = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
 
@@ -1052,6 +1133,12 @@
                 if (mainComp) mainComp.openInViewer();
 
                 if (panel instanceof Window) panel.close();
+
+                // Add to recent files
+                addToRecentFiles(savePath);
+                // If the panel is persistent (palette), refresh the list
+                if (typeof refreshRecentDropdown === "function") refreshRecentDropdown();
+
             } catch (e) {
                 showError("BH-2004", e.toString());
             }
@@ -1083,11 +1170,16 @@
                     var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep";
                     app.project.save(new File(savePath));
                     alert("Project saved as:\n" + new File(savePath).name);
+
+                    // Add to recent files
+                    addToRecentFiles(savePath);
+                    if (typeof refreshRecentDropdown === "function") refreshRecentDropdown();
                 } catch (e) {
                     showError("BH-2001", e.toString());
                 }
             }
         };
+
 
         renderBtn.onClick = function () {
             if (!app.project || !app.project.file) {
