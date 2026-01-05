@@ -594,6 +594,7 @@
         var templateDropdown = tmplGrp.add("dropdownlist", undefined, []);
         templateDropdown.alignment = ["fill", "center"];
         templateDropdown.preferredSize.height = 25;
+        templateDropdown.helpTip = "Select a template with predefined dimensions, FPS, and duration";
 
         function refreshDropdown() {
             var prevIdx = templateDropdown.selection ? templateDropdown.selection.index : 0;
@@ -608,7 +609,9 @@
         refreshDropdown();
 
         var brandInput = addRow(mainGrp, "Brand:", "");
+        brandInput.helpTip = "Enter the brand/client name (required)";
         var campaignInput = addRow(mainGrp, "Campaign:", "");
+        campaignInput.helpTip = "Enter the campaign or project name";
 
         // Quarter row
         var qRow = mainGrp.add("group");
@@ -619,6 +622,7 @@
         var quarterDropdown = qRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
         quarterDropdown.selection = 0;
         quarterDropdown.preferredSize.width = 70;
+        quarterDropdown.helpTip = "Select the fiscal quarter for this project";
 
         // Version & Revision row
         var vrRow = mainGrp.add("group");
@@ -628,10 +632,12 @@
         verLbl.preferredSize.width = 65;
         var versionInput = vrRow.add("edittext", undefined, "1");
         versionInput.preferredSize.width = 50;
+        versionInput.helpTip = "Major version number (for significant creative changes)";
         var revLbl = vrRow.add("statictext", undefined, "Revision:");
         revLbl.preferredSize.width = 60;
         var revisionInput = vrRow.add("edittext", undefined, "1");
         revisionInput.preferredSize.width = 50;
+        revisionInput.helpTip = "Revision number (auto-increments for minor tweaks)";
 
         // Divider
         var div = panel.add("panel", [0, 0, 100, 1]);
@@ -652,10 +658,12 @@
         var createBtn = btnGroup.add("button", undefined, "CREATE");
         createBtn.preferredSize.height = 35;
         createBtn.preferredSize.width = 100;
+        createBtn.helpTip = "Create a new project from the selected template";
         try { createBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
         var saveAsBtn = btnGroup.add("button", undefined, "SAVE AS...");
         saveAsBtn.preferredSize.height = 35;
+        saveAsBtn.helpTip = "Save the current project with the generated filename";
         try { saveAsBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
         // Status
@@ -671,16 +679,22 @@
 
         var addBtn = tmplMgmt1.add("button", undefined, "+");
         addBtn.preferredSize = [25, 22];
+        addBtn.helpTip = "Add a new template";
         var editBtn = tmplMgmt1.add("button", undefined, "Edit");
         editBtn.preferredSize = [40, 22];
+        editBtn.helpTip = "Edit selected template settings";
         var dupBtn = tmplMgmt1.add("button", undefined, "Dup");
         dupBtn.preferredSize = [35, 22];
+        dupBtn.helpTip = "Duplicate selected template";
         var delBtn = tmplMgmt1.add("button", undefined, "Del");
         delBtn.preferredSize = [35, 22];
+        delBtn.helpTip = "Delete selected template";
         var upBtn = tmplMgmt1.add("button", undefined, "▲");
         upBtn.preferredSize = [22, 22];
+        upBtn.helpTip = "Move template up in list";
         var downBtn = tmplMgmt1.add("button", undefined, "▼");
         downBtn.preferredSize = [22, 22];
+        downBtn.helpTip = "Move template down in list";
 
         // Template management row 2
         var tmplMgmt2 = panel.add("group");
@@ -690,19 +704,23 @@
 
         var regenBtn = tmplMgmt2.add("button", undefined, "Regenerate");
         regenBtn.preferredSize.height = 22;
+        regenBtn.helpTip = "Regenerate all template .aep files (use if templates are missing)";
         var folderBtn = tmplMgmt2.add("button", undefined, "Folder...");
         folderBtn.preferredSize.height = 22;
+        folderBtn.helpTip = "Choose folder where template files are stored";
 
         // AME checkbox
         var ameGrp = panel.add("group");
         ameGrp.alignment = ["center", "top"];
         var ameCheckbox = ameGrp.add("checkbox", undefined, "Send to AME after queuing");
         ameCheckbox.value = getSetting(AME_ENABLED_KEY, "false") === "true";
+        ameCheckbox.helpTip = "Send render to Adobe Media Encoder (renders in background, keeps AE free)";
 
         // Render button
         var renderBtn = panel.add("button", undefined, "ADD TO RENDER QUEUE");
         renderBtn.preferredSize.height = 28;
         renderBtn.alignment = ["fill", "top"];
+        renderBtn.helpTip = "Add the Main comp to the render queue with auto-generated output name";
         try { renderBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
 
         // =====================================================================
