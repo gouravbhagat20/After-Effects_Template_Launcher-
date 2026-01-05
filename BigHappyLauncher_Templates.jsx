@@ -726,6 +726,10 @@
                     // Move to top of recent list since we just opened it
                     addToRecentFiles(path);
                     refreshRecentDropdown();
+
+                    // Sync UI with the newly opened project
+                    syncUIWithProject();
+
                 } else {
                     showError("BH-2004", "File not found:\n" + path);
                     // Remove from list if missing
@@ -1244,47 +1248,61 @@
         // =====================================================================
         // INIT: Auto-detect from open project
         // =====================================================================
-        if (app.project && app.project.file) {
-            try {
-                var currentName = app.project.file.name.replace(/\.aep$/i, "");
-                var parsed = parseProjectName(currentName);
-                var mainComp = findMainComp();
+        function syncUIWithProject() {
+            alert("syncUIWithProject called"); // DEBUG
+            if (app.project && app.project.file) {
+                try {
+                    var currentName = app.project.file.name.replace(/\.aep$/i, "");
+                    alert("Project Name: " + currentName); // DEBUG
+                    var parsed = parseProjectName(currentName);
+                    alert("Parsed: " + (parsed ? "Yes" : "No")); // DEBUG
+                    var mainComp = findMainComp();
 
-                if (parsed && parsed.brand) {
-                    if (mainComp) {
-                        var type = getTemplateType(mainComp.width, mainComp.height);
-                        for (var i = 0; i < templates.length; i++) {
-                            var t = templates[i];
-                            if (type === "sunrise" && t.width === 750 && t.height === 300) { templateDropdown.selection = i; break; }
-                            if (type === "interscroller" && t.width === 880 && t.height === 1912) { templateDropdown.selection = i; break; }
-                            if (type === "dooh" && t.width === 1920 && t.height === 1080 && mainComp.width === 1920) { templateDropdown.selection = i; break; }
-                            if (type === "dooh" && t.width === 1080 && t.height === 1920 && mainComp.width === 1080) { templateDropdown.selection = i; break; }
-                        }
-                    }
-
-                    brandInput.text = parsed.brand;
-                    if (parsed.campaign) campaignInput.text = parsed.campaign;
-                    if (parsed.version) versionInput.text = parsed.version.replace(/^V/i, "");
-                    if (parsed.revision) revisionInput.text = parsed.revision.replace(/^R/i, "");
-
-                    if (parsed.quarter) {
-                        for (var x = 0; x < quarterDropdown.items.length; x++) {
-                            if (quarterDropdown.items[x].text === parsed.quarter) {
-                                quarterDropdown.selection = x;
-                                break;
+                    if (parsed && parsed.brand) {
+                        // alert("Brand found: " + parsed.brand); // DEBUG
+                        if (mainComp) {
+                            var type = getTemplateType(mainComp.width, mainComp.height);
+                            for (var i = 0; i < templates.length; i++) {
+                                var t = templates[i];
+                                if (type === "sunrise" && t.width === 750 && t.height === 300) { templateDropdown.selection = i; break; }
+                                if (type === "interscroller" && t.width === 880 && t.height === 1912) { templateDropdown.selection = i; break; }
+                                if (type === "dooh" && t.width === 1920 && t.height === 1080 && mainComp.width === 1920) { templateDropdown.selection = i; break; }
+                                if (type === "dooh" && t.width === 1080 && t.height === 1920 && mainComp.width === 1080) { templateDropdown.selection = i; break; }
                             }
                         }
+
+                        brandInput.text = parsed.brand;
+                        if (parsed.campaign) campaignInput.text = parsed.campaign;
+                        if (parsed.version) versionInput.text = parsed.version.replace(/^V/i, "");
+                        if (parsed.revision) revisionInput.text = parsed.revision.replace(/^R/i, "");
+
+                        if (parsed.quarter) {
+                            for (var x = 0; x < quarterDropdown.items.length; x++) {
+                                if (quarterDropdown.items[x].text === parsed.quarter) {
+                                    quarterDropdown.selection = x;
+                                    break;
+                                }
+                            }
+                        }
+                    } else if (parsed && parsed.isDOOH && mainComp) {
+                        if (parsed.campaign) {
+                            brandInput.text = parsed.campaign;
+                        }
+                    } else {
+                        // alert("Project name did not match expected pattern (_V#_R# at end)"); // DEBUG
                     }
-                } else if (parsed && parsed.isDOOH && mainComp) {
-                    if (parsed.campaign) {
-                        brandInput.text = parsed.campaign;
-                    }
+                } catch (e) {
+                    alert("Error in syncUIWithProject: " + e.toString());
                 }
-            } catch (e) { }
+            }
+            updateStatus();
+            updatePreview();
         }
 
-        updateStatus();
-        updatePreview();
+        // =====================================================================
+        // INIT: Auto-detect from open project
+        // =====================================================================
+        syncUIWithProject();
 
         panel.onResizing = panel.onResize = function () { this.layout.resize(); };
         if (panel instanceof Window) {
