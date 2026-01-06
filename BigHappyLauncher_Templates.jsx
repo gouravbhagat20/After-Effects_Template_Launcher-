@@ -774,6 +774,79 @@
         }
         refreshDropdown();
 
+        // =====================================================================
+        // TEMPLATE PREVIEW PANEL
+        // =====================================================================
+        var previewPanel = mainGrp.add("group");
+        previewPanel.orientation = "row";
+        previewPanel.alignChildren = ["center", "center"];
+        previewPanel.spacing = 10;
+
+        // Aspect ratio visual (canvas simulation using panel)
+        var aspectBox = previewPanel.add("panel", undefined, "");
+        aspectBox.preferredSize = [60, 40];
+        aspectBox.helpTip = "Template aspect ratio preview";
+
+        // Dimension info text
+        var dimInfoGrp = previewPanel.add("group");
+        dimInfoGrp.orientation = "column";
+        dimInfoGrp.alignChildren = ["left", "center"];
+        dimInfoGrp.spacing = 2;
+        var dimText = dimInfoGrp.add("statictext", undefined, "1920 x 1080");
+        var fpsText = dimInfoGrp.add("statictext", undefined, "24 fps | 15s");
+        var ratioText = dimInfoGrp.add("statictext", undefined, "16:9");
+        try {
+            dimText.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11);
+            fpsText.graphics.foregroundColor = fpsText.graphics.newPen(fpsText.graphics.PenType.SOLID_COLOR, [0.6, 0.6, 0.6], 1);
+            ratioText.graphics.foregroundColor = ratioText.graphics.newPen(ratioText.graphics.PenType.SOLID_COLOR, [0.5, 0.8, 0.5], 1);
+        } catch (e) { }
+
+        /**
+         * Calculate GCD for aspect ratio
+         */
+        function gcd(a, b) {
+            return b === 0 ? a : gcd(b, a % b);
+        }
+
+        /**
+         * Update template preview visual
+         */
+        function updateTemplatePreview() {
+            if (!templateDropdown.selection || !templates.length) {
+                dimText.text = "No template";
+                fpsText.text = "--";
+                ratioText.text = "--";
+                aspectBox.preferredSize = [40, 40];
+                return;
+            }
+            var t = templates[templateDropdown.selection.index];
+
+            // Update dimension text
+            dimText.text = t.width + " x " + t.height;
+            fpsText.text = t.fps + " fps | " + t.duration + "s";
+
+            // Calculate aspect ratio
+            var divisor = gcd(t.width, t.height);
+            var ratioW = t.width / divisor;
+            var ratioH = t.height / divisor;
+            // Simplify common ratios
+            if (ratioW === 16 && ratioH === 9) ratioText.text = "16:9 (HD)";
+            else if (ratioW === 9 && ratioH === 16) ratioText.text = "9:16 (Vertical)";
+            else if (ratioW === 4 && ratioH === 3) ratioText.text = "4:3 (Standard)";
+            else if (ratioW === 1 && ratioH === 1) ratioText.text = "1:1 (Square)";
+            else ratioText.text = ratioW + ":" + ratioH;
+
+            // Update aspect box size (max 60px, proportional)
+            var maxSize = 60;
+            var scale = Math.min(maxSize / t.width, maxSize / t.height);
+            var boxW = Math.max(20, Math.round(t.width * scale));
+            var boxH = Math.max(20, Math.round(t.height * scale));
+            aspectBox.preferredSize = [boxW, boxH];
+
+            // Refresh layout
+            try { previewPanel.layout.layout(true); } catch (e) { }
+        }
+
         var brandInput = addRow(mainGrp, "Brand:", "");
         brandInput.helpTip = "Enter the brand/client name (required)";
         var campaignInput = addRow(mainGrp, "Campaign:", "");
@@ -824,12 +897,12 @@
         var createBtn = btnGroup.add("button", undefined, "CREATE");
         createBtn.preferredSize.height = 35;
         createBtn.preferredSize.width = 100;
-        createBtn.helpTip = "Create a new project from the selected template";
+        createBtn.helpTip = "Create a new project from the selected template (Ctrl+Enter)";
         try { createBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
         var saveAsBtn = btnGroup.add("button", undefined, "SAVE AS...");
         saveAsBtn.preferredSize.height = 35;
-        saveAsBtn.helpTip = "Save the current project with the generated filename";
+        saveAsBtn.helpTip = "Save the current project with the generated filename (Ctrl+S)";
         try { saveAsBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
         // Status
@@ -886,7 +959,7 @@
         var renderBtn = panel.add("button", undefined, "ADD TO RENDER QUEUE");
         renderBtn.preferredSize.height = 28;
         renderBtn.alignment = ["fill", "top"];
-        renderBtn.helpTip = "Add the Main comp to the render queue with auto-generated output name";
+        renderBtn.helpTip = "Add the Main comp to the render queue with auto-generated output name (Ctrl+R)";
         try { renderBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
 
         // =====================================================================
@@ -964,13 +1037,34 @@
         // Event bindings
         brandInput.onChanging = campaignInput.onChanging = versionInput.onChanging = revisionInput.onChanging = updatePreview;
         brandInput.onChange = campaignInput.onChange = quarterDropdown.onChange = function () { checkRevision(); };
-        templateDropdown.onChange = function () { updateStatus(); checkRevision(); };
+        templateDropdown.onChange = function () { updateStatus(); updateTemplatePreview(); checkRevision(); };
 
         // When Version is manually changed, reset Revision to 1 and find next available
         versionInput.onChange = function () {
             revisionInput.text = "1";
             checkRevision();
         };
+
+        // =====================================================================
+        // KEYBOARD SHORTCUTS
+        // =====================================================================
+        panel.addEventListener("keydown", function (e) {
+            // Ctrl+Enter = Create new project
+            if (e.ctrlKey && e.keyName === "Enter") {
+                createBtn.notify("onClick");
+                e.preventDefault();
+            }
+            // Ctrl+S = Save As
+            if (e.ctrlKey && e.keyName === "S") {
+                saveAsBtn.notify("onClick");
+                e.preventDefault();
+            }
+            // Ctrl+R = Add to Render Queue
+            if (e.ctrlKey && e.keyName === "R") {
+                renderBtn.notify("onClick");
+                e.preventDefault();
+            }
+        });
 
         ameCheckbox.onClick = function () {
             setSetting(AME_ENABLED_KEY, String(ameCheckbox.value));
@@ -1285,6 +1379,7 @@
                 } catch (e) { }
             }
             updateStatus();
+            updateTemplatePreview();
             updatePreview();
         }
 
