@@ -207,7 +207,7 @@
         try {
             var data = getSetting(TEMPLATES_KEY, null);
             if (data) {
-                var templates = eval("(" + data + ")");
+                var templates = jsonParse(data, null);
                 if (templates && templates.length > 0) return templates;
             }
         } catch (e) { }
@@ -233,7 +233,8 @@
     function loadRecentFiles() {
         try {
             var data = getSetting(RECENT_FILES_KEY, "[]");
-            var list = eval("(" + data + ")");
+            var list = jsonParse(data, []);
+            if (!list || !list.length) return [];
             // Filter out non-existing files to keep list clean
             var cleanList = [];
             for (var i = 0; i < list.length; i++) {
@@ -300,6 +301,45 @@
             return "{" + pairs.join(",") + "}";
         }
         return String(obj);
+    }
+
+    /**
+     * Safe JSON parse with validation (ES3 compatible)
+     * Only allows valid JSON-like structures, rejects dangerous code
+     * @param {string} str - JSON string to parse
+     * @param {*} defaultValue - Default value if parsing fails
+     * @returns {*} Parsed object or defaultValue
+     */
+    function jsonParse(str, defaultValue) {
+        if (!str || typeof str !== "string") return defaultValue;
+
+        // Trim whitespace
+        str = str.replace(/^\s+|\s+$/g, "");
+
+        // Basic validation: must start with [ or {
+        if (str.charAt(0) !== "[" && str.charAt(0) !== "{") {
+            return defaultValue;
+        }
+
+        // Security check: reject strings containing dangerous patterns
+        // Block function calls, assignments, and dangerous keywords
+        var dangerous = /\b(function|eval|new\s+Function|setTimeout|setInterval|execScript|document|window|alert|this\.)\b/i;
+        if (dangerous.test(str)) {
+            return defaultValue;
+        }
+
+        // Block assignment operators and semicolons (code injection)
+        if (/[;=](?!=)/.test(str) || /[+\-*\/]=/.test(str)) {
+            return defaultValue;
+        }
+
+        try {
+            // Wrap in parentheses for object literals
+            var result = eval("(" + str + ")");
+            return result;
+        } catch (e) {
+            return defaultValue;
+        }
     }
 
     // =========================================================================
