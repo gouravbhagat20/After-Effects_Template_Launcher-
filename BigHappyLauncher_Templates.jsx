@@ -478,6 +478,7 @@
                 app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
             }
             app.newProject();
+            app.beginUndoGroup("Generate Template: " + template.name);
 
             app.project.items.addFolder("Screens");
             app.project.items.addFolder("png");
@@ -975,7 +976,7 @@
         };
 
         regenBtn.onClick = function () {
-            if (!confirm("Regenerate ALL templates?\\nThis will delete and recreate template files.\\nFolder: " + templatesFolder)) return;
+            if (!confirm("Regenerate ALL templates?\nThis will delete and recreate template files.\nFolder: " + templatesFolder)) return;
             setStatus("Regenerating...", [0.6, 0.6, 0.6]);
             for (var i = 0; i < templates.length; i++) templates[i].path = "";
             var result = ensureTemplatesExist(templates, templatesFolder, true); // Force regenerate
@@ -1080,6 +1081,11 @@
         };
 
         createBtn.onClick = function () {
+            // Guard: no templates available
+            if (!templates.length) {
+                showError("BH-1004");
+                return;
+            }
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
             if (!t.path || !fileExists(t.path)) {
