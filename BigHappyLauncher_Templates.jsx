@@ -964,7 +964,7 @@
         // Event bindings
         brandInput.onChanging = campaignInput.onChanging = versionInput.onChanging = revisionInput.onChanging = updatePreview;
         brandInput.onChange = campaignInput.onChange = quarterDropdown.onChange = function () { checkRevision(); };
-        templateDropdown.onChange = function () { updateStatus(); updateTemplatePreview(); checkRevision(); };
+        templateDropdown.onChange = function () { updateStatus(); checkRevision(); };
 
         // When Version is manually changed, reset Revision to 1 and find next available
         versionInput.onChange = function () {
@@ -1306,7 +1306,6 @@
                 } catch (e) { }
             }
             updateStatus();
-            updateTemplatePreview();
             updatePreview();
         }
 
