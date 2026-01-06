@@ -61,7 +61,9 @@
         WIDTH_MIN: 1, WIDTH_MAX: 8192,
         HEIGHT_MIN: 1, HEIGHT_MAX: 8192,
         FPS_MIN: 1, FPS_MAX: 120,
-        DURATION_MIN: 0.1, DURATION_MAX: 3600
+        DURATION_MIN: 0.1, DURATION_MAX: 3600,
+        BRAND_MIN: 2, BRAND_MAX: 50,
+        CAMPAIGN_MAX: 50
     };
 
     // =========================================================================
@@ -74,6 +76,7 @@
         "BH-1002": { msg: "Template folder does not exist", fix: "Click 'Folder...' to select or create a templates folder" },
         "BH-1003": { msg: "Failed to generate template file", fix: "Check disk space and folder permissions" },
         "BH-1004": { msg: "No templates available", fix: "Add a template using the '+' button" },
+        "BH-1005": { msg: "Base work folder does not exist", fix: "Click '...' to select a valid base folder, or create it first" },
 
         // 2xxx - Project Errors
         "BH-2001": { msg: "Failed to save project", fix: "Check disk space, file permissions, or if file is in use" },
@@ -94,6 +97,8 @@
         "BH-4004": { msg: "Invalid height value", fix: "Height must be between " + LIMITS.HEIGHT_MIN + " and " + LIMITS.HEIGHT_MAX },
         "BH-4005": { msg: "Invalid FPS value", fix: "FPS must be between " + LIMITS.FPS_MIN + " and " + LIMITS.FPS_MAX },
         "BH-4006": { msg: "Invalid duration value", fix: "Duration must be between " + LIMITS.DURATION_MIN + " and " + LIMITS.DURATION_MAX + " seconds" },
+        "BH-4007": { msg: "Brand name too short or too long", fix: "Brand must be " + LIMITS.BRAND_MIN + "-" + LIMITS.BRAND_MAX + " characters" },
+        "BH-4008": { msg: "Campaign name too long", fix: "Campaign must be under " + LIMITS.CAMPAIGN_MAX + " characters" },
 
         // 5xxx - Settings Errors
         "BH-5001": { msg: "Failed to save settings", fix: "After Effects preferences may be locked or corrupted" },
@@ -616,7 +621,7 @@
     }
 
     /**
-     * Create project folder structure
+     * Create project folder structure with error recovery
      * @param {string} basePath - Base work folder (e.g., C:\Work\Animate CC)
      * @param {string} year - Year (e.g., "2026")
      * @param {string} quarter - Quarter (e.g., "Q1")
@@ -625,6 +630,14 @@
      * @returns {object|null} Object with folder paths or null on failure
      */
     function createProjectStructure(basePath, year, quarter, projectName, revision) {
+        // Validate base folder exists
+        if (!folderExists(basePath)) {
+            showError("BH-1005", basePath);
+            return null;
+        }
+
+        var createdFolders = []; // Track created folders for cleanup
+
         try {
             // Build paths
             var projectRoot = joinPath(joinPath(joinPath(basePath, String(year)), quarter), projectName);
@@ -634,13 +647,22 @@
             var imageFolder = joinPath(assetsFolder, "Sub_Image");
             var screenFolder = joinPath(assetsFolder, "Sub_Screen");
 
-            // Create all folders
+            // Create all folders, tracking each for potential cleanup
             var folders = [projectRoot, aeFolder, publishedFolder, assetsFolder, imageFolder, screenFolder];
             for (var i = 0; i < folders.length; i++) {
+                var wasNew = !folderExists(folders[i]);
                 if (!createFolderRecursive(folders[i])) {
+                    // Cleanup: remove folders we created (in reverse order)
+                    for (var j = createdFolders.length - 1; j >= 0; j--) {
+                        try {
+                            var cleanupFolder = new Folder(createdFolders[j]);
+                            if (cleanupFolder.exists) cleanupFolder.remove();
+                        } catch (cleanupErr) { }
+                    }
                     showError("BH-1002", "Failed to create: " + folders[i]);
                     return null;
                 }
+                if (wasNew) createdFolders.push(folders[i]);
             }
 
             return {
@@ -652,6 +674,13 @@
                 screenFolder: screenFolder
             };
         } catch (e) {
+            // Cleanup on exception
+            for (var k = createdFolders.length - 1; k >= 0; k--) {
+                try {
+                    var cleanupFolder = new Folder(createdFolders[k]);
+                    if (cleanupFolder.exists) cleanupFolder.remove();
+                } catch (cleanupErr) { }
+            }
             showError("BH-1003", e.toString());
             return null;
         }
@@ -1042,14 +1071,16 @@
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
             var brand = sanitizeName(brandInput.text) || "Brand";
-            var campaign = sanitizeName(campaignInput.text) || "Campaign";
+            var campaign = sanitizeName(campaignInput.text) || "";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var year = yearDropdown.selection ? yearDropdown.selection.text : String(getCurrentYear());
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
             var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
 
-            var filename = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
+            // Handle empty campaign in filename
+            var filenameForBuild = campaign.length > 0 ? campaign : brand;
+            var filename = buildFilename(brand, filenameForBuild, quarter, size, version, revision, isDOOHTemplate(t.name));
             var projectFolderName = buildProjectFolderName(brand, campaign);
             var fullPath = joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), "Animate CC_AE");
 
@@ -1061,22 +1092,23 @@
             if (!templateDropdown.selection) return;
             var t = templates[templateDropdown.selection.index];
             var brand = sanitizeName(brandInput.text) || "Brand";
-            var campaign = sanitizeName(campaignInput.text) || "Campaign";
+            var campaign = sanitizeName(campaignInput.text) || "";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var year = yearDropdown.selection ? yearDropdown.selection.text : String(getCurrentYear());
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
 
-            // Build path to check
+            // Build path to check with proper empty campaign handling
             var projectFolderName = buildProjectFolderName(brand, campaign);
             var aeFolder = joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), "Animate CC_AE");
             var isDOOH = isDOOHTemplate(t.name);
+            var filenameForBuild = campaign.length > 0 ? campaign : brand;
             var maxR = 50;
             var foundR = 1;
 
             // Find next available revision for the current version
             for (var r = 1; r <= maxR; r++) {
-                var filename = buildFilename(brand, campaign, quarter, size, version, "R" + r, isDOOH);
+                var filename = buildFilename(brand, filenameForBuild, quarter, size, version, "R" + r, isDOOH);
                 if (fileExists(joinPath(aeFolder, filename))) {
                     foundR = r + 1;
                 } else {
@@ -1254,7 +1286,17 @@
 
             var brand = sanitizeName(brandInput.text);
             var campaign = sanitizeName(campaignInput.text) || "";
+
+            // Input validation
             if (!brand) { showError("BH-4001"); return; }
+            if (brand.length < LIMITS.BRAND_MIN || brand.length > LIMITS.BRAND_MAX) {
+                showError("BH-4007");
+                return;
+            }
+            if (campaign.length > LIMITS.CAMPAIGN_MAX) {
+                showError("BH-4008");
+                return;
+            }
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var year = yearDropdown.selection ? yearDropdown.selection.text : String(getCurrentYear());
@@ -1263,8 +1305,10 @@
             var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
             var revNum = "R" + (parseInt(revisionInput.text, 10) || 1);
 
-            var projectName = buildProjectFolderName(brand, campaign || "Campaign");
-            var filename = buildFilename(brand, campaign || "Campaign", quarter, size, version, revision, isDOOHTemplate(t.name));
+            // Use just brand when campaign is empty
+            var projectName = buildProjectFolderName(brand, campaign);
+            var filenameForBuild = campaign.length > 0 ? campaign : brand;
+            var filename = buildFilename(brand, filenameForBuild, quarter, size, version, revision, isDOOHTemplate(t.name));
 
             try {
                 // Create folder structure
