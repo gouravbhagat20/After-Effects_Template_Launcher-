@@ -274,7 +274,7 @@
     }
 
     // =========================================================================
-    // SECTION 2C: JSON STRINGIFY (ES3 Compatible)
+    // SECTION 2D: JSON STRINGIFY & PARSE (ES3 Compatible)
     // =========================================================================
 
     function jsonStringify(obj) {
