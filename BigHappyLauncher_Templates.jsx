@@ -521,6 +521,7 @@
             var fileName = template.name.replace(/\s+/g, "_") + "_" + template.width + "x" + template.height + ".aep";
             var filePath = joinPath(folderPath, fileName);
 
+            app.endUndoGroup();
             app.project.save(new File(filePath));
             app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
 
