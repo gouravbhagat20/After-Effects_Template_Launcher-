@@ -626,10 +626,11 @@
      * @param {string} year - Year (e.g., "2026")
      * @param {string} quarter - Quarter (e.g., "Q1")
      * @param {string} projectName - Project folder name (e.g., "Nike_SummerSale")
+     * @param {string} size - Size folder name (e.g., "1920x1080")
      * @param {string} revision - Revision number (e.g., "R1")
      * @returns {object|null} Object with folder paths or null on failure
      */
-    function createProjectStructure(basePath, year, quarter, projectName, revision) {
+    function createProjectStructure(basePath, year, quarter, projectName, size, revision) {
         // Validate base folder exists
         if (!folderExists(basePath)) {
             showError("BH-1005", basePath);
@@ -639,16 +640,17 @@
         var createdFolders = []; // Track created folders for cleanup
 
         try {
-            // Build paths
+            // Build paths: BaseFolder/Year/Quarter/Brand_Campaign/WIDTHxHEIGHT/
             var projectRoot = joinPath(joinPath(joinPath(basePath, String(year)), quarter), projectName);
-            var aeFolder = joinPath(projectRoot, "Animate CC_AE");
+            var sizeFolder = joinPath(projectRoot, size);
+            var aeFolder = joinPath(sizeFolder, "Animate CC_AE");
             var publishedFolder = joinPath(aeFolder, "Sub_Published_" + revision);
-            var assetsFolder = joinPath(projectRoot, "Assets");
+            var assetsFolder = joinPath(sizeFolder, "Assets");
             var imageFolder = joinPath(assetsFolder, "Sub_Image");
             var screenFolder = joinPath(assetsFolder, "Sub_Screen");
 
             // Create all folders, tracking each for potential cleanup
-            var folders = [projectRoot, aeFolder, publishedFolder, assetsFolder, imageFolder, screenFolder];
+            var folders = [projectRoot, sizeFolder, aeFolder, publishedFolder, assetsFolder, imageFolder, screenFolder];
             for (var i = 0; i < folders.length; i++) {
                 var wasNew = !folderExists(folders[i]);
                 if (!createFolderRecursive(folders[i])) {
@@ -667,6 +669,7 @@
 
             return {
                 projectRoot: projectRoot,
+                sizeFolder: sizeFolder,
                 aeFolder: aeFolder,
                 publishedFolder: publishedFolder,
                 assetsFolder: assetsFolder,
@@ -1082,7 +1085,7 @@
             var filenameForBuild = campaign.length > 0 ? campaign : brand;
             var filename = buildFilename(brand, filenameForBuild, quarter, size, version, revision, isDOOHTemplate(t.name));
             var projectFolderName = buildProjectFolderName(brand, campaign);
-            var fullPath = joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), "Animate CC_AE");
+            var fullPath = joinPath(joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), size), "Animate CC_AE");
 
             pathPreviewText.text = fullPath;
             previewText.text = filename;
@@ -1098,9 +1101,9 @@
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
 
-            // Build path to check with proper empty campaign handling
+            // Build path to check with proper empty campaign handling and size subfolder
             var projectFolderName = buildProjectFolderName(brand, campaign);
-            var aeFolder = joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), "Animate CC_AE");
+            var aeFolder = joinPath(joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), size), "Animate CC_AE");
             var isDOOH = isDOOHTemplate(t.name);
             var filenameForBuild = campaign.length > 0 ? campaign : brand;
             var maxR = 50;
@@ -1311,8 +1314,8 @@
             var filename = buildFilename(brand, filenameForBuild, quarter, size, version, revision, isDOOHTemplate(t.name));
 
             try {
-                // Create folder structure
-                var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, revNum);
+                // Create folder structure with size subfolder
+                var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, size, revNum);
                 if (!folders) return; // Error already shown
 
                 var savePath = joinPath(folders.aeFolder, filename);
