@@ -46,6 +46,7 @@
     var DEFAULT_SAVE_FOLDER_KEY = "default_save_folder";
     var AME_ENABLED_KEY = "ame_enabled";
     var RECENT_FILES_KEY = "recent_files";
+    var BASE_WORK_FOLDER_KEY = "base_work_folder";
     var MAX_RECENT_FILES = 10;
 
     var DEFAULT_TEMPLATES = [
@@ -224,6 +225,51 @@
 
     function getDefaultSaveFolder() {
         return getSetting(DEFAULT_SAVE_FOLDER_KEY, Folder.myDocuments.fsName);
+    }
+
+    function getBaseWorkFolder() {
+        var defaultPath = ($.os && $.os.indexOf("Windows") !== -1)
+            ? "C:\\Work\\Animate CC"
+            : "~/Work/Animate CC";
+        return getSetting(BASE_WORK_FOLDER_KEY, defaultPath);
+    }
+
+    function setBaseWorkFolder(path) {
+        setSetting(BASE_WORK_FOLDER_KEY, path);
+    }
+
+    function getCurrentYear() {
+        return new Date().getFullYear();
+    }
+
+    function getCurrentQuarter() {
+        var month = new Date().getMonth(); // 0-11
+        return Math.floor(month / 3); // 0-3
+    }
+
+    function folderExists(path) {
+        try {
+            return path && new Folder(path).exists;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function createFolderRecursive(path) {
+        try {
+            var folder = new Folder(path);
+            if (folder.exists) return true;
+            return folder.create();
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function buildProjectFolderName(brand, campaign) {
+        if (campaign && campaign.length > 0) {
+            return brand + "_" + campaign;
+        }
+        return brand;
     }
 
     // =========================================================================
@@ -569,6 +615,48 @@
         return { templates: templates, generated: generated };
     }
 
+    /**
+     * Create project folder structure
+     * @param {string} basePath - Base work folder (e.g., C:\Work\Animate CC)
+     * @param {string} year - Year (e.g., "2026")
+     * @param {string} quarter - Quarter (e.g., "Q1")
+     * @param {string} projectName - Project folder name (e.g., "Nike_SummerSale")
+     * @param {string} revision - Revision number (e.g., "R1")
+     * @returns {object|null} Object with folder paths or null on failure
+     */
+    function createProjectStructure(basePath, year, quarter, projectName, revision) {
+        try {
+            // Build paths
+            var projectRoot = joinPath(joinPath(joinPath(basePath, String(year)), quarter), projectName);
+            var aeFolder = joinPath(projectRoot, "Animate CC_AE");
+            var publishedFolder = joinPath(aeFolder, "Sub_Published_" + revision);
+            var assetsFolder = joinPath(projectRoot, "Assets");
+            var imageFolder = joinPath(assetsFolder, "Sub_Image");
+            var screenFolder = joinPath(assetsFolder, "Sub_Screen");
+
+            // Create all folders
+            var folders = [projectRoot, aeFolder, publishedFolder, assetsFolder, imageFolder, screenFolder];
+            for (var i = 0; i < folders.length; i++) {
+                if (!createFolderRecursive(folders[i])) {
+                    showError("BH-1002", "Failed to create: " + folders[i]);
+                    return null;
+                }
+            }
+
+            return {
+                projectRoot: projectRoot,
+                aeFolder: aeFolder,
+                publishedFolder: publishedFolder,
+                assetsFolder: assetsFolder,
+                imageFolder: imageFolder,
+                screenFolder: screenFolder
+            };
+        } catch (e) {
+            showError("BH-1003", e.toString());
+            return null;
+        }
+    }
+
     // =========================================================================
     // SECTION 5: DIALOGS
     // =========================================================================
@@ -779,16 +867,28 @@
         var campaignInput = addRow(mainGrp, "Campaign:", "");
         campaignInput.helpTip = "Enter the campaign or project name";
 
-        // Quarter row
-        var qRow = mainGrp.add("group");
-        qRow.orientation = "row";
-        qRow.alignChildren = ["left", "center"];
-        var qLbl = qRow.add("statictext", undefined, "Quarter:");
+        // Quarter & Year row
+        var qyRow = mainGrp.add("group");
+        qyRow.orientation = "row";
+        qyRow.alignChildren = ["left", "center"];
+        var qLbl = qyRow.add("statictext", undefined, "Quarter:");
         qLbl.preferredSize.width = 65;
-        var quarterDropdown = qRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
-        quarterDropdown.selection = 0;
-        quarterDropdown.preferredSize.width = 70;
+        var quarterDropdown = qyRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+        quarterDropdown.selection = getCurrentQuarter();
+        quarterDropdown.preferredSize.width = 60;
         quarterDropdown.helpTip = "Select the fiscal quarter for this project";
+        var yLbl = qyRow.add("statictext", undefined, "Year:");
+        yLbl.preferredSize.width = 35;
+        var currentYear = getCurrentYear();
+        var yearDropdown = qyRow.add("dropdownlist", undefined, [
+            String(currentYear - 1),
+            String(currentYear),
+            String(currentYear + 1),
+            String(currentYear + 2)
+        ]);
+        yearDropdown.selection = 1; // Current year
+        yearDropdown.preferredSize.width = 65;
+        yearDropdown.helpTip = "Select the year for this project";
 
         // Version & Revision row
         var vrRow = mainGrp.add("group");
@@ -805,11 +905,30 @@
         revisionInput.preferredSize.width = 50;
         revisionInput.helpTip = "Revision number (auto-increments for minor tweaks)";
 
+        // Base Work Folder row
+        var baseGrp = mainGrp.add("group");
+        baseGrp.orientation = "row";
+        baseGrp.alignChildren = ["left", "center"];
+        var baseLbl = baseGrp.add("statictext", undefined, "Base:");
+        baseLbl.preferredSize.width = 65;
+        var basePathText = baseGrp.add("statictext", undefined, getBaseWorkFolder());
+        basePathText.alignment = ["fill", "center"];
+        basePathText.helpTip = "Base work folder where projects are saved";
+        try { basePathText.graphics.foregroundColor = basePathText.graphics.newPen(basePathText.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
+        var baseBrowseBtn = baseGrp.add("button", undefined, "...");
+        baseBrowseBtn.preferredSize = [25, 22];
+        baseBrowseBtn.helpTip = "Browse for base work folder";
+
         // Divider
         var div = panel.add("panel", [0, 0, 100, 1]);
         div.alignment = ["fill", "top"];
 
-        // Preview
+        // Preview - Full Path (green)
+        var pathPreviewText = panel.add("statictext", undefined, "Path: ...");
+        pathPreviewText.alignment = ["fill", "top"];
+        try { pathPreviewText.graphics.foregroundColor = pathPreviewText.graphics.newPen(pathPreviewText.graphics.PenType.SOLID_COLOR, [0.4, 0.8, 0.4], 1); } catch (e) { }
+
+        // Preview - Filename (blue)
         var previewText = panel.add("statictext", undefined, "Filename: ...");
         previewText.alignment = ["center", "top"];
         try { previewText.graphics.foregroundColor = previewText.graphics.newPen(previewText.graphics.PenType.SOLID_COLOR, [0.4, 0.7, 1], 1); } catch (e) { }
@@ -925,11 +1044,16 @@
             var brand = sanitizeName(brandInput.text) || "Brand";
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
+            var year = yearDropdown.selection ? yearDropdown.selection.text : String(getCurrentYear());
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
             var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
 
             var filename = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
+            var projectFolderName = buildProjectFolderName(brand, campaign);
+            var fullPath = joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), "Animate CC_AE");
+
+            pathPreviewText.text = fullPath;
             previewText.text = filename;
         }
 
@@ -939,10 +1063,13 @@
             var brand = sanitizeName(brandInput.text) || "Brand";
             var campaign = sanitizeName(campaignInput.text) || "Campaign";
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
+            var year = yearDropdown.selection ? yearDropdown.selection.text : String(getCurrentYear());
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
 
-            var saveFolder = getDefaultSaveFolder();
+            // Build path to check
+            var projectFolderName = buildProjectFolderName(brand, campaign);
+            var aeFolder = joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), "Animate CC_AE");
             var isDOOH = isDOOHTemplate(t.name);
             var maxR = 50;
             var foundR = 1;
@@ -950,7 +1077,7 @@
             // Find next available revision for the current version
             for (var r = 1; r <= maxR; r++) {
                 var filename = buildFilename(brand, campaign, quarter, size, version, "R" + r, isDOOH);
-                if (fileExists(joinPath(saveFolder, filename))) {
+                if (fileExists(joinPath(aeFolder, filename))) {
                     foundR = r + 1;
                 } else {
                     break;
@@ -963,13 +1090,23 @@
 
         // Event bindings
         brandInput.onChanging = campaignInput.onChanging = versionInput.onChanging = revisionInput.onChanging = updatePreview;
-        brandInput.onChange = campaignInput.onChange = quarterDropdown.onChange = function () { checkRevision(); };
+        brandInput.onChange = campaignInput.onChange = quarterDropdown.onChange = yearDropdown.onChange = function () { checkRevision(); };
         templateDropdown.onChange = function () { updateStatus(); checkRevision(); };
 
         // When Version is manually changed, reset Revision to 1 and find next available
         versionInput.onChange = function () {
             revisionInput.text = "1";
             checkRevision();
+        };
+
+        // Base folder browse button
+        baseBrowseBtn.onClick = function () {
+            var f = Folder.selectDialog("Select Base Work Folder");
+            if (f) {
+                setBaseWorkFolder(f.fsName);
+                basePathText.text = f.fsName;
+                updatePreview();
+            }
         };
 
         // =====================================================================
@@ -1116,49 +1253,60 @@
             }
 
             var brand = sanitizeName(brandInput.text);
-            var campaign = sanitizeName(campaignInput.text) || "Campaign";
+            var campaign = sanitizeName(campaignInput.text) || "";
             if (!brand) { showError("BH-4001"); return; }
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
+            var year = yearDropdown.selection ? yearDropdown.selection.text : String(getCurrentYear());
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
             var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
+            var revNum = "R" + (parseInt(revisionInput.text, 10) || 1);
 
-            var suggestedName = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
+            var projectName = buildProjectFolderName(brand, campaign || "Campaign");
+            var filename = buildFilename(brand, campaign || "Campaign", quarter, size, version, revision, isDOOHTemplate(t.name));
 
             try {
+                // Create folder structure
+                var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, revNum);
+                if (!folders) return; // Error already shown
+
+                var savePath = joinPath(folders.aeFolder, filename);
+                var saveFile = new File(savePath);
+
+                // Check if file already exists
+                if (saveFile.exists) {
+                    if (!confirm("File already exists:\n" + filename + "\n\nOverwrite?")) {
+                        return;
+                    }
+                }
+
+                // Close current project and open template
                 if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
                 app.open(new File(t.path));
 
-                var defFolder = new Folder(getDefaultSaveFolder());
-                var saveFile = new File(joinPath(defFolder.fsName, suggestedName)).saveDlg("Save New Project As");
-
-                if (!saveFile) {
-                    app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
-                    return;
-                }
-
-                var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep";
-                saveFile = new File(savePath);
-
-                if (isSameFolder(savePath, t.path)) {
-                    showError("BH-2002");
-                    app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
-                    return;
-                }
-
-                setSetting(DEFAULT_SAVE_FOLDER_KEY, getParentFolder(savePath));
+                // Save to the new location
                 app.project.save(saveFile);
 
                 var mainComp = findMainComp();
                 if (mainComp) mainComp.openInViewer();
 
-                if (panel instanceof Window) panel.close();
-
                 // Add to recent files
                 addToRecentFiles(savePath);
-                // If the panel is persistent (palette), refresh the buttons
-                if (typeof refreshRecentButtons === "function") refreshRecentButtons();
+
+                // Show success alert with folder structure
+                var successMsg = "Project Created!\n\n";
+                successMsg += "File: " + filename + "\n\n";
+                successMsg += "Location:\n" + folders.aeFolder + "\n\n";
+                successMsg += "Folder Structure:\n";
+                successMsg += "├── Animate CC_AE\\\n";
+                successMsg += "│   └── Sub_Published_" + revNum + "\\\n";
+                successMsg += "└── Assets\\\n";
+                successMsg += "    ├── Sub_Image\\\n";
+                successMsg += "    └── Sub_Screen\\";
+                alert(successMsg);
+
+                if (panel instanceof Window) panel.close();
 
             } catch (e) {
                 showError("BH-2004", e.toString());
@@ -1236,8 +1384,15 @@
                 renderName = projectName + "_" + getDateString();
             }
 
-            var outputFolder = app.project.file.parent.fsName;
-            var outputPath = joinPath(outputFolder, renderName);
+            // Output to Sub_Published_R# folder (sibling of the .aep file in Animate CC_AE)
+            var aeFolder = app.project.file.parent.fsName;
+            var revision = (parsed && parsed.revision) ? parsed.revision : revisionInput.text;
+            var publishedFolder = joinPath(aeFolder, "Sub_Published_" + revision);
+
+            // Create Sub_Published folder if it doesn't exist
+            createFolderRecursive(publishedFolder);
+
+            var outputPath = joinPath(publishedFolder, renderName);
 
             // Add to AE Render Queue first
             var rqItem = addToRenderQueue(mainComp, outputPath);
