@@ -654,9 +654,10 @@
      * @param {string} size - Size folder name (e.g., "1920x1080")
      * @param {string} revision - Revision number (e.g., "R1")
      * @param {string} templateType - Template type for folder presets (e.g., "sunrise", "dooh")
+     * @param {string} version - Version number (e.g., "V1")
      * @returns {object|null} Object with folder paths or null on failure
      */
-    function createProjectStructure(basePath, year, quarter, projectName, size, revision, templateType) {
+    function createProjectStructure(basePath, year, quarter, projectName, size, revision, templateType, version) {
         // Validate base folder exists
         if (!folderExists(basePath)) {
             showError("BH-1005", basePath);
@@ -666,25 +667,29 @@
         var createdFolders = []; // Track created folders for cleanup
 
         try {
-            // Build paths: BaseFolder/Year/Quarter/Brand_Campaign/WIDTHxHEIGHT/
+            // Build paths: BaseFolder/Year/Quarter/Brand_Campaign/TemplateName_WIDTHxHEIGHT/V#/
             var projectRoot = joinPath(joinPath(joinPath(basePath, String(year)), quarter), projectName);
             var sizeFolder = joinPath(projectRoot, size);
-            var aeFolder = joinPath(sizeFolder, "Animate CC_AE");
+            var versionFolder = joinPath(sizeFolder, version);
+            var aeFolder = joinPath(versionFolder, "Animate CC_AE");
             var publishedFolder = joinPath(aeFolder, "Sub_Published_" + revision);
-            var assetsFolder = joinPath(sizeFolder, "Assets");
+            var assetsFolder = joinPath(versionFolder, "Assets");
 
             // Get template-specific asset folders or use default
             var assetSubfolders = TEMPLATE_FOLDERS[templateType] || TEMPLATE_FOLDERS["default"];
 
             // Build list of all folders to create
-            var folders = [projectRoot, sizeFolder, aeFolder, publishedFolder, assetsFolder];
+            var folders = [projectRoot, sizeFolder, versionFolder, aeFolder, publishedFolder, assetsFolder];
 
-            // Add template-specific asset subfolders
+            // Add template-specific asset subfolders with revision subfolders inside each
             var assetFolderPaths = {};
             for (var a = 0; a < assetSubfolders.length; a++) {
                 var subfolderPath = joinPath(assetsFolder, assetSubfolders[a]);
+                var revisionSubfolderPath = joinPath(subfolderPath, revision);
                 folders.push(subfolderPath);
+                folders.push(revisionSubfolderPath);
                 assetFolderPaths[assetSubfolders[a]] = subfolderPath;
+                assetFolderPaths[assetSubfolders[a] + "_" + revision] = revisionSubfolderPath;
             }
 
             // Create all folders, tracking each for potential cleanup
@@ -707,11 +712,14 @@
             return {
                 projectRoot: projectRoot,
                 sizeFolder: sizeFolder,
+                versionFolder: versionFolder,
                 aeFolder: aeFolder,
                 publishedFolder: publishedFolder,
                 assetsFolder: assetsFolder,
                 assetFolders: assetFolderPaths,
-                templateType: templateType
+                templateType: templateType,
+                version: version,
+                revision: revision
             };
         } catch (e) {
             // Cleanup on exception
@@ -1353,9 +1361,9 @@
             var filename = buildFilename(brand, filenameForBuild, quarter, t.width + "x" + t.height, version, revision, isDOOHTemplate(t.name));
 
             try {
-                // Create folder structure with size subfolder and template-specific asset folders
+                // Create folder structure with version/revision hierarchy
                 var templateType = getTemplateType(t.width, t.height);
-                var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, size, revNum, templateType);
+                var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, size, revNum, templateType, version);
                 if (!folders) return; // Error already shown
 
                 var savePath = joinPath(folders.aeFolder, filename);
@@ -1381,12 +1389,13 @@
                 // Add to recent files
                 addToRecentFiles(savePath);
 
-                // Build dynamic asset folders list for success message
+                // Build dynamic asset folders list for success message with R# subfolders
                 var assetFoldersList = TEMPLATE_FOLDERS[templateType] || TEMPLATE_FOLDERS["default"];
                 var assetFoldersMsg = "";
                 for (var af = 0; af < assetFoldersList.length; af++) {
                     var isLast = (af === assetFoldersList.length - 1);
-                    assetFoldersMsg += "    " + (isLast ? "└── " : "├── ") + assetFoldersList[af] + "\\\n";
+                    assetFoldersMsg += "        " + (isLast ? "└── " : "├── ") + assetFoldersList[af] + "\\\n";
+                    assetFoldersMsg += "        " + (isLast ? "    " : "│   ") + "└── " + revNum + "\\\n";
                 }
 
                 // Show success alert with folder structure
@@ -1394,9 +1403,11 @@
                 successMsg += "File: " + filename + "\n\n";
                 successMsg += "Location:\n" + folders.aeFolder + "\n\n";
                 successMsg += "Folder Structure:\n";
-                successMsg += "├── Animate CC_AE\\\n";
-                successMsg += "│   └── Sub_Published_" + revNum + "\\\n";
-                successMsg += "└── Assets\\\n";
+                successMsg += size + "\\\n";
+                successMsg += "└── " + version + "\\\n";
+                successMsg += "    ├── Animate CC_AE\\\n";
+                successMsg += "    │   └── Sub_Published_" + revNum + "\\\n";
+                successMsg += "    └── Assets\\\n";
                 successMsg += assetFoldersMsg;
                 alert(successMsg);
 
