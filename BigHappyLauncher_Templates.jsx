@@ -71,7 +71,8 @@
     var TEMPLATE_FOLDERS = {
         "sunrise": ["Sub_Image", "Sub_Screen"],
         "interscroller": ["Sub_Image", "Sub_Screen", "Sub_GIF"],
-        "dooh": ["Sub_Image", "Sub_Video", "Sub_Audio", "Sub_Screen"],
+        "dooh_horizontal": ["Sub_Image", "Sub_Video", "Sub_Audio", "Sub_Screen"],
+        "dooh_vertical": ["Sub_Image", "Sub_Video", "Sub_Audio", "Sub_Screen"],
         "default": ["Sub_Image", "Sub_Screen"]
     };
 
@@ -437,8 +438,23 @@
     function getTemplateType(width, height) {
         if (width === 750 && height === 300) return "sunrise";
         if (width === 880 && height === 1912) return "interscroller";
-        if ((width === 1920 && height === 1080) || (width === 1080 && height === 1920)) return "dooh";
+        if (width === 1920 && height === 1080) return "dooh_horizontal";
+        if (width === 1080 && height === 1920) return "dooh_vertical";
         return "default";
+    }
+
+    /**
+     * Get display-friendly template name for folder naming
+     * @param {number} width
+     * @param {number} height
+     * @returns {string} Template name like "Sunrise", "DOOH-Horizontal", etc.
+     */
+    function getTemplateFolderName(width, height) {
+        if (width === 750 && height === 300) return "Sunrise";
+        if (width === 880 && height === 1912) return "InterScroller";
+        if (width === 1920 && height === 1080) return "DOOH-Horizontal";
+        if (width === 1080 && height === 1920) return "DOOH-Vertical";
+        return "Custom";
     }
 
     function isDOOHTemplate(name) {
@@ -1325,7 +1341,8 @@
 
             var quarter = quarterDropdown.selection ? quarterDropdown.selection.text : "Q1";
             var year = yearDropdown.selection ? yearDropdown.selection.text : String(getCurrentYear());
-            var size = t.width + "x" + t.height;
+            var templateFolderName = getTemplateFolderName(t.width, t.height);
+            var size = templateFolderName + "_" + t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
             var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
             var revNum = "R" + (parseInt(revisionInput.text, 10) || 1);
@@ -1333,11 +1350,12 @@
             // Use just brand when campaign is empty
             var projectName = buildProjectFolderName(brand, campaign);
             var filenameForBuild = campaign.length > 0 ? campaign : brand;
-            var filename = buildFilename(brand, filenameForBuild, quarter, size, version, revision, isDOOHTemplate(t.name));
+            var filename = buildFilename(brand, filenameForBuild, quarter, t.width + "x" + t.height, version, revision, isDOOHTemplate(t.name));
 
             try {
-                // Create folder structure with size subfolder
-                var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, size, revNum);
+                // Create folder structure with size subfolder and template-specific asset folders
+                var templateType = getTemplateType(t.width, t.height);
+                var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, size, revNum, templateType);
                 if (!folders) return; // Error already shown
 
                 var savePath = joinPath(folders.aeFolder, filename);
@@ -1363,6 +1381,14 @@
                 // Add to recent files
                 addToRecentFiles(savePath);
 
+                // Build dynamic asset folders list for success message
+                var assetFoldersList = TEMPLATE_FOLDERS[templateType] || TEMPLATE_FOLDERS["default"];
+                var assetFoldersMsg = "";
+                for (var af = 0; af < assetFoldersList.length; af++) {
+                    var isLast = (af === assetFoldersList.length - 1);
+                    assetFoldersMsg += "    " + (isLast ? "└── " : "├── ") + assetFoldersList[af] + "\\\n";
+                }
+
                 // Show success alert with folder structure
                 var successMsg = "Project Created!\n\n";
                 successMsg += "File: " + filename + "\n\n";
@@ -1371,8 +1397,7 @@
                 successMsg += "├── Animate CC_AE\\\n";
                 successMsg += "│   └── Sub_Published_" + revNum + "\\\n";
                 successMsg += "└── Assets\\\n";
-                successMsg += "    ├── Sub_Image\\\n";
-                successMsg += "    └── Sub_Screen\\";
+                successMsg += assetFoldersMsg;
                 alert(successMsg);
 
                 if (panel instanceof Window) panel.close();
