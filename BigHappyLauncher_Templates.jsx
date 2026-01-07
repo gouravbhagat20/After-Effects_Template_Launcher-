@@ -1510,7 +1510,7 @@
             } else if (type === "interscroller" && parsed && parsed.brand) {
                 // InterScroller: Brand_Campaign_CTA_InterScroller_V#_R#
                 renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_InterScroller_" + parsed.version + "_" + parsed.revision;
-            } else if (type === "dooh" || (parsed && parsed.isDOOH)) {
+            } else if ((type === "dooh_horizontal" || type === "dooh_vertical") || (parsed && parsed.isDOOH)) {
                 // DOOH: DOOH_ProjectName_Size_MMDDYYYY
                 var doohSize = mainComp.width + "x" + mainComp.height;
                 var doohName = (parsed && parsed.campaign) ? parsed.campaign : projectName.replace(/^DOOH_?/i, "").replace(/_\d+x\d+.*$/i, "");
@@ -1520,25 +1520,26 @@
                 renderName = projectName + "_" + getDateString();
             }
 
-            // Output to Sub_Published_R# folder (sibling of the .aep file in Animate CC_AE)
+            // Output to Render_R# folder (sibling of the .aep file in AE_File)
             var aeFolder = app.project.file.parent.fsName;
             var revision = (parsed && parsed.revision) ? parsed.revision : revisionInput.text;
-            var publishedFolder = joinPath(aeFolder, "Sub_Published_" + revision);
+            var renderFolder = joinPath(aeFolder, "Render_" + revision);
 
-            // Create Sub_Published folder if it doesn't exist
-            createFolderRecursive(publishedFolder);
+            // Create Render folder if it doesn't exist
+            createFolderRecursive(renderFolder);
 
-            var outputPath = joinPath(publishedFolder, renderName);
+            var outputPath = joinPath(renderFolder, renderName);
 
-            // Add to AE Render Queue first
-            var rqItem = addToRenderQueue(mainComp, outputPath);
+            // Add to AE Render Queue with template-specific format
+            var rqItem = addToRenderQueue(mainComp, outputPath, type);
             if (!rqItem) return;
 
             // Check if user wants to send to AME
             if (ameCheckbox.value) {
                 if (canQueueInAME()) {
                     if (queueToAME()) {
-                        alert("Sent to Adobe Media Encoder!\n\nOutput: " + renderName + "\n\nFormat depends on AME preset settings.");
+                        var formatInfo = TEMPLATE_RENDER_FORMATS[type] || TEMPLATE_RENDER_FORMATS["default"];
+                        alert("Sent to Adobe Media Encoder!\n\nOutput: " + renderName + "\n\nFormat: " + formatInfo.outputModule);
                         return;
                     } else {
                         showError("BH-3004");
@@ -1549,8 +1550,9 @@
                 }
             }
 
-            // Standard RQ alert
-            alert("Added to Render Queue!\n\nOutput: " + renderName + "\n\nFormat depends on your Output Module preset.");
+            // Standard RQ alert with format info
+            var formatInfo = TEMPLATE_RENDER_FORMATS[type] || TEMPLATE_RENDER_FORMATS["default"];
+            alert("Added to Render Queue!\n\nOutput: " + renderName + "\n\nFormat: " + formatInfo.outputModule);
         };
 
         // =====================================================================
