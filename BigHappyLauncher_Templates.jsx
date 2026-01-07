@@ -66,6 +66,15 @@
         CAMPAIGN_MAX: 50
     };
 
+    // Template-specific asset folder presets
+    // Each template type gets different asset subfolders based on its needs
+    var TEMPLATE_FOLDERS = {
+        "sunrise": ["Sub_Image", "Sub_Screen"],
+        "interscroller": ["Sub_Image", "Sub_Screen", "Sub_GIF"],
+        "dooh": ["Sub_Image", "Sub_Video", "Sub_Audio", "Sub_Screen"],
+        "default": ["Sub_Image", "Sub_Screen"]
+    };
+
     // =========================================================================
     // SECTION 1B: ERROR CODES & HANDLING
     // =========================================================================
@@ -628,9 +637,10 @@
      * @param {string} projectName - Project folder name (e.g., "Nike_SummerSale")
      * @param {string} size - Size folder name (e.g., "1920x1080")
      * @param {string} revision - Revision number (e.g., "R1")
+     * @param {string} templateType - Template type for folder presets (e.g., "sunrise", "dooh")
      * @returns {object|null} Object with folder paths or null on failure
      */
-    function createProjectStructure(basePath, year, quarter, projectName, size, revision) {
+    function createProjectStructure(basePath, year, quarter, projectName, size, revision, templateType) {
         // Validate base folder exists
         if (!folderExists(basePath)) {
             showError("BH-1005", basePath);
@@ -646,11 +656,22 @@
             var aeFolder = joinPath(sizeFolder, "Animate CC_AE");
             var publishedFolder = joinPath(aeFolder, "Sub_Published_" + revision);
             var assetsFolder = joinPath(sizeFolder, "Assets");
-            var imageFolder = joinPath(assetsFolder, "Sub_Image");
-            var screenFolder = joinPath(assetsFolder, "Sub_Screen");
+
+            // Get template-specific asset folders or use default
+            var assetSubfolders = TEMPLATE_FOLDERS[templateType] || TEMPLATE_FOLDERS["default"];
+
+            // Build list of all folders to create
+            var folders = [projectRoot, sizeFolder, aeFolder, publishedFolder, assetsFolder];
+
+            // Add template-specific asset subfolders
+            var assetFolderPaths = {};
+            for (var a = 0; a < assetSubfolders.length; a++) {
+                var subfolderPath = joinPath(assetsFolder, assetSubfolders[a]);
+                folders.push(subfolderPath);
+                assetFolderPaths[assetSubfolders[a]] = subfolderPath;
+            }
 
             // Create all folders, tracking each for potential cleanup
-            var folders = [projectRoot, sizeFolder, aeFolder, publishedFolder, assetsFolder, imageFolder, screenFolder];
             for (var i = 0; i < folders.length; i++) {
                 var wasNew = !folderExists(folders[i]);
                 if (!createFolderRecursive(folders[i])) {
@@ -673,8 +694,8 @@
                 aeFolder: aeFolder,
                 publishedFolder: publishedFolder,
                 assetsFolder: assetsFolder,
-                imageFolder: imageFolder,
-                screenFolder: screenFolder
+                assetFolders: assetFolderPaths,
+                templateType: templateType
             };
         } catch (e) {
             // Cleanup on exception
@@ -688,6 +709,7 @@
             return null;
         }
     }
+
 
     // =========================================================================
     // SECTION 5: DIALOGS
