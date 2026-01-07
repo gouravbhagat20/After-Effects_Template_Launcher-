@@ -76,6 +76,16 @@
         "default": ["Image", "Screen"]
     };
 
+    // Template-specific render output formats
+    // format: "png_sequence" = PNG with RGB+Alpha, "mp4" = H.264 MP4
+    var TEMPLATE_RENDER_FORMATS = {
+        "sunrise": { format: "png_sequence", outputModule: "PNG Sequence with Alpha" },
+        "interscroller": { format: "mp4", outputModule: "H.264" },
+        "dooh_horizontal": { format: "mp4", outputModule: "H.264" },
+        "dooh_vertical": { format: "mp4", outputModule: "H.264" },
+        "default": { format: "png_sequence", outputModule: "Lossless with Alpha" }
+    };
+
     // =========================================================================
     // SECTION 1B: ERROR CODES & HANDLING
     // =========================================================================
