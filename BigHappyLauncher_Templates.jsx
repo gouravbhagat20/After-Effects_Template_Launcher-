@@ -849,15 +849,36 @@
     }
 
     /**
-     * Add composition to Render Queue
+     * Add composition to Render Queue with template-specific output format
      * @param {CompItem} comp
      * @param {string} outputPath - Full path without extension (extension set by Output Module)
+     * @param {string} templateType - Template type for output format (e.g., "sunrise", "dooh_horizontal")
      * @returns {RenderQueueItem|null}
      */
-    function addToRenderQueue(comp, outputPath) {
+    function addToRenderQueue(comp, outputPath, templateType) {
         try {
             var rqItem = app.project.renderQueue.items.add(comp);
             var om = rqItem.outputModule(1);
+
+            // Get render format for this template type
+            var renderConfig = TEMPLATE_RENDER_FORMATS[templateType] || TEMPLATE_RENDER_FORMATS["default"];
+
+            // Try to apply the output module template
+            try {
+                om.applyTemplate(renderConfig.outputModule);
+            } catch (templateErr) {
+                // Fallback: try common preset names
+                try {
+                    if (renderConfig.format === "png_sequence") {
+                        om.applyTemplate("PNG Sequence");
+                    } else {
+                        om.applyTemplate("H.264 - Match Render Settings - 15 Mbps");
+                    }
+                } catch (fallbackErr) {
+                    // Use default output module if presets not found
+                }
+            }
+
             om.file = new File(outputPath);
             return rqItem;
         } catch (e) {
