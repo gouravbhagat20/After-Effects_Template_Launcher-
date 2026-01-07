@@ -671,8 +671,8 @@
             var projectRoot = joinPath(joinPath(joinPath(basePath, String(year)), quarter), projectName);
             var sizeFolder = joinPath(projectRoot, size);
             var versionFolder = joinPath(sizeFolder, version);
-            var aeFolder = joinPath(versionFolder, "Animate CC_AE");
-            var publishedFolder = joinPath(aeFolder, "Sub_Published_" + revision);
+            var aeFolder = joinPath(versionFolder, "AE_File");
+            var publishedFolder = joinPath(aeFolder, "Render_" + revision);
             var assetsFolder = joinPath(versionFolder, "Assets");
 
             // Get template-specific asset folders or use default
@@ -1405,8 +1405,8 @@
                 successMsg += "Folder Structure:\n";
                 successMsg += size + "\\\n";
                 successMsg += "└── " + version + "\\\n";
-                successMsg += "    ├── Animate CC_AE\\\n";
-                successMsg += "    │   └── Sub_Published_" + revNum + "\\\n";
+                successMsg += "    ├── AE_File\\\n";
+                successMsg += "    │   └── Render_" + revNum + "\\\n";
                 successMsg += "    └── Assets\\\n";
                 successMsg += assetFoldersMsg;
                 alert(successMsg);
