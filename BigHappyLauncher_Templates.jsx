@@ -69,11 +69,11 @@
     // Template-specific asset folder presets
     // Each template type gets different asset subfolders based on its needs
     var TEMPLATE_FOLDERS = {
-        "sunrise": ["Sub_Image", "Sub_Screen"],
-        "interscroller": ["Sub_Image", "Sub_Screen", "Sub_GIF"],
-        "dooh_horizontal": ["Sub_Image", "Sub_Video", "Sub_Audio", "Sub_Screen"],
-        "dooh_vertical": ["Sub_Image", "Sub_Video", "Sub_Audio", "Sub_Screen"],
-        "default": ["Sub_Image", "Sub_Screen"]
+        "sunrise": ["Image", "Screen"],
+        "interscroller": ["Image", "Screen", "GIF"],
+        "dooh_horizontal": ["Image", "Screen", "PNG"],
+        "dooh_vertical": ["Image", "Screen", "PNG"],
+        "default": ["Image", "Screen"]
     };
 
     // =========================================================================
