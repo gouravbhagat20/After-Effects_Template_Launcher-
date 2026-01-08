@@ -1056,25 +1056,16 @@
             hdrGrp.orientation = "row";
             hdrGrp.alignment = ["fill", "top"];
             hdrGrp.alignChildren = ["fill", "center"];
-            hdrGrp.spacing = 0;
-            hdrGrp.margins = [10, 5, 10, 0];
 
-            // Layer 1: Title Centered
-            var titleGrp = hdrGrp.add("group");
-            titleGrp.orientation = "row";
-            titleGrp.alignment = ["fill", "fill"];
-            titleGrp.alignChildren = ["center", "center"];
-
-            var title = titleGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
+            var title = hdrGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
+            title.alignment = ["center", "center"];
             try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
 
-            // Layer 2: Settings Button Right Aligned
-            var btnGrp = hdrGrp.add("group");
-            btnGrp.orientation = "row";
-            btnGrp.alignment = ["fill", "fill"];
-            btnGrp.alignChildren = ["right", "center"];
+            // Spacer to push settings button to right
+            var spacer = hdrGrp.add("group");
+            spacer.alignment = ["fill", "fill"];
 
-            ui.btns.settings = btnGrp.add("button", undefined, "⚙");
+            ui.btns.settings = hdrGrp.add("button", undefined, "⚙");
             ui.btns.settings.preferredSize = [25, 25];
             ui.btns.settings.helpTip = "Open Settings";
         }
@@ -1386,19 +1377,15 @@
             // Validation Feedback
             var brandVal = validateInput(ui.inputs.brand.text, "brand");
             if (!brandVal.isValid && ui.inputs.brand.text.length > 0) {
-                try { ui.inputs.brand.graphics.backgroundColor = ui.inputs.brand.graphics.newBrush(ui.inputs.brand.graphics.BrushType.SOLID_COLOR, [1, 0.9, 0.9]); } catch (e) { }
                 ui.inputs.brand.helpTip = "Error: " + brandVal.msg;
             } else {
-                try { ui.inputs.brand.graphics.backgroundColor = null; } catch (e) { }
                 ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
             }
 
             var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
             if (!cmpVal.isValid && ui.inputs.campaign.text.length > 0) {
-                try { ui.inputs.campaign.graphics.backgroundColor = ui.inputs.campaign.graphics.newBrush(ui.inputs.campaign.graphics.BrushType.SOLID_COLOR, [1, 0.9, 0.9]); } catch (e) { }
                 ui.inputs.campaign.helpTip = "Error: " + cmpVal.msg;
             } else {
-                try { ui.inputs.campaign.graphics.backgroundColor = null; } catch (e) { }
                 ui.inputs.campaign.helpTip = "Enter the campaign or project name";
             }
 
