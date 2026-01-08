@@ -1060,6 +1060,12 @@
         saveAsBtn.helpTip = "Save the current project with the generated filename (Ctrl+S)";
         try { saveAsBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
+        var quickDuplicateBtn = btnGroup.add("button", undefined, "R+");
+        quickDuplicateBtn.preferredSize.height = 35;
+        quickDuplicateBtn.preferredSize.width = 40;
+        quickDuplicateBtn.helpTip = "Quick Duplicate: Save with next revision (R1→R2) in one click";
+        try { quickDuplicateBtn.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+
         // Status
         var statusText = panel.add("statictext", undefined, "Ready");
         statusText.alignment = ["center", "top"];
@@ -1486,6 +1492,69 @@
             }
         };
 
+        // Quick Duplicate: One-click save with auto-incremented revision
+        quickDuplicateBtn.onClick = function () {
+            if (!app.project || !app.project.file) {
+                showError("BH-2003");
+                return;
+            }
+
+            try {
+                // Parse current project name
+                var currentName = app.project.file.name.replace(/\.aep$/i, "");
+                var parsed = parseProjectName(currentName);
+
+                if (!parsed) {
+                    alert("Cannot parse project name.\nExpected format: Brand_Campaign_Q#_Size_V#_R#.aep");
+                    return;
+                }
+
+                // Get current revision number and increment
+                var currentRevNum = parseInt(parsed.revision.replace(/^R/i, ""), 10) || 1;
+                var newRevNum = currentRevNum + 1;
+                var newRevision = "R" + newRevNum;
+
+                // Build new filename
+                var sizeMatch = parsed.size;
+                var newFilename;
+                if (parsed.isDOOH) {
+                    newFilename = "DOOH_" + (parsed.campaign || parsed.brand) + "_" + sizeMatch + "_" + parsed.version + "_" + newRevision + ".aep";
+                } else {
+                    var campaignName = parsed.campaign || "Campaign";
+                    newFilename = parsed.brand + "_" + campaignName + "_" + parsed.quarter + "_" + sizeMatch + "_" + parsed.version + "_" + newRevision + ".aep";
+                }
+
+                // Save in same folder as current project
+                var aeFolder = app.project.file.parent.fsName;
+                var newPath = joinPath(aeFolder, newFilename);
+
+                // Check if file already exists
+                if (fileExists(newPath)) {
+                    if (!confirm("File already exists:\n" + newFilename + "\n\nOverwrite?")) {
+                        return;
+                    }
+                }
+
+                // Create new Render folder for this revision
+                var renderFolder = joinPath(aeFolder, "Render_" + newRevision);
+                createFolderRecursive(renderFolder);
+
+                // Save project with new name
+                app.project.save(new File(newPath));
+
+                // Update UI revision field
+                revisionInput.text = String(newRevNum);
+                updatePreview();
+
+                // Add to recent files
+                addToRecentFiles(newPath);
+
+                alert("Quick Saved!\n\nNew file: " + newFilename + "\nRender folder: Render_" + newRevision);
+
+            } catch (e) {
+                showError("BH-2001", e.toString());
+            }
+        };
 
         renderBtn.onClick = function () {
             if (!app.project || !app.project.file) {
