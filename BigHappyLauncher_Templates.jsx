@@ -335,6 +335,30 @@
     }
 
     // =========================================================================
+    // SECTION 2B.1: VALIDATION HELPERS
+    // =========================================================================
+
+    function sanitizeName(str) {
+        if (!str) return "";
+        return str.replace(/[^a-zA-Z0-9_\-\s]/g, "").replace(/\s+/g, "_");
+    }
+
+    function validateInput(text, type) {
+        if (!text || text.length === 0) return { isValid: false, msg: "Required" };
+
+        if (text.length > LIMITS.BRAND_MAX && type === "brand") return { isValid: false, msg: "Too long (>" + LIMITS.BRAND_MAX + ")" };
+        if (text.length > LIMITS.CAMPAIGN_MAX && type === "campaign") return { isValid: false, msg: "Too long (>" + LIMITS.CAMPAIGN_MAX + ")" };
+
+        var illegal = text.match(/[^a-zA-Z0-9_\-\s]/);
+        if (illegal) return { isValid: false, msg: "Illegal char: '" + illegal[0] + "'" };
+
+        var reserved = ["CON", "PRN", "AUX", "NUL", "COM1", "LPT1"];
+        if (reserved.indexOf(text.toUpperCase()) !== -1) return { isValid: false, msg: "Reserved name" };
+
+        return { isValid: true, msg: "OK" };
+    }
+
+    // =========================================================================
     // SECTION 2C: RECENT FILES
     // =========================================================================
 
@@ -1029,19 +1053,27 @@
 
         function createHeader() {
             var hdrGrp = ui.w.add("group");
-            hdrGrp.orientation = "row";
-            hdrGrp.alignChildren = ["fill", "center"];
+            hdrGrp.orientation = "stack";
             hdrGrp.alignment = ["fill", "top"];
+            hdrGrp.alignChildren = ["fill", "top"];
+            hdrGrp.margins = 0;
 
-            var title = hdrGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
-            title.alignment = ["center", "center"];
+            // Layer 1: Title Centered
+            var titleGrp = hdrGrp.add("group");
+            titleGrp.orientation = "row";
+            titleGrp.alignment = ["fill", "fill"];
+            titleGrp.alignChildren = ["center", "center"];
+
+            var title = titleGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
             try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
 
-            // Spacer to push settings button to right
-            var spacer = hdrGrp.add("group");
-            spacer.alignment = ["fill", "fill"];
+            // Layer 2: Settings Button Right Aligned
+            var btnGrp = hdrGrp.add("group");
+            btnGrp.orientation = "row";
+            btnGrp.alignment = ["fill", "fill"];
+            btnGrp.alignChildren = ["right", "center"];
 
-            ui.btns.settings = hdrGrp.add("button", undefined, "⚙");
+            ui.btns.settings = btnGrp.add("button", undefined, "⚙");
             ui.btns.settings.preferredSize = [25, 25];
             ui.btns.settings.helpTip = "Open Settings";
         }
@@ -1162,8 +1194,13 @@
             // Brand & Campaign
             ui.inputs.brand = addRow(ui.mainGrp, "Brand:", "");
             ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
+            // Capture default background
+            try { ui.inputs.brand.defaultBrush = ui.inputs.brand.graphics.backgroundColor; } catch (e) { }
+
             ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
             ui.inputs.campaign.helpTip = "Enter the campaign or project name";
+            // Capture default background
+            try { ui.inputs.campaign.defaultBrush = ui.inputs.campaign.graphics.backgroundColor; } catch (e) { }
 
             // Quarter & Year
             var qyRow = ui.mainGrp.add("group");
@@ -1347,20 +1384,32 @@
 
             // Validation Feedback
             var brandVal = validateInput(ui.inputs.brand.text, "brand");
-            if (!brandVal.isValid) {
+            if (!brandVal.isValid && ui.inputs.brand.text.length > 0) {
                 try { ui.inputs.brand.graphics.backgroundColor = ui.inputs.brand.graphics.newBrush(ui.inputs.brand.graphics.BrushType.SOLID_COLOR, [1, 0.9, 0.9]); } catch (e) { }
                 ui.inputs.brand.helpTip = "Error: " + brandVal.msg;
             } else {
-                try { ui.inputs.brand.graphics.backgroundColor = ui.inputs.brand.graphics.newBrush(ui.inputs.brand.graphics.BrushType.SOLID_COLOR, [1, 1, 1]); } catch (e) { }
+                try {
+                    if (ui.inputs.brand.defaultBrush) {
+                        ui.inputs.brand.graphics.backgroundColor = ui.inputs.brand.defaultBrush;
+                    } else {
+                        ui.inputs.brand.graphics.backgroundColor = null;
+                    }
+                } catch (e) { }
                 ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
             }
 
             var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
-            if (!cmpVal.isValid) {
+            if (!cmpVal.isValid && ui.inputs.campaign.text.length > 0) {
                 try { ui.inputs.campaign.graphics.backgroundColor = ui.inputs.campaign.graphics.newBrush(ui.inputs.campaign.graphics.BrushType.SOLID_COLOR, [1, 0.9, 0.9]); } catch (e) { }
                 ui.inputs.campaign.helpTip = "Error: " + cmpVal.msg;
             } else {
-                try { ui.inputs.campaign.graphics.backgroundColor = ui.inputs.campaign.graphics.newBrush(ui.inputs.campaign.graphics.BrushType.SOLID_COLOR, [1, 1, 1]); } catch (e) { }
+                try {
+                    if (ui.inputs.campaign.defaultBrush) {
+                        ui.inputs.campaign.graphics.backgroundColor = ui.inputs.campaign.defaultBrush;
+                    } else {
+                        ui.inputs.campaign.graphics.backgroundColor = null;
+                    }
+                } catch (e) { }
                 ui.inputs.campaign.helpTip = "Enter the campaign or project name";
             }
 
