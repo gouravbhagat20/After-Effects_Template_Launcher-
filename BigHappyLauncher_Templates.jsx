@@ -47,6 +47,7 @@
     var AME_ENABLED_KEY = "ame_enabled";
     var RECENT_FILES_KEY = "recent_files";
     var BASE_WORK_FOLDER_KEY = "base_work_folder";
+    var LOG_FILE_PATH = joinPath(Folder.myDocuments.fsName, "BigHappyLauncher_Log.txt");
     var MAX_RECENT_FILES = 10;
 
     var DEFAULT_TEMPLATES = [
@@ -63,7 +64,8 @@
         FPS_MIN: 1, FPS_MAX: 120,
         DURATION_MIN: 0.1, DURATION_MAX: 3600,
         BRAND_MIN: 2, BRAND_MAX: 50,
-        CAMPAIGN_MAX: 50
+        CAMPAIGN_MAX: 50,
+        PATH_MAX: 240 // Windows approx limit
     };
 
     // Template-specific asset folder presets
@@ -132,6 +134,10 @@
      */
     function showError(code, details) {
         var error = ERROR_CODES[code];
+
+        // Log the error
+        writeLog("ERROR: " + code + " - " + (error ? error.msg : "Unknown Error") + (details ? " | Details: " + details : ""), "ERROR");
+
         if (!error) {
             alert("Unknown Error\n\nCode: " + code + (details ? "\n\nDetails: " + details : ""));
             return;
@@ -155,6 +161,12 @@
      */
     function showWarning(code, details) {
         var error = ERROR_CODES[code];
+
+        // Log the warning
+        if (error) {
+            writeLog("WARNING: " + code + " - " + error.msg + (details ? " | Details: " + details : ""), "WARN");
+        }
+
         if (!error) return;
 
         var message = "Warning " + code + ": " + error.msg;
@@ -162,6 +174,31 @@
         message += "\n\n" + error.fix;
 
         alert(message);
+    }
+
+    // =========================================================================
+    // SECTION 1C: LOGGING
+    // =========================================================================
+
+    /**
+     * Append message to log file with timestamp
+     * @param {string} message - Message to log
+     * @param {string} [level] - INFO, WARN, ERROR (default: INFO)
+     */
+    function writeLog(message, level) {
+        try {
+            var f = new File(LOG_FILE_PATH);
+            var timestamp = new Date().toLocaleString();
+            var logLine = "[" + timestamp + "] [" + (level || "INFO") + "] " + message;
+
+            // Append to file
+            f.open("a"); // Append mode
+            f.encoding = "UTF-8";
+            f.writeln(logLine);
+            f.close();
+        } catch (e) {
+            // Fail silently if logging fails to avoid infinite loops
+        }
     }
 
     // =========================================================================
@@ -613,6 +650,7 @@
 
             return filePath;
         } catch (e) {
+            writeLog("Failed to generate template '" + template.name + "': " + e.toString(), "ERROR");
             showError("BH-1003", e.toString());
             return null;
         }
@@ -647,6 +685,7 @@
 
             var newPath = generateTemplateFile(t, folderPath);
             if (newPath) {
+                writeLog("Generated template file: " + t.name, "INFO");
                 templates[i].path = newPath;
                 generated.push(t.name);
             }
@@ -732,6 +771,7 @@
                 revision: revision
             };
         } catch (e) {
+            writeLog("Create Project Structure Failed: " + e.toString(), "ERROR");
             // Cleanup on exception
             for (var k = createdFolders.length - 1; k >= 0; k--) {
                 try {
@@ -910,6 +950,7 @@
     // =========================================================================
 
     function buildUI(thisObj) {
+        writeLog("Starting BigHappyLauncher UI...", "INFO");
         var templates = loadTemplates();
         var templatesFolder = getTemplatesFolder();
 
@@ -1165,6 +1206,25 @@
             var size = t.width + "x" + t.height;
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
             var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
+
+            // Validation Feedback
+            var brandVal = validateInput(brandInput.text, "brand");
+            if (!brandVal.isValid) {
+                try { brandInput.graphics.backgroundColor = brandInput.graphics.newBrush(brandInput.graphics.BrushType.SOLID_COLOR, [1, 0.9, 0.9]); } catch (e) { }
+                brandInput.helpTip = "Error: " + brandVal.msg;
+            } else {
+                try { brandInput.graphics.backgroundColor = brandInput.graphics.newBrush(brandInput.graphics.BrushType.SOLID_COLOR, [1, 1, 1]); } catch (e) { }
+                brandInput.helpTip = "Enter the brand/client name (required)";
+            }
+
+            var cmpVal = validateInput(campaignInput.text, "campaign");
+            if (!cmpVal.isValid) {
+                try { campaignInput.graphics.backgroundColor = campaignInput.graphics.newBrush(campaignInput.graphics.BrushType.SOLID_COLOR, [1, 0.9, 0.9]); } catch (e) { }
+                campaignInput.helpTip = "Error: " + cmpVal.msg;
+            } else {
+                try { campaignInput.graphics.backgroundColor = campaignInput.graphics.newBrush(campaignInput.graphics.BrushType.SOLID_COLOR, [1, 1, 1]); } catch (e) { }
+                campaignInput.helpTip = "Enter the campaign or project name";
+            }
 
             // buildFilename now handles empty campaign internally
             var filename = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
