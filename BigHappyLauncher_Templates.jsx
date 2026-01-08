@@ -1143,7 +1143,9 @@
             if (isDOOH) {
                 return "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
             } else {
-                return brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+                // Use "Campaign" as placeholder when campaign is empty
+                var campaignName = (campaign && campaign.length > 0) ? campaign : "Campaign";
+                return brand + "_" + campaignName + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
             }
         }
 
@@ -1158,9 +1160,8 @@
             var version = "V" + (parseInt(versionInput.text, 10) || 1);
             var revision = "R" + (parseInt(revisionInput.text, 10) || 1);
 
-            // Handle empty campaign in filename
-            var filenameForBuild = campaign.length > 0 ? campaign : brand;
-            var filename = buildFilename(brand, filenameForBuild, quarter, size, version, revision, isDOOHTemplate(t.name));
+            // buildFilename now handles empty campaign internally
+            var filename = buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
             var projectFolderName = buildProjectFolderName(brand, campaign);
             var fullPath = joinPath(joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), size), "Animate CC_AE");
 
@@ -1182,13 +1183,13 @@
             var projectFolderName = buildProjectFolderName(brand, campaign);
             var aeFolder = joinPath(joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), size), "Animate CC_AE");
             var isDOOH = isDOOHTemplate(t.name);
-            var filenameForBuild = campaign.length > 0 ? campaign : brand;
             var maxR = 50;
             var foundR = 1;
 
             // Find next available revision for the current version
+            // buildFilename now handles empty campaign internally
             for (var r = 1; r <= maxR; r++) {
-                var filename = buildFilename(brand, filenameForBuild, quarter, size, version, "R" + r, isDOOH);
+                var filename = buildFilename(brand, campaign, quarter, size, version, "R" + r, isDOOH);
                 if (fileExists(joinPath(aeFolder, filename))) {
                     foundR = r + 1;
                 } else {
@@ -1388,8 +1389,8 @@
 
             // Use just brand when campaign is empty
             var projectName = buildProjectFolderName(brand, campaign);
-            var filenameForBuild = campaign.length > 0 ? campaign : brand;
-            var filename = buildFilename(brand, filenameForBuild, quarter, t.width + "x" + t.height, version, revision, isDOOHTemplate(t.name));
+            // buildFilename now handles empty campaign internally
+            var filename = buildFilename(brand, campaign, quarter, t.width + "x" + t.height, version, revision, isDOOHTemplate(t.name));
 
             try {
                 // Create folder structure with version/revision hierarchy
