@@ -1023,12 +1023,123 @@
             return inp;
         }
 
+        ui.btns.settings = null;
+
         // --- SUB-BUILDER FUNCTIONS ---
 
         function createHeader() {
-            var title = ui.w.add("statictext", undefined, "BIG HAPPY LAUNCHER");
-            title.alignment = ["center", "top"];
+            var hdrGrp = ui.w.add("group");
+            hdrGrp.orientation = "row";
+            hdrGrp.alignChildren = ["fill", "center"];
+            hdrGrp.alignment = ["fill", "top"];
+
+            var title = hdrGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
+            title.alignment = ["center", "center"];
             try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
+
+            // Spacer to push settings button to right
+            var spacer = hdrGrp.add("group");
+            spacer.alignment = ["fill", "fill"];
+
+            ui.btns.settings = hdrGrp.add("button", undefined, "⚙");
+            ui.btns.settings.preferredSize = [25, 25];
+            ui.btns.settings.helpTip = "Open Settings";
+        }
+
+        function showSettingsDialog() {
+            var d = new Window("dialog", "Launcher Settings");
+            d.orientation = "column";
+            d.alignChildren = ["fill", "top"];
+            d.spacing = 10;
+            d.margins = 15;
+
+            // --- PATHS SECTION ---
+            var pPanel = d.add("panel", undefined, "Paths");
+            pPanel.orientation = "column";
+            pPanel.alignChildren = ["fill", "top"];
+            pPanel.spacing = 5;
+
+            // Base Folder
+            var bGrp = pPanel.add("group");
+            bGrp.orientation = "row";
+            bGrp.add("statictext", undefined, "Base Work Folder:");
+            var baseInput = bGrp.add("edittext", undefined, getBaseWorkFolder());
+            baseInput.alignment = ["fill", "center"];
+            var baseBtn = bGrp.add("button", undefined, "...");
+            baseBtn.preferredSize = [30, 22];
+            baseBtn.onClick = function () {
+                var f = Folder.selectDialog("Select Base Work Folder");
+                if (f) baseInput.text = f.fsName;
+            };
+
+            // Templates Folder
+            var tGrp = pPanel.add("group");
+            tGrp.orientation = "row";
+            tGrp.add("statictext", undefined, "Templates Folder:");
+            var tmplInput = tGrp.add("edittext", undefined, ui.templatesFolder);
+            tmplInput.alignment = ["fill", "center"];
+            var tmplBtn = tGrp.add("button", undefined, "...");
+            tmplBtn.preferredSize = [30, 22];
+            tmplBtn.onClick = function () {
+                var f = Folder.selectDialog("Select Templates Folder");
+                if (f) tmplInput.text = f.fsName;
+            };
+
+            // --- RENDER SECTION ---
+            var rPanel = d.add("panel", undefined, "Render & Output");
+            rPanel.orientation = "column";
+            rPanel.alignChildren = ["left", "top"];
+
+            var ameCheck = rPanel.add("checkbox", undefined, "Enable Adobe Media Encoder (AME)");
+            ameCheck.value = (getSetting(AME_ENABLED_KEY) === "true");
+
+            // --- SYSTEM SECTION ---
+            var sPanel = d.add("panel", undefined, "System");
+            sPanel.orientation = "column";
+            sPanel.alignChildren = ["left", "top"];
+
+            var logGrp = sPanel.add("group");
+            logGrp.add("statictext", undefined, "Log File:");
+            var openLogBtn = logGrp.add("button", undefined, "Open Log");
+            openLogBtn.onClick = function () {
+                var logF = new File(LOG_FILE_PATH);
+                if (logF.exists) logF.execute();
+                else alert("Log file not found yet.");
+            };
+
+            // --- BUTTONS ---
+            var btnGrp = d.add("group");
+            btnGrp.orientation = "row";
+            btnGrp.alignment = ["center", "bottom"];
+            var saveBtn = btnGrp.add("button", undefined, "Save");
+            var cancelBtn = btnGrp.add("button", undefined, "Cancel");
+
+            saveBtn.onClick = function () {
+                // Validation
+                if (!baseInput.text) { alert("Base Work Folder cannot be empty."); return; }
+                if (!tmplInput.text) { alert("Templates Folder cannot be empty."); return; }
+
+                // Save
+                setBaseWorkFolder(baseInput.text);
+                setSetting(TEMPLATES_FOLDER_KEY, tmplInput.text);
+                setSetting(AME_ENABLED_KEY, String(ameCheck.value));
+
+                // Update UI state
+                ui.templatesFolder = tmplInput.text;
+                ui.labels.basePath.text = baseInput.text;
+                if (ui.btns.ameCheckbox) ui.btns.ameCheckbox.value = ameCheck.value; // Sync main UI checkbox if exists
+
+                // Reload templates if folder changed
+                ui.templates = loadTemplates();
+                ui.refreshDropdown();
+                ui.updatePreview();
+
+                d.close();
+            };
+            cancelBtn.onClick = function () { d.close(); };
+
+            d.center();
+            d.show();
         }
 
         function createMainInputs() {
@@ -1090,7 +1201,7 @@
             ui.inputs.revision = vrRow.add("edittext", undefined, "1");
             ui.inputs.revision.preferredSize.width = 50;
 
-            // Base Folder
+            // Base Folder (Label Only)
             var baseGrp = ui.mainGrp.add("group");
             baseGrp.orientation = "row";
             baseGrp.alignChildren = ["left", "center"];
@@ -1099,8 +1210,7 @@
             ui.labels.basePath = baseGrp.add("statictext", undefined, getBaseWorkFolder());
             ui.labels.basePath.alignment = ["fill", "center"];
             try { ui.labels.basePath.graphics.foregroundColor = ui.labels.basePath.graphics.newPen(ui.labels.basePath.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
-            ui.btns.baseBrowse = baseGrp.add("button", undefined, "...");
-            ui.btns.baseBrowse.preferredSize = [25, 22];
+            // Cleaned up: Browse button removed, moved to Settings
         }
 
         function createPreview() {
@@ -1308,14 +1418,12 @@
                 ui.checkRevision();
             };
 
-            ui.btns.baseBrowse.onClick = function () {
-                var f = Folder.selectDialog("Select Base Work Folder");
-                if (f) {
-                    setBaseWorkFolder(f.fsName);
-                    ui.labels.basePath.text = f.fsName;
-                    ui.updatePreview();
-                }
-            };
+            // Header/Settings
+            if (ui.btns.settings) {
+                ui.btns.settings.onClick = function () {
+                    showSettingsDialog();
+                };
+            }
 
             ui.btns.ameCheckbox.onClick = function () {
                 setSetting(AME_ENABLED_KEY, String(ui.btns.ameCheckbox.value));
