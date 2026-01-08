@@ -553,14 +553,18 @@
         var result = {};
         var remaining = projectName;
 
-        // Step 1: Extract _V#_R# from end (REQUIRED)
-        var versionMatch = remaining.match(/_V(\d+)_R(\d+)$/i);
+        // Step 1: Extract optional V# and required R# from end
+        // Matches: _V1_R1 OR _R1
+        var versionMatch = remaining.match(/(?:_V(\d+))?_R(\d+)$/i);
         if (!versionMatch) {
-            return null; // Pattern not matched
+            return null; // Pattern not matched (R# is strictly required)
         }
-        result.version = "V" + versionMatch[1];
+
+        result.version = versionMatch[1] ? ("V" + versionMatch[1]) : "V1"; // Default to V1 if missing
         result.revision = "R" + versionMatch[2];
-        remaining = remaining.replace(/_V\d+_R\d+$/i, "");
+
+        // Remove the matched suffix
+        remaining = remaining.replace(/(?:_V\d+)?_R\d+$/i, "");
 
         // Step 2: Extract _<width>x<height> from end (REQUIRED)
         var sizeMatch = remaining.match(/_(\d+x\d+)$/i);
@@ -573,13 +577,16 @@
         // Step 3: Check for DOOH prefix
         if (remaining.match(/^DOOH/i)) {
             result.isDOOH = true;
-            // prefix = everything before _<size>_V#_R#
-            result.prefix = projectName.replace(/_\d+x\d+_V\d+_R\d+$/i, "");
+            // prefix = everything before suffix was removed
+            // We need to reconstruct the prefix since we've been stripping from 'remaining'
+            // The logic below for DOOH parsing needs to just look at what's left in 'remaining'
+
             // campaign = everything after "DOOH_"
             var doohContent = remaining.replace(/^DOOH_?/i, "");
             if (doohContent) {
                 result.campaign = doohContent;
             }
+            // Use remaining (without DOOH_) as campaign if present, or just generic
             return result;
         }
 
