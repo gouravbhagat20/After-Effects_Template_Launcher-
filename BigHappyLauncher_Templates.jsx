@@ -1660,30 +1660,155 @@
                     var parsed = parseProjectName(currentName);
                     if (!parsed) { alert("Cannot parse project name format."); return; }
 
+                    // 1. Calculate New Revision
                     var currentRevNum = parseInt(parsed.revision.replace(/^R/i, ""), 10) || 1;
                     var newRevNum = currentRevNum + 1;
-                    var newRevision = "R" + newRevNum;
-                    var sizeMatch = parsed.size;
+                    var revision = "R" + newRevNum;
+                    var version = parsed.version || "V1";
+
+                    // 2. Initial Guess for Year/Quarter (from path or UI)
+                    var currentPath = app.project.file.parent.fsName;
+                    var yearMatch = currentPath.match(/[\/\\](\d{4})[\/\\]/);
+                    var quarterMatch = currentPath.match(/[\/\\](Q[1-4])[\/\\]/);
+
+                    var year = yearMatch ? yearMatch[1] : String(getCurrentYear());
+                    var quarter = parsed.quarter || (quarterMatch ? quarterMatch[1] : (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1"));
+
+                    // 3. POPUP: Confirm/Edit Year & Quarter
+                    var confirmWin = new Window("dialog", "Quick Duplicate");
+                    confirmWin.add("statictext", undefined, "Confirm Target Period:");
+
+                    var grp = confirmWin.add("group");
+                    grp.orientation = "row";
+                    var yInput = grp.add("edittext", undefined, year);
+                    yInput.preferredSize.width = 50;
+                    yInput.helpTip = "Year";
+
+                    var qItems = ["Q1", "Q2", "Q3", "Q4"];
+                    var qInput = grp.add("dropdownlist", undefined, qItems);
+                    qInput.preferredSize.width = 50;
+                    // Select index based on text
+                    for (var i = 0; i < qItems.length; i++) if (qItems[i] === quarter) qInput.selection = i;
+                    if (!qInput.selection) qInput.selection = 0;
+
+                    var btnGrp = confirmWin.add("group");
+                    btnGrp.alignment = ["center", "bottom"];
+                    var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
+                    var cnclBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+                    if (confirmWin.show() !== 1) return; // Cancelled
+
+                    // Update values from dialog
+                    year = yInput.text;
+                    quarter = qInput.selection.text;
+
+                    // 4. Derive Data for Folder Structure
+                    var dims = parsed.size.split("x");
+                    var width = parseInt(dims[0], 10);
+                    var height = parseInt(dims[1], 10);
+
+                    var templateType = getTemplateType(width, height);
+                    var templateFolderName = getTemplateFolderName(width, height);
+                    var sizeFolderName = templateFolderName + "_" + parsed.size; // e.g. Sunrise_750x300
+
+                    var brand = parsed.brand;
+                    var campaign = parsed.campaign || "";
+                    var projectName = buildProjectFolderName(brand, campaign);
+                    var basePath = getBaseWorkFolder();
+
+                    // 5. Create Full Folder Structure (Assets, etc.)
+                    // This function automatically checks existence and creates missing folders
+                    var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
+                    if (!folders) return;
+
+                    // 6. Construct New Filename (Standardized)
                     var newFilename;
                     if (parsed.isDOOH) {
-                        newFilename = "DOOH_" + (parsed.campaign || parsed.brand) + "_" + sizeMatch + "_" + parsed.version + "_" + newRevision + ".aep";
+                        newFilename = "DOOH_" + (campaign || brand) + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
                     } else {
-                        var campaignName = parsed.campaign || "Campaign";
-                        newFilename = parsed.brand + "_" + campaignName + "_" + parsed.quarter + "_" + sizeMatch + "_" + parsed.version + "_" + newRevision + ".aep";
+                        newFilename = brand + "_" + campaign + "_" + quarter + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
                     }
-                    var aeFolder = app.project.file.parent.fsName;
-                    var newPath = joinPath(aeFolder, newFilename);
-                    if (fileExists(newPath)) {
+
+                    // 7. Save in Correct Location (Inside newly verified structure)
+                    var savePath = joinPath(folders.aeFolder, newFilename);
+                    var saveFile = new File(savePath);
+
+                    if (saveFile.exists) {
                         if (!confirm("File already exists:\n" + newFilename + "\n\nOverwrite?")) return;
                     }
-                    var renderFolder = joinPath(aeFolder, "Render_" + newRevision);
-                    createFolderRecursive(renderFolder);
-                    app.project.save(new File(newPath));
+
+                    app.project.save(saveFile);
+
+                    // Update UI and History
                     ui.inputs.revision.text = String(newRevNum);
                     ui.updatePreview();
-                    addToRecentFiles(newPath);
-                    alert("Quick Saved!\n\nNew file: " + newFilename);
+                    addToRecentFiles(savePath); // Add standard path to recent
+
+                    alert("Quick Saved!\n\nStandardized & Saved to:\n" + folders.aeFolder);
+                    return; // Prevent falling through to old code
+
                 } catch (e) { showError("BH-2001", e.toString()); }
+                /* // OLD CODE STARTS HERE:
+                try {
+                    var currentName = app.project.file.name.replace(/\.aep$/i, "");
+                    var parsed = parseProjectName(currentName);
+                    if (!parsed) { alert("Cannot parse project name format."); return; }
+                
+                    // 1. Calculate New Revision
+                    var currentRevNum = parseInt(parsed.revision.replace(/^R/i, ""), 10) || 1;
+                    var newRevNum = currentRevNum + 1;
+                    var revision = "R" + newRevNum;
+                    var version = parsed.version || "V1";
+                
+                    // 2. Derive Data for Folder Structure
+                    // Need dimensions to determine template type and folder names
+                    var dims = parsed.size.split("x");
+                    var width = parseInt(dims[0], 10);
+                    var height = parseInt(dims[1], 10);
+                
+                    var templateType = getTemplateType(width, height);
+                    var templateFolderName = getTemplateFolderName(width, height);
+                    var sizeFolderName = templateFolderName + "_" + parsed.size; // e.g. Sunrise_750x300
+                
+                    var brand = parsed.brand;
+                    var campaign = parsed.campaign || "";
+                    var projectName = buildProjectFolderName(brand, campaign);
+                
+                    var basePath = getBaseWorkFolder();
+                    var year = String(getCurrentYear());
+                    var quarter = parsed.quarter || (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1");
+                
+                    // 3. Create Full Folder Structure (Assets, etc.)
+                    // This function automatically checks existence and creates missing folders
+                    var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
+                    if (!folders) return;
+                
+                    // 4. Construct New Filename (Standardized)
+                    var newFilename;
+                    if (parsed.isDOOH) {
+                        newFilename = "DOOH_" + (campaign || brand) + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
+                    } else {
+                        newFilename = brand + "_" + campaign + "_" + quarter + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
+                    }
+                
+                    // 5. Save in Correct Location (Inside newly verified structure)
+                    var savePath = joinPath(folders.aeFolder, newFilename);
+                    var saveFile = new File(savePath);
+                
+                    if (saveFile.exists) {
+                        if (!confirm("File already exists:\n" + newFilename + "\n\nOverwrite?")) return;
+                    }
+                
+                    app.project.save(saveFile);
+                
+                    // Update UI and History
+                    ui.inputs.revision.text = String(newRevNum);
+                    ui.updatePreview();
+                    addToRecentFiles(savePath); // Add standard path to recent
+                
+                    alert("Quick Saved!\n\nStandardized & Saved to:\n" + folders.aeFolder);
+                
+                                } catch (e) { showError("BH-2001", e.toString()); } */
             };
 
             ui.btns.render.onClick = function () {
@@ -1795,34 +1920,34 @@
 
 /*
 ================================================================================
-  HOW TO INSTALL & RUN
+HOW TO INSTALL & RUN
 ================================================================================
 
 1. SAVE THE FILE:
-   - Save this file as "BigHappyLauncher_Templates.jsx"
+- Save this file as "BigHappyLauncher_Templates.jsx"
 
 2. INSTALL LOCATION (choose one):
-   
-   A) For Panel (recommended - dockable):
-      - macOS: /Applications/Adobe After Effects [version]/Scripts/ScriptUI Panels/
-      - Windows: C:\Program Files\Adobe\Adobe After Effects [version]\Support Files\Scripts\ScriptUI Panels\
-   
-   B) For Script (run once):
-      - macOS: /Applications/Adobe After Effects [version]/Scripts/
-      - Windows: C:\Program Files\Adobe\Adobe After Effects [version]\Support Files\Scripts\
+ 
+A) For Panel (recommended - dockable):
+- macOS: /Applications/Adobe After Effects [version]/Scripts/ScriptUI Panels/
+- Windows: C:\Program Files\Adobe\Adobe After Effects [version]\Support Files\Scripts\ScriptUI Panels\
+ 
+B) For Script (run once):
+- macOS: /Applications/Adobe After Effects [version]/Scripts/
+- Windows: C:\Program Files\Adobe\Adobe After Effects [version]\Support Files\Scripts\
 
 3. ENABLE SCRIPT ACCESS:
-   - After Effects > Preferences > Scripting & Expressions
-   - Enable "Allow Scripts to Write Files and Access Network"
+- After Effects > Preferences > Scripting & Expressions
+- Enable "Allow Scripts to Write Files and Access Network"
 
 4. RUN THE PANEL:
-   - Restart After Effects
-   - Go to Window > BigHappyLauncher_Templates.jsx
-   - Dock the panel wherever you prefer
+- Restart After Effects
+- Go to Window > BigHappyLauncher_Templates.jsx
+- Dock the panel wherever you prefer
 
 5. FIRST RUN:
-   - Click "Regenerate" to create template .aep files
-   - The templates will be saved to Documents/BH_Templates/
+- Click "Regenerate" to create template .aep files
+- The templates will be saved to Documents/BH_Templates/
 
 ================================================================================
 */
