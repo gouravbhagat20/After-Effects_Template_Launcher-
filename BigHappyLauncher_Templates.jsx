@@ -1053,10 +1053,11 @@
 
         function createHeader() {
             var hdrGrp = ui.w.add("group");
-            hdrGrp.orientation = "stack";
+            hdrGrp.orientation = "row";
             hdrGrp.alignment = ["fill", "top"];
-            hdrGrp.alignChildren = ["fill", "top"];
-            hdrGrp.margins = 0;
+            hdrGrp.alignChildren = ["fill", "center"];
+            hdrGrp.spacing = 0;
+            hdrGrp.margins = [10, 5, 10, 0];
 
             // Layer 1: Title Centered
             var titleGrp = hdrGrp.add("group");
@@ -1195,12 +1196,12 @@
             ui.inputs.brand = addRow(ui.mainGrp, "Brand:", "");
             ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
             // Capture default background
-            try { ui.inputs.brand.defaultBrush = ui.inputs.brand.graphics.backgroundColor; } catch (e) { }
+
 
             ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
             ui.inputs.campaign.helpTip = "Enter the campaign or project name";
             // Capture default background
-            try { ui.inputs.campaign.defaultBrush = ui.inputs.campaign.graphics.backgroundColor; } catch (e) { }
+
 
             // Quarter & Year
             var qyRow = ui.mainGrp.add("group");
@@ -1388,13 +1389,7 @@
                 try { ui.inputs.brand.graphics.backgroundColor = ui.inputs.brand.graphics.newBrush(ui.inputs.brand.graphics.BrushType.SOLID_COLOR, [1, 0.9, 0.9]); } catch (e) { }
                 ui.inputs.brand.helpTip = "Error: " + brandVal.msg;
             } else {
-                try {
-                    if (ui.inputs.brand.defaultBrush) {
-                        ui.inputs.brand.graphics.backgroundColor = ui.inputs.brand.defaultBrush;
-                    } else {
-                        ui.inputs.brand.graphics.backgroundColor = null;
-                    }
-                } catch (e) { }
+                try { ui.inputs.brand.graphics.backgroundColor = null; } catch (e) { }
                 ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
             }
 
@@ -1403,13 +1398,7 @@
                 try { ui.inputs.campaign.graphics.backgroundColor = ui.inputs.campaign.graphics.newBrush(ui.inputs.campaign.graphics.BrushType.SOLID_COLOR, [1, 0.9, 0.9]); } catch (e) { }
                 ui.inputs.campaign.helpTip = "Error: " + cmpVal.msg;
             } else {
-                try {
-                    if (ui.inputs.campaign.defaultBrush) {
-                        ui.inputs.campaign.graphics.backgroundColor = ui.inputs.campaign.defaultBrush;
-                    } else {
-                        ui.inputs.campaign.graphics.backgroundColor = null;
-                    }
-                } catch (e) { }
+                try { ui.inputs.campaign.graphics.backgroundColor = null; } catch (e) { }
                 ui.inputs.campaign.helpTip = "Enter the campaign or project name";
             }
 
