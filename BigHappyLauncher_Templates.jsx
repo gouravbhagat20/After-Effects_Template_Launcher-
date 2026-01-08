@@ -1151,7 +1151,7 @@
                 // Update UI state
                 ui.templatesFolder = tmplInput.text;
                 ui.labels.basePath.text = baseInput.text;
-                if (ui.btns.ameCheckbox) ui.btns.ameCheckbox.value = ameCheck.value; // Sync main UI checkbox if exists
+
 
                 // Reload templates if folder changed
                 ui.templates = loadTemplates();
@@ -1312,10 +1312,7 @@
         }
 
         function createRenderSection() {
-            var ameGrp = ui.w.add("group");
-            ameGrp.alignment = ["center", "top"];
-            ui.btns.ameCheckbox = ameGrp.add("checkbox", undefined, "Send to AME after queuing");
-            ui.btns.ameCheckbox.value = getSetting(AME_ENABLED_KEY, "false") === "true";
+
 
             ui.btns.render = ui.w.add("button", undefined, "ADD TO RENDER QUEUE");
             ui.btns.render.preferredSize.height = 28;
@@ -1450,9 +1447,7 @@
                 };
             }
 
-            ui.btns.ameCheckbox.onClick = function () {
-                setSetting(AME_ENABLED_KEY, String(ui.btns.ameCheckbox.value));
-            };
+
 
             // Template Mgmt
             ui.btns.template.add.onClick = function () {
