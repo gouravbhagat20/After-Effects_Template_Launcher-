@@ -40,52 +40,53 @@
     // SECTION 1: CONFIGURATION & SETTINGS
     // =========================================================================
 
-    var SETTINGS_SECTION = "BigHappyLauncher";
-    var TEMPLATES_KEY = "templates_data";
-    var TEMPLATES_FOLDER_KEY = "templates_folder";
-    var DEFAULT_SAVE_FOLDER_KEY = "default_save_folder";
-    var AME_ENABLED_KEY = "ame_enabled";
-    var RECENT_FILES_KEY = "recent_files";
-    var BASE_WORK_FOLDER_KEY = "base_work_folder";
-    var LOG_FILE_PATH = joinPath(Folder.myDocuments.fsName, "BigHappyLauncher_Log.txt");
-    var MAX_RECENT_FILES = 10;
-
-    var DEFAULT_TEMPLATES = [
-        { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "" },
-        { name: "InterScroller", width: 880, height: 1912, fps: 24, duration: 15, path: "" },
-        { name: "DOOH Horizontal", width: 1920, height: 1080, fps: 29.97, duration: 15, path: "" },
-        { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "" }
-    ];
-
-    // Validation limits
-    var LIMITS = {
-        WIDTH_MIN: 1, WIDTH_MAX: 8192,
-        HEIGHT_MIN: 1, HEIGHT_MAX: 8192,
-        FPS_MIN: 1, FPS_MAX: 120,
-        DURATION_MIN: 0.1, DURATION_MAX: 3600,
-        BRAND_MIN: 2, BRAND_MAX: 50,
-        CAMPAIGN_MAX: 50,
-        PATH_MAX: 240 // Windows approx limit
-    };
-
-    // Template-specific asset folder presets
-    // Each template type gets different asset subfolders based on its needs
-    var TEMPLATE_FOLDERS = {
-        "sunrise": ["Image", "Screen"],
-        "interscroller": ["Image", "Screen", "GIF"],
-        "dooh_horizontal": ["Image", "Screen", "PNG"],
-        "dooh_vertical": ["Image", "Screen", "PNG"],
-        "default": ["Image", "Screen"]
-    };
-
-    // Template-specific render output formats
-    // format: "png_sequence" = PNG with RGB+Alpha, "mp4" = H.264 MP4
-    var TEMPLATE_RENDER_FORMATS = {
-        "sunrise": { format: "png_sequence", outputModule: "PNG Sequence with Alpha" },
-        "interscroller": { format: "mp4", outputModule: "H.264" },
-        "dooh_horizontal": { format: "mp4", outputModule: "H.264" },
-        "dooh_vertical": { format: "mp4", outputModule: "H.264" },
-        "default": { format: "png_sequence", outputModule: "Lossless with Alpha" }
+    var CONFIG = {
+        SETTINGS: {
+            SECTION: "BigHappyLauncher",
+            KEYS: {
+                TEMPLATES: "templates_data",
+                TEMPLATES_FOLDER: "templates_folder",
+                DEFAULT_SAVE_FOLDER: "default_save_folder",
+                AME_ENABLED: "ame_enabled",
+                RECENT_FILES: "recent_files",
+                BASE_WORK_FOLDER: "base_work_folder"
+            },
+            MAX_RECENT_FILES: 10
+        },
+        PATHS: {
+            LOG_FILE: joinPath(Folder.myDocuments.fsName, "BigHappyLauncher_Log.txt")
+        },
+        DEFAULTS: {
+            TEMPLATES: [
+                { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "" },
+                { name: "InterScroller", width: 880, height: 1912, fps: 24, duration: 15, path: "" },
+                { name: "DOOH Horizontal", width: 1920, height: 1080, fps: 29.97, duration: 15, path: "" },
+                { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "" }
+            ]
+        },
+        LIMITS: {
+            WIDTH_MIN: 1, WIDTH_MAX: 8192,
+            HEIGHT_MIN: 1, HEIGHT_MAX: 8192,
+            FPS_MIN: 1, FPS_MAX: 120,
+            DURATION_MIN: 0.1, DURATION_MAX: 3600,
+            BRAND_MIN: 2, BRAND_MAX: 50,
+            CAMPAIGN_MAX: 50,
+            PATH_MAX: 240 // Windows approx limit
+        },
+        TEMPLATE_FOLDERS: {
+            "sunrise": ["Image", "Screen"],
+            "interscroller": ["Image", "Screen", "GIF"],
+            "dooh_horizontal": ["Image", "Screen", "PNG"],
+            "dooh_vertical": ["Image", "Screen", "PNG"],
+            "default": ["Image", "Screen"]
+        },
+        RENDER_FORMATS: {
+            "sunrise": { format: "png_sequence", outputModule: "PNG Sequence with Alpha" },
+            "interscroller": { format: "mp4", outputModule: "H.264" },
+            "dooh_horizontal": { format: "mp4", outputModule: "H.264" },
+            "dooh_vertical": { format: "mp4", outputModule: "H.264" },
+            "default": { format: "png_sequence", outputModule: "Lossless with Alpha" }
+        }
     };
 
     // =========================================================================
@@ -115,12 +116,12 @@
         // 4xxx - Input/Validation Errors
         "BH-4001": { msg: "Brand name is required", fix: "Enter a brand/client name in the Brand field" },
         "BH-4002": { msg: "Template name is required", fix: "Enter a name for the template" },
-        "BH-4003": { msg: "Invalid width value", fix: "Width must be between " + LIMITS.WIDTH_MIN + " and " + LIMITS.WIDTH_MAX },
-        "BH-4004": { msg: "Invalid height value", fix: "Height must be between " + LIMITS.HEIGHT_MIN + " and " + LIMITS.HEIGHT_MAX },
-        "BH-4005": { msg: "Invalid FPS value", fix: "FPS must be between " + LIMITS.FPS_MIN + " and " + LIMITS.FPS_MAX },
-        "BH-4006": { msg: "Invalid duration value", fix: "Duration must be between " + LIMITS.DURATION_MIN + " and " + LIMITS.DURATION_MAX + " seconds" },
-        "BH-4007": { msg: "Brand name too short or too long", fix: "Brand must be " + LIMITS.BRAND_MIN + "-" + LIMITS.BRAND_MAX + " characters" },
-        "BH-4008": { msg: "Campaign name too long", fix: "Campaign must be under " + LIMITS.CAMPAIGN_MAX + " characters" },
+        "BH-4003": { msg: "Invalid width value", fix: "Width must be between " + CONFIG.LIMITS.WIDTH_MIN + " and " + CONFIG.LIMITS.WIDTH_MAX },
+        "BH-4004": { msg: "Invalid height value", fix: "Height must be between " + CONFIG.LIMITS.HEIGHT_MIN + " and " + CONFIG.LIMITS.HEIGHT_MAX },
+        "BH-4005": { msg: "Invalid FPS value", fix: "FPS must be between " + CONFIG.LIMITS.FPS_MIN + " and " + CONFIG.LIMITS.FPS_MAX },
+        "BH-4006": { msg: "Invalid duration value", fix: "Duration must be between " + CONFIG.LIMITS.DURATION_MIN + " and " + CONFIG.LIMITS.DURATION_MAX + " seconds" },
+        "BH-4007": { msg: "Brand name too short or too long", fix: "Brand must be " + CONFIG.LIMITS.BRAND_MIN + "-" + CONFIG.LIMITS.BRAND_MAX + " characters" },
+        "BH-4008": { msg: "Campaign name too long", fix: "Campaign must be under " + CONFIG.LIMITS.CAMPAIGN_MAX + " characters" },
 
         // 5xxx - Settings Errors
         "BH-5001": { msg: "Failed to save settings", fix: "After Effects preferences may be locked or corrupted" },
@@ -187,7 +188,7 @@
      */
     function writeLog(message, level) {
         try {
-            var f = new File(LOG_FILE_PATH);
+            var f = new File(CONFIG.PATHS.LOG_FILE);
             var timestamp = new Date().toLocaleString();
             var logLine = "[" + timestamp + "] [" + (level || "INFO") + "] " + message;
 
@@ -253,8 +254,8 @@
 
     function getSetting(key, defaultVal) {
         try {
-            if (app.settings.haveSetting(SETTINGS_SECTION, key)) {
-                return app.settings.getSetting(SETTINGS_SECTION, key);
+            if (app.settings.haveSetting(CONFIG.SETTINGS.SECTION, key)) {
+                return app.settings.getSetting(CONFIG.SETTINGS.SECTION, key);
             }
         } catch (e) { }
         return defaultVal;
@@ -262,42 +263,42 @@
 
     function setSetting(key, value) {
         try {
-            app.settings.saveSetting(SETTINGS_SECTION, key, String(value));
+            app.settings.saveSetting(CONFIG.SETTINGS.SECTION, key, String(value));
         } catch (e) { }
     }
 
     function loadTemplates() {
         try {
-            var data = getSetting(TEMPLATES_KEY, null);
+            var data = getSetting(CONFIG.SETTINGS.KEYS.TEMPLATES, null);
             if (data) {
                 var templates = jsonParse(data, null);
                 if (templates && templates.length > 0) return templates;
             }
         } catch (e) { }
-        return DEFAULT_TEMPLATES.slice();
+        return CONFIG.DEFAULTS.TEMPLATES.slice();
     }
 
     function saveTemplates(templates) {
-        setSetting(TEMPLATES_KEY, jsonStringify(templates));
+        setSetting(CONFIG.SETTINGS.KEYS.TEMPLATES, jsonStringify(templates));
     }
 
     function getTemplatesFolder() {
-        return getSetting(TEMPLATES_FOLDER_KEY, joinPath(Folder.myDocuments.fsName, "BH_Templates"));
+        return getSetting(CONFIG.SETTINGS.KEYS.TEMPLATES_FOLDER, joinPath(Folder.myDocuments.fsName, "BH_Templates"));
     }
 
     function getDefaultSaveFolder() {
-        return getSetting(DEFAULT_SAVE_FOLDER_KEY, Folder.myDocuments.fsName);
+        return getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_SAVE_FOLDER, Folder.myDocuments.fsName);
     }
 
     function getBaseWorkFolder() {
         var defaultPath = ($.os && $.os.indexOf("Windows") !== -1)
             ? "C:\\Work\\Animate CC"
             : "~/Work/Animate CC";
-        return getSetting(BASE_WORK_FOLDER_KEY, defaultPath);
+        return getSetting(CONFIG.SETTINGS.KEYS.BASE_WORK_FOLDER, defaultPath);
     }
 
     function setBaseWorkFolder(path) {
-        setSetting(BASE_WORK_FOLDER_KEY, path);
+        setSetting(CONFIG.SETTINGS.KEYS.BASE_WORK_FOLDER, path);
     }
 
     function getCurrentYear() {
@@ -346,8 +347,8 @@
     function validateInput(text, type) {
         if (!text || text.length === 0) return { isValid: false, msg: "Required" };
 
-        if (text.length > LIMITS.BRAND_MAX && type === "brand") return { isValid: false, msg: "Too long (>" + LIMITS.BRAND_MAX + ")" };
-        if (text.length > LIMITS.CAMPAIGN_MAX && type === "campaign") return { isValid: false, msg: "Too long (>" + LIMITS.CAMPAIGN_MAX + ")" };
+        if (text.length > CONFIG.LIMITS.BRAND_MAX && type === "brand") return { isValid: false, msg: "Too long (>" + CONFIG.LIMITS.BRAND_MAX + ")" };
+        if (text.length > CONFIG.LIMITS.CAMPAIGN_MAX && type === "campaign") return { isValid: false, msg: "Too long (>" + CONFIG.LIMITS.CAMPAIGN_MAX + ")" };
 
         var illegal = text.match(/[^a-zA-Z0-9_\-\s]/);
         if (illegal) return { isValid: false, msg: "Illegal char: '" + illegal[0] + "'" };
@@ -364,7 +365,7 @@
 
     function loadRecentFiles() {
         try {
-            var data = getSetting(RECENT_FILES_KEY, "[]");
+            var data = getSetting(CONFIG.SETTINGS.KEYS.RECENT_FILES, "[]");
             var list = jsonParse(data, []);
             if (!list || !list.length) return [];
             // Filter out non-existing files to keep list clean
@@ -380,7 +381,7 @@
     }
 
     function saveRecentFiles(list) {
-        setSetting(RECENT_FILES_KEY, jsonStringify(list));
+        setSetting(CONFIG.SETTINGS.KEYS.RECENT_FILES, jsonStringify(list));
     }
 
     function addToRecentFiles(path) {
@@ -398,8 +399,8 @@
         list.unshift(path);
 
         // Limit size
-        if (list.length > MAX_RECENT_FILES) {
-            list = list.slice(0, MAX_RECENT_FILES);
+        if (list.length > CONFIG.SETTINGS.MAX_RECENT_FILES) {
+            list = list.slice(0, CONFIG.SETTINGS.MAX_RECENT_FILES);
         }
 
         saveRecentFiles(list);
@@ -472,6 +473,18 @@
         } catch (e) {
             return defaultValue;
         }
+    }
+
+    // =========================================================================
+    // SECTION 2E: UI UTILITIES
+    // =========================================================================
+
+    function setTextColor(element, color) {
+        try {
+            var graphics = element.graphics;
+            var pen = graphics.newPen(graphics.PenType.SOLID_COLOR, color, 1);
+            graphics.foregroundColor = pen;
+        } catch (e) { }
     }
 
     // =========================================================================
@@ -616,13 +629,61 @@
     // SECTION 4: TEMPLATE MANAGEMENT
     // =========================================================================
 
-    function findMainComp() {
+    function findAllPossibleMainComps() {
+        var matches = [];
         try {
             for (var i = 1; i <= app.project.numItems; i++) {
                 var item = app.project.item(i);
-                if (item instanceof CompItem && item.name === "Main") return item;
+                if (item instanceof CompItem && item.name.match(/^main$/i)) {
+                    matches.push(item);
+                }
             }
         } catch (e) { }
+        return matches;
+    }
+
+    function findMainComp() {
+        var matches = findAllPossibleMainComps();
+
+        if (matches.length === 0) return null;
+
+        // Case 1: Single Match
+        if (matches.length === 1) {
+            var m = matches[0];
+            if (m.name === "Main") return m; // Perfect match
+
+            // Non-standard case match (e.g. "main")
+            if (confirm("Found composition '" + m.name + "' but standard name is 'Main'.\n\nProceed with this composition?")) {
+                return m;
+            }
+            return null;
+        }
+
+        // Case 2: Multiple Matches
+        // Priority: Active Item
+        if (app.project.activeItem && app.project.activeItem instanceof CompItem && app.project.activeItem.name.match(/^main$/i)) {
+            return app.project.activeItem;
+        }
+
+        // Fallback: Selection Dialog
+        var w = new Window("dialog", "Select Main Composition");
+        w.add("statictext", undefined, "Multiple 'Main' compositions found. Please select one:");
+
+        var list = w.add("listbox", [0, 0, 300, 150]);
+        for (var i = 0; i < matches.length; i++) {
+            var item = matches[i];
+            list.add("item", item.name + " (" + item.width + "x" + item.height + " | " + item.duration.toFixed(1) + "s)");
+        }
+        list.selection = 0;
+
+        var btns = w.add("group");
+        var ok = btns.add("button", undefined, "Select", { name: "ok" });
+        var cancel = btns.add("button", undefined, "Cancel", { name: "cancel" });
+
+        if (w.show() === 1) {
+            return matches[list.selection.index];
+        }
+
         return null;
     }
 
@@ -756,7 +817,7 @@
             var assetsFolder = joinPath(versionFolder, "Assets");
 
             // Get template-specific asset folders or use default
-            var assetSubfolders = TEMPLATE_FOLDERS[templateType] || TEMPLATE_FOLDERS["default"];
+            var assetSubfolders = CONFIG.TEMPLATE_FOLDERS[templateType] || CONFIG.TEMPLATE_FOLDERS["default"];
 
             // Build list of all folders to create
             var folders = [projectRoot, sizeFolder, versionFolder, aeFolder, publishedFolder, assetsFolder];
@@ -850,7 +911,7 @@
 
         // Validation info
         var infoText = dlg.add("statictext", undefined, "Width/Height: 1-8192 | FPS: 1-120 | Duration: 0.1-3600");
-        try { infoText.graphics.foregroundColor = infoText.graphics.newPen(infoText.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
+        setTextColor(infoText, [0.5, 0.5, 0.5]);
 
         var btnGrp = dlg.add("group");
         btnGrp.alignment = ["center", "top"];
@@ -872,19 +933,19 @@
             var duration = parseFloat(durInput.text);
 
             // Validation
-            if (isNaN(width) || width < LIMITS.WIDTH_MIN || width > LIMITS.WIDTH_MAX) {
+            if (isNaN(width) || width < CONFIG.LIMITS.WIDTH_MIN || width > CONFIG.LIMITS.WIDTH_MAX) {
                 showError("BH-4003");
                 return;
             }
-            if (isNaN(height) || height < LIMITS.HEIGHT_MIN || height > LIMITS.HEIGHT_MAX) {
+            if (isNaN(height) || height < CONFIG.LIMITS.HEIGHT_MIN || height > CONFIG.LIMITS.HEIGHT_MAX) {
                 showError("BH-4004");
                 return;
             }
-            if (isNaN(fps) || fps < LIMITS.FPS_MIN || fps > LIMITS.FPS_MAX) {
+            if (isNaN(fps) || fps < CONFIG.LIMITS.FPS_MIN || fps > CONFIG.LIMITS.FPS_MAX) {
                 showError("BH-4005");
                 return;
             }
-            if (isNaN(duration) || duration < LIMITS.DURATION_MIN || duration > LIMITS.DURATION_MAX) {
+            if (isNaN(duration) || duration < CONFIG.LIMITS.DURATION_MIN || duration > CONFIG.LIMITS.DURATION_MAX) {
                 showError("BH-4006");
                 return;
             }
@@ -932,7 +993,7 @@
             var om = rqItem.outputModule(1);
 
             // Get render format for this template type
-            var renderConfig = TEMPLATE_RENDER_FORMATS[templateType] || TEMPLATE_RENDER_FORMATS["default"];
+            var renderConfig = CONFIG.RENDER_FORMATS[templateType] || CONFIG.RENDER_FORMATS["default"];
 
             // Try to apply the output module template
             try {
@@ -980,6 +1041,463 @@
     // SECTION 7: BUILD UI
     // =========================================================================
 
+    // =========================================================================
+    // SECTION 7: UI HELPERS & EVENTS
+    // =========================================================================
+
+    function showSettingsDialog(ui) {
+        var d = new Window("dialog", "Launcher Settings");
+        d.orientation = "column";
+        d.alignChildren = ["fill", "top"];
+        d.spacing = 10;
+        d.margins = 15;
+
+        // --- PATHS SECTION ---
+        var pPanel = d.add("panel", undefined, "Paths");
+        pPanel.orientation = "column";
+        pPanel.alignChildren = ["fill", "top"];
+        pPanel.spacing = 5;
+
+        // Base Folder
+        var bGrp = pPanel.add("group");
+        bGrp.orientation = "row";
+        bGrp.add("statictext", undefined, "Base Work Folder:");
+        var baseInput = bGrp.add("edittext", undefined, getBaseWorkFolder());
+        baseInput.alignment = ["fill", "center"];
+        var baseBtn = bGrp.add("button", undefined, "...");
+        baseBtn.preferredSize = [30, 22];
+        baseBtn.onClick = function () {
+            var f = Folder.selectDialog("Select Base Work Folder");
+            if (f) baseInput.text = f.fsName;
+        };
+
+        // Templates Folder
+        var tGrp = pPanel.add("group");
+        tGrp.orientation = "row";
+        tGrp.add("statictext", undefined, "Templates Folder:");
+        var tmplInput = tGrp.add("edittext", undefined, ui.templatesFolder);
+        tmplInput.alignment = ["fill", "center"];
+        var tmplBtn = tGrp.add("button", undefined, "...");
+        tmplBtn.preferredSize = [30, 22];
+        tmplBtn.onClick = function () {
+            var f = Folder.selectDialog("Select Templates Folder");
+            if (f) tmplInput.text = f.fsName;
+        };
+
+        // --- RENDER SECTION ---
+        var rPanel = d.add("panel", undefined, "Render & Output");
+        rPanel.orientation = "column";
+        rPanel.alignChildren = ["left", "top"];
+
+        var ameCheck = rPanel.add("checkbox", undefined, "Enable Adobe Media Encoder (AME)");
+        ameCheck.value = (getSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED) === "true");
+
+        // --- SYSTEM SECTION ---
+        var sPanel = d.add("panel", undefined, "System");
+        sPanel.orientation = "column";
+        sPanel.alignChildren = ["left", "top"];
+
+        var logGrp = sPanel.add("group");
+        logGrp.add("statictext", undefined, "Log File:");
+        var openLogBtn = logGrp.add("button", undefined, "Open Log");
+        openLogBtn.onClick = function () {
+            var logF = new File(CONFIG.PATHS.LOG_FILE);
+            if (logF.exists) logF.execute();
+            else alert("Log file not found yet.");
+        };
+
+        // --- BUTTONS ---
+        var btnGrp = d.add("group");
+        btnGrp.orientation = "row";
+        btnGrp.alignment = ["center", "bottom"];
+        var saveBtn = btnGrp.add("button", undefined, "Save");
+        var cancelBtn = btnGrp.add("button", undefined, "Cancel");
+
+        saveBtn.onClick = function () {
+            // Validation
+            if (!baseInput.text) { alert("Base Work Folder cannot be empty."); return; }
+            if (!tmplInput.text) { alert("Templates Folder cannot be empty."); return; }
+
+            // Save
+            setBaseWorkFolder(baseInput.text);
+            setSetting(CONFIG.SETTINGS.KEYS.TEMPLATES_FOLDER, tmplInput.text);
+            setSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED, String(ameCheck.value));
+
+            // Update UI state
+            ui.templatesFolder = tmplInput.text;
+            ui.labels.basePath.text = baseInput.text;
+
+            // Reload templates if folder changed
+            ui.templates = loadTemplates();
+            ui.refreshDropdown();
+            ui.updatePreview();
+
+            d.close();
+        };
+        cancelBtn.onClick = function () { d.close(); };
+
+        d.center();
+        d.show();
+    }
+
+    function bindEvents(ui) {
+        // Inputs
+        ui.inputs.brand.onChanging = ui.inputs.campaign.onChanging = ui.inputs.version.onChanging = ui.inputs.revision.onChanging = ui.updatePreview;
+        ui.inputs.brand.onChange = ui.inputs.campaign.onChange = ui.dropdowns.quarter.onChange = ui.dropdowns.year.onChange = function () { ui.checkRevision(); };
+
+        ui.dropdowns.template.onChange = function () {
+            ui.updateStatus();
+            ui.checkRevision();
+        };
+
+        ui.inputs.version.onChange = function () {
+            ui.inputs.revision.text = "1";
+            ui.checkRevision();
+        };
+
+        // Header/Settings
+        if (ui.btns.settings) {
+            ui.btns.settings.onClick = function () {
+                showSettingsDialog(ui);
+            };
+        }
+
+        // Template Mgmt
+        ui.btns.template.add.onClick = function () {
+            var newT = showTemplateDialog({ name: "", width: 1920, height: 1080, fps: 24, duration: 15, path: "" }, true);
+            if (newT) {
+                ui.templates.push(newT);
+                saveTemplates(ui.templates);
+                ui.refreshDropdown();
+                ui.dropdowns.template.selection = ui.templates.length - 1;
+                ui.updateStatus();
+                ui.updatePreview();
+            }
+        };
+
+        ui.btns.template.edit.onClick = function () {
+            if (!ui.dropdowns.template.selection) return;
+            var idx = ui.dropdowns.template.selection.index;
+            var edited = showTemplateDialog(ui.templates[idx], false);
+            if (edited) {
+                ui.templates[idx] = edited;
+                saveTemplates(ui.templates);
+                ui.refreshDropdown();
+                ui.dropdowns.template.selection = idx;
+                ui.updateStatus();
+                ui.updatePreview();
+            }
+        };
+
+        ui.btns.template.dup.onClick = function () {
+            if (!ui.dropdowns.template.selection) return;
+            var idx = ui.dropdowns.template.selection.index;
+            var orig = ui.templates[idx];
+            var copy = {
+                name: orig.name + " Copy",
+                width: orig.width,
+                height: orig.height,
+                fps: orig.fps,
+                duration: orig.duration,
+                path: ""
+            };
+            ui.templates.splice(idx + 1, 0, copy);
+            saveTemplates(ui.templates);
+            ui.refreshDropdown();
+            ui.dropdowns.template.selection = idx + 1;
+            ui.updateStatus();
+            ui.updatePreview();
+        };
+
+        ui.btns.template.del.onClick = function () {
+            if (!ui.dropdowns.template.selection) return;
+            var idx = ui.dropdowns.template.selection.index;
+            if (!confirm("Delete '" + ui.templates[idx].name + "'?")) return;
+            ui.templates.splice(idx, 1);
+            saveTemplates(ui.templates);
+            ui.refreshDropdown();
+            ui.updateStatus();
+            ui.updatePreview();
+        };
+
+        ui.btns.template.up.onClick = function () {
+            if (!ui.dropdowns.template.selection) return;
+            var idx = ui.dropdowns.template.selection.index;
+            if (idx === 0) return;
+            var temp = ui.templates[idx];
+            ui.templates[idx] = ui.templates[idx - 1];
+            ui.templates[idx - 1] = temp;
+            saveTemplates(ui.templates);
+            ui.refreshDropdown();
+            ui.dropdowns.template.selection = idx - 1;
+            ui.updateStatus();
+            ui.updatePreview();
+        };
+
+        ui.btns.template.down.onClick = function () {
+            if (!ui.dropdowns.template.selection) return;
+            var idx = ui.dropdowns.template.selection.index;
+            if (idx >= ui.templates.length - 1) return;
+            var temp = ui.templates[idx];
+            ui.templates[idx] = ui.templates[idx + 1];
+            ui.templates[idx + 1] = temp;
+            saveTemplates(ui.templates);
+            ui.refreshDropdown();
+            ui.dropdowns.template.selection = idx + 1;
+            ui.updateStatus();
+            ui.updatePreview();
+        };
+
+        ui.btns.template.regen.onClick = function () {
+            if (!confirm("Regenerate ALL templates?\nThis will delete and recreate template files.\nFolder: " + ui.templatesFolder)) return;
+            ui.setStatus("Regenerating...", [0.6, 0.6, 0.6]);
+            for (var i = 0; i < ui.templates.length; i++) ui.templates[i].path = "";
+            var result = ensureTemplatesExist(ui.templates, ui.templatesFolder, true);
+            ui.templates = result.templates;
+            ui.setStatus("Generated " + result.generated.length, [0.5, 0.8, 0.5]);
+            ui.refreshDropdown();
+            ui.updateStatus();
+        };
+
+        ui.btns.template.folder.onClick = function () {
+            var f = Folder.selectDialog("Select Templates Folder");
+            if (f) {
+                ui.templatesFolder = f.fsName;
+                setSetting(CONFIG.SETTINGS.KEYS.TEMPLATES_FOLDER, ui.templatesFolder);
+                ui.setStatus("Folder updated", [0.5, 0.8, 0.5]);
+            }
+        };
+
+        // Main Actions
+        ui.btns.create.onClick = function () {
+            if (!ui.templates.length) { showError("BH-1004"); return; }
+            if (!ui.dropdowns.template.selection) return;
+            var t = ui.templates[ui.dropdowns.template.selection.index];
+            if (!t.path || !fileExists(t.path)) { showError("BH-1001", t.path); return; }
+
+            var brand = sanitizeName(ui.inputs.brand.text);
+            var campaign = sanitizeName(ui.inputs.campaign.text) || "";
+
+            if (!brand) { showError("BH-4001"); return; }
+            var brandVal = validateInput(ui.inputs.brand.text, "brand");
+            if (!brandVal.isValid) { showError("BH-4007", brandVal.msg); return; }
+
+            var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
+            if (!cmpVal.isValid) { showError("BH-4008", cmpVal.msg); return; }
+
+            var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1";
+            var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
+            var templateFolderName = getTemplateFolderName(t.width, t.height);
+            var size = templateFolderName + "_" + t.width + "x" + t.height;
+            var version = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
+            var revNum = "R" + (parseInt(ui.inputs.revision.text, 10) || 1);
+            var revision = revNum;
+
+            var projectName = buildProjectFolderName(brand, campaign);
+            var filename = ui.buildFilename(brand, campaign, quarter, t.width + "x" + t.height, version, revision, isDOOHTemplate(t.name));
+
+            try {
+                var templateType = getTemplateType(t.width, t.height);
+                var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, size, revNum, templateType, version);
+                if (!folders) return;
+
+                var savePath = joinPath(folders.aeFolder, filename);
+                var saveFile = new File(savePath);
+
+                if (saveFile.exists) {
+                    if (!confirm("File already exists:\n" + filename + "\n\nOverwrite?")) return;
+                }
+
+                if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
+                app.open(new File(t.path));
+                app.project.save(saveFile);
+
+                var mainComp = findMainComp();
+                if (mainComp) mainComp.openInViewer();
+
+                addToRecentFiles(savePath);
+
+                var assetFoldersList = CONFIG.TEMPLATE_FOLDERS[templateType] || CONFIG.TEMPLATE_FOLDERS["default"];
+
+                var successMsg = "Project Created!\n\nFile: " + filename + "\n\nLocation:\n" + folders.aeFolder;
+                alert(successMsg);
+
+                if (ui.w instanceof Window) ui.w.close();
+
+            } catch (e) {
+                showError("BH-2004", e.toString());
+            }
+        };
+
+        ui.btns.saveAs.onClick = function () {
+            if (!app.project || !app.project.file) { showError("BH-2003"); return; }
+            if (!ui.dropdowns.template.selection) return;
+            var t = ui.templates[ui.dropdowns.template.selection.index];
+
+            var brand = sanitizeName(ui.inputs.brand.text);
+            var campaign = sanitizeName(ui.inputs.campaign.text) || "Campaign";
+            if (!brand) { showError("BH-4001"); return; }
+
+            var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1";
+            var size = t.width + "x" + t.height;
+            var version = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
+            var revision = "R" + (parseInt(ui.inputs.revision.text, 10) || 1);
+
+            var suggestedName = ui.buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
+            suggestedName = suggestedName.replace(/\.aep$/i, "");
+
+            var saveFile = new File(joinPath(app.project.file.parent.fsName, suggestedName + ".aep")).saveDlg("Save Project As");
+            if (saveFile) {
+                try {
+                    var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep";
+                    app.project.save(new File(savePath));
+                    addToRecentFiles(savePath);
+                    alert("Project saved as:\n" + new File(savePath).name);
+                } catch (e) {
+                    showError("BH-2001", e.toString());
+                }
+            }
+        };
+
+        ui.btns.quickDup.onClick = function () {
+            if (!app.project || !app.project.file) { showError("BH-2003"); return; }
+            try {
+                var currentName = app.project.file.name.replace(/\.aep$/i, "");
+                var parsed = parseProjectName(currentName);
+                if (!parsed) { alert("Cannot parse project name format."); return; }
+
+                // 1. Calculate New Revision
+                var currentRevNum = parseInt(parsed.revision.replace(/^R/i, ""), 10) || 1;
+                var newRevNum = currentRevNum + 1;
+                var revision = "R" + newRevNum;
+                var version = parsed.version || "V1";
+
+                // 2. Initial Guess for Year/Quarter (from path or UI)
+                var currentPath = app.project.file.parent.fsName;
+                var yearMatch = currentPath.match(/[\/\\](\d{4})[\/\\]/);
+                var quarterMatch = currentPath.match(/[\/\\](Q[1-4])[\/\\]/);
+
+                var year = yearMatch ? yearMatch[1] : String(getCurrentYear());
+                var quarter = parsed.quarter || (quarterMatch ? quarterMatch[1] : (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1"));
+
+                // 3. POPUP: Confirm/Edit Year & Quarter
+                var confirmWin = new Window("dialog", "Quick Duplicate");
+                confirmWin.add("statictext", undefined, "Confirm Target Period:");
+
+                var grp = confirmWin.add("group");
+                grp.orientation = "row";
+                var yInput = grp.add("edittext", undefined, year);
+                yInput.preferredSize.width = 50;
+                yInput.helpTip = "Year";
+
+                var qItems = ["Q1", "Q2", "Q3", "Q4"];
+                var qInput = grp.add("dropdownlist", undefined, qItems);
+                qInput.preferredSize.width = 50;
+                // Select index based on text
+                for (var i = 0; i < qItems.length; i++) if (qItems[i] === quarter) qInput.selection = i;
+                if (!qInput.selection) qInput.selection = 0;
+
+                var btnGrp = confirmWin.add("group");
+                btnGrp.alignment = ["center", "bottom"];
+                var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
+                var cnclBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+                if (confirmWin.show() !== 1) return; // Cancelled
+
+                // Update values from dialog
+                year = yInput.text;
+                quarter = qInput.selection.text;
+
+                // 4. Derive Data for Folder Structure
+                var dims = parsed.size.split("x");
+                var width = parseInt(dims[0], 10);
+                var height = parseInt(dims[1], 10);
+
+                var templateType = getTemplateType(width, height);
+                var templateFolderName = getTemplateFolderName(width, height);
+                var sizeFolderName = templateFolderName + "_" + parsed.size; // e.g. Sunrise_750x300
+
+                var brand = parsed.brand;
+                var campaign = parsed.campaign || "";
+                var projectName = buildProjectFolderName(brand, campaign);
+                var basePath = getBaseWorkFolder();
+
+                // 5. Create Full Folder Structure (Assets, etc.)
+                // This function automatically checks existence and creates missing folders
+                var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
+                if (!folders) return;
+
+                // 6. Construct New Filename (Standardized)
+                var newFilename;
+                if (parsed.isDOOH) {
+                    newFilename = "DOOH_" + (campaign || brand) + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
+                } else {
+                    newFilename = brand + "_" + campaign + "_" + quarter + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
+                }
+
+                // 7. Save in Correct Location (Inside newly verified structure)
+                var savePath = joinPath(folders.aeFolder, newFilename);
+                var saveFile = new File(savePath);
+
+                if (saveFile.exists) {
+                    if (!confirm("File already exists:\n" + newFilename + "\n\nOverwrite?")) return;
+                }
+
+                app.project.save(saveFile);
+
+                // Update UI and History
+                ui.inputs.revision.text = String(newRevNum);
+                ui.updatePreview();
+                addToRecentFiles(savePath); // Add standard path to recent
+
+                alert("Quick Saved!\n\nStandardized & Saved to:\n" + folders.aeFolder);
+                return; // Prevent falling through to old code
+
+            } catch (e) { showError("BH-2001", e.toString()); }
+
+        };
+
+        ui.btns.render.onClick = function () {
+            if (!app.project || !app.project.file) { showError("BH-2003"); return; }
+            var mainComp = findMainComp();
+            if (!mainComp) { showError("BH-3001"); return; }
+
+            var projectName = app.project.file.name.replace(/\.aep$/i, "");
+            var type = getTemplateType(mainComp.width, mainComp.height);
+            var parsed = parseProjectName(projectName);
+            var renderName = projectName + "_" + getDateString();
+
+            if (type === "sunrise" && parsed && parsed.brand) renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
+            // Add other types if needed, simplified for now to standard types
+
+            var aeFolder = app.project.file.parent.fsName;
+            var revision = (parsed && parsed.revision) ? parsed.revision : ui.inputs.revision.text;
+            var renderFolder = joinPath(aeFolder, "Render_" + revision);
+            createFolderRecursive(renderFolder);
+            var outputPath = joinPath(renderFolder, renderName);
+
+            var rqItem = addToRenderQueue(mainComp, outputPath, type);
+            if (!rqItem) return;
+
+            if (ui.btns.ameCheckbox.value && canQueueInAME()) {
+                queueToAME();
+                alert("Sent to AME!");
+            } else {
+                alert("Added to Render Queue!");
+            }
+        };
+
+        // Keyboard Shortcuts
+        ui.w.addEventListener("keydown", function (e) {
+            if (e.ctrlKey && e.keyName === "Enter") { ui.btns.create.notify("onClick"); e.preventDefault(); }
+            if (e.ctrlKey && e.keyName === "S") { ui.btns.saveAs.notify("onClick"); e.preventDefault(); }
+            if (e.ctrlKey && e.keyName === "R") { ui.btns.render.notify("onClick"); e.preventDefault(); }
+        });
+    }
+
+    // =========================================================================
+    // SECTION 8: BUILD UI
+    // =========================================================================
     function buildUI(thisObj) {
         writeLog("Starting BigHappyLauncher UI...", "INFO");
 
@@ -1077,101 +1595,7 @@
             ui.btns.settings.helpTip = "Open Settings";
         }
 
-        function showSettingsDialog() {
-            var d = new Window("dialog", "Launcher Settings");
-            d.orientation = "column";
-            d.alignChildren = ["fill", "top"];
-            d.spacing = 10;
-            d.margins = 15;
 
-            // --- PATHS SECTION ---
-            var pPanel = d.add("panel", undefined, "Paths");
-            pPanel.orientation = "column";
-            pPanel.alignChildren = ["fill", "top"];
-            pPanel.spacing = 5;
-
-            // Base Folder
-            var bGrp = pPanel.add("group");
-            bGrp.orientation = "row";
-            bGrp.add("statictext", undefined, "Base Work Folder:");
-            var baseInput = bGrp.add("edittext", undefined, getBaseWorkFolder());
-            baseInput.alignment = ["fill", "center"];
-            var baseBtn = bGrp.add("button", undefined, "...");
-            baseBtn.preferredSize = [30, 22];
-            baseBtn.onClick = function () {
-                var f = Folder.selectDialog("Select Base Work Folder");
-                if (f) baseInput.text = f.fsName;
-            };
-
-            // Templates Folder
-            var tGrp = pPanel.add("group");
-            tGrp.orientation = "row";
-            tGrp.add("statictext", undefined, "Templates Folder:");
-            var tmplInput = tGrp.add("edittext", undefined, ui.templatesFolder);
-            tmplInput.alignment = ["fill", "center"];
-            var tmplBtn = tGrp.add("button", undefined, "...");
-            tmplBtn.preferredSize = [30, 22];
-            tmplBtn.onClick = function () {
-                var f = Folder.selectDialog("Select Templates Folder");
-                if (f) tmplInput.text = f.fsName;
-            };
-
-            // --- RENDER SECTION ---
-            var rPanel = d.add("panel", undefined, "Render & Output");
-            rPanel.orientation = "column";
-            rPanel.alignChildren = ["left", "top"];
-
-            var ameCheck = rPanel.add("checkbox", undefined, "Enable Adobe Media Encoder (AME)");
-            ameCheck.value = (getSetting(AME_ENABLED_KEY) === "true");
-
-            // --- SYSTEM SECTION ---
-            var sPanel = d.add("panel", undefined, "System");
-            sPanel.orientation = "column";
-            sPanel.alignChildren = ["left", "top"];
-
-            var logGrp = sPanel.add("group");
-            logGrp.add("statictext", undefined, "Log File:");
-            var openLogBtn = logGrp.add("button", undefined, "Open Log");
-            openLogBtn.onClick = function () {
-                var logF = new File(LOG_FILE_PATH);
-                if (logF.exists) logF.execute();
-                else alert("Log file not found yet.");
-            };
-
-            // --- BUTTONS ---
-            var btnGrp = d.add("group");
-            btnGrp.orientation = "row";
-            btnGrp.alignment = ["center", "bottom"];
-            var saveBtn = btnGrp.add("button", undefined, "Save");
-            var cancelBtn = btnGrp.add("button", undefined, "Cancel");
-
-            saveBtn.onClick = function () {
-                // Validation
-                if (!baseInput.text) { alert("Base Work Folder cannot be empty."); return; }
-                if (!tmplInput.text) { alert("Templates Folder cannot be empty."); return; }
-
-                // Save
-                setBaseWorkFolder(baseInput.text);
-                setSetting(TEMPLATES_FOLDER_KEY, tmplInput.text);
-                setSetting(AME_ENABLED_KEY, String(ameCheck.value));
-
-                // Update UI state
-                ui.templatesFolder = tmplInput.text;
-                ui.labels.basePath.text = baseInput.text;
-
-
-                // Reload templates if folder changed
-                ui.templates = loadTemplates();
-                ui.refreshDropdown();
-                ui.updatePreview();
-
-                d.close();
-            };
-            cancelBtn.onClick = function () { d.close(); };
-
-            d.center();
-            d.show();
-        }
 
         function createMainInputs() {
             ui.mainGrp = ui.w.add("group");
@@ -1245,7 +1669,7 @@
             baseLbl.preferredSize.width = 65;
             ui.labels.basePath = baseGrp.add("statictext", undefined, getBaseWorkFolder());
             ui.labels.basePath.alignment = ["fill", "center"];
-            try { ui.labels.basePath.graphics.foregroundColor = ui.labels.basePath.graphics.newPen(ui.labels.basePath.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
+            setTextColor(ui.labels.basePath, [0.5, 0.5, 0.5]);
             // Cleaned up: Browse button removed, moved to Settings
         }
 
@@ -1255,11 +1679,11 @@
 
             ui.labels.pathPreview = ui.w.add("statictext", undefined, "Path: ...");
             ui.labels.pathPreview.alignment = ["fill", "top"];
-            try { ui.labels.pathPreview.graphics.foregroundColor = ui.labels.pathPreview.graphics.newPen(ui.labels.pathPreview.graphics.PenType.SOLID_COLOR, [0.4, 0.8, 0.4], 1); } catch (e) { }
+            setTextColor(ui.labels.pathPreview, [0.4, 0.8, 0.4]);
 
             ui.labels.filenamePreview = ui.w.add("statictext", undefined, "Filename: ...");
             ui.labels.filenamePreview.alignment = ["center", "top"];
-            try { ui.labels.filenamePreview.graphics.foregroundColor = ui.labels.filenamePreview.graphics.newPen(ui.labels.filenamePreview.graphics.PenType.SOLID_COLOR, [0.4, 0.7, 1], 1); } catch (e) { }
+            setTextColor(ui.labels.filenamePreview, [0.4, 0.7, 1]);
         }
 
         function createActionButtons() {
@@ -1342,7 +1766,7 @@
 
         ui.setStatus = function (text, color) {
             ui.labels.status.text = text;
-            try { ui.labels.status.graphics.foregroundColor = ui.labels.status.graphics.newPen(ui.labels.status.graphics.PenType.SOLID_COLOR, color, 1); } catch (e) { }
+            setTextColor(ui.labels.status, color);
         };
 
         ui.updateStatus = function () {
@@ -1380,17 +1804,18 @@
 
             // Validation Feedback
             var brandVal = validateInput(ui.inputs.brand.text, "brand");
+            var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
+
             if (!brandVal.isValid && ui.inputs.brand.text.length > 0) {
                 ui.inputs.brand.helpTip = "Error: " + brandVal.msg;
+                ui.setStatus("Brand invalid: " + brandVal.msg, [1, 0, 0]);
+            } else if (!cmpVal.isValid && ui.inputs.campaign.text.length > 0) {
+                ui.inputs.campaign.helpTip = "Error: " + cmpVal.msg;
+                ui.setStatus("Campaign invalid: " + cmpVal.msg, [1, 0, 0]);
             } else {
                 ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
-            }
-
-            var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
-            if (!cmpVal.isValid && ui.inputs.campaign.text.length > 0) {
-                ui.inputs.campaign.helpTip = "Error: " + cmpVal.msg;
-            } else {
                 ui.inputs.campaign.helpTip = "Enter the campaign or project name";
+                ui.updateStatus();
             }
 
             var filename = ui.buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
@@ -1430,424 +1855,7 @@
             ui.updatePreview();
         };
 
-        // --- EVENT BINDING ---
 
-        function bindEvents() {
-            // Inputs
-            ui.inputs.brand.onChanging = ui.inputs.campaign.onChanging = ui.inputs.version.onChanging = ui.inputs.revision.onChanging = ui.updatePreview;
-            ui.inputs.brand.onChange = ui.inputs.campaign.onChange = ui.dropdowns.quarter.onChange = ui.dropdowns.year.onChange = function () { ui.checkRevision(); };
-
-            ui.dropdowns.template.onChange = function () {
-                ui.updateStatus();
-                ui.checkRevision();
-            };
-
-            ui.inputs.version.onChange = function () {
-                ui.inputs.revision.text = "1";
-                ui.checkRevision();
-            };
-
-            // Header/Settings
-            if (ui.btns.settings) {
-                ui.btns.settings.onClick = function () {
-                    showSettingsDialog();
-                };
-            }
-
-
-
-            // Template Mgmt
-            ui.btns.template.add.onClick = function () {
-                var newT = showTemplateDialog({ name: "", width: 1920, height: 1080, fps: 24, duration: 15, path: "" }, true);
-                if (newT) {
-                    ui.templates.push(newT);
-                    saveTemplates(ui.templates);
-                    ui.refreshDropdown();
-                    ui.dropdowns.template.selection = ui.templates.length - 1;
-                    ui.updateStatus();
-                    ui.updatePreview();
-                }
-            };
-
-            ui.btns.template.edit.onClick = function () {
-                if (!ui.dropdowns.template.selection) return;
-                var idx = ui.dropdowns.template.selection.index;
-                var edited = showTemplateDialog(ui.templates[idx], false);
-                if (edited) {
-                    ui.templates[idx] = edited;
-                    saveTemplates(ui.templates);
-                    ui.refreshDropdown();
-                    ui.dropdowns.template.selection = idx;
-                    ui.updateStatus();
-                    ui.updatePreview();
-                }
-            };
-
-            ui.btns.template.dup.onClick = function () {
-                if (!ui.dropdowns.template.selection) return;
-                var idx = ui.dropdowns.template.selection.index;
-                var orig = ui.templates[idx];
-                var copy = {
-                    name: orig.name + " Copy",
-                    width: orig.width,
-                    height: orig.height,
-                    fps: orig.fps,
-                    duration: orig.duration,
-                    path: ""
-                };
-                ui.templates.splice(idx + 1, 0, copy);
-                saveTemplates(ui.templates);
-                ui.refreshDropdown();
-                ui.dropdowns.template.selection = idx + 1;
-                ui.updateStatus();
-                ui.updatePreview();
-            };
-
-            ui.btns.template.del.onClick = function () {
-                if (!ui.dropdowns.template.selection) return;
-                var idx = ui.dropdowns.template.selection.index;
-                if (!confirm("Delete '" + ui.templates[idx].name + "'?")) return;
-                ui.templates.splice(idx, 1);
-                saveTemplates(ui.templates);
-                ui.refreshDropdown();
-                ui.updateStatus();
-                ui.updatePreview();
-            };
-
-            ui.btns.template.up.onClick = function () {
-                if (!ui.dropdowns.template.selection) return;
-                var idx = ui.dropdowns.template.selection.index;
-                if (idx === 0) return;
-                var temp = ui.templates[idx];
-                ui.templates[idx] = ui.templates[idx - 1];
-                ui.templates[idx - 1] = temp;
-                saveTemplates(ui.templates);
-                ui.refreshDropdown();
-                ui.dropdowns.template.selection = idx - 1;
-                ui.updateStatus();
-                ui.updatePreview();
-            };
-
-            ui.btns.template.down.onClick = function () {
-                if (!ui.dropdowns.template.selection) return;
-                var idx = ui.dropdowns.template.selection.index;
-                if (idx >= ui.templates.length - 1) return;
-                var temp = ui.templates[idx];
-                ui.templates[idx] = ui.templates[idx + 1];
-                ui.templates[idx + 1] = temp;
-                saveTemplates(ui.templates);
-                ui.refreshDropdown();
-                ui.dropdowns.template.selection = idx + 1;
-                ui.updateStatus();
-                ui.updatePreview();
-            };
-
-            ui.btns.template.regen.onClick = function () {
-                if (!confirm("Regenerate ALL templates?\nThis will delete and recreate template files.\nFolder: " + ui.templatesFolder)) return;
-                ui.setStatus("Regenerating...", [0.6, 0.6, 0.6]);
-                for (var i = 0; i < ui.templates.length; i++) ui.templates[i].path = "";
-                var result = ensureTemplatesExist(ui.templates, ui.templatesFolder, true);
-                ui.templates = result.templates;
-                ui.setStatus("Generated " + result.generated.length, [0.5, 0.8, 0.5]);
-                ui.refreshDropdown();
-                ui.updateStatus();
-            };
-
-            ui.btns.template.folder.onClick = function () {
-                var f = Folder.selectDialog("Select Templates Folder");
-                if (f) {
-                    ui.templatesFolder = f.fsName;
-                    setSetting(TEMPLATES_FOLDER_KEY, ui.templatesFolder);
-                    ui.setStatus("Folder updated", [0.5, 0.8, 0.5]);
-                }
-            };
-
-            // Main Actions
-            ui.btns.create.onClick = function () {
-                if (!ui.templates.length) { showError("BH-1004"); return; }
-                if (!ui.dropdowns.template.selection) return;
-                var t = ui.templates[ui.dropdowns.template.selection.index];
-                if (!t.path || !fileExists(t.path)) { showError("BH-1001", t.path); return; }
-
-                var brand = sanitizeName(ui.inputs.brand.text);
-                var campaign = sanitizeName(ui.inputs.campaign.text) || "";
-
-                if (!brand) { showError("BH-4001"); return; }
-                var brandVal = validateInput(ui.inputs.brand.text, "brand");
-                if (!brandVal.isValid) { showError("BH-4007", brandVal.msg); return; }
-
-                var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
-                if (!cmpVal.isValid) { showError("BH-4008", cmpVal.msg); return; }
-
-                var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1";
-                var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
-                var templateFolderName = getTemplateFolderName(t.width, t.height);
-                var size = templateFolderName + "_" + t.width + "x" + t.height;
-                var version = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
-                var revNum = "R" + (parseInt(ui.inputs.revision.text, 10) || 1);
-                var revision = revNum;
-
-                var projectName = buildProjectFolderName(brand, campaign);
-                var filename = ui.buildFilename(brand, campaign, quarter, t.width + "x" + t.height, version, revision, isDOOHTemplate(t.name));
-
-                try {
-                    var templateType = getTemplateType(t.width, t.height);
-                    var folders = createProjectStructure(getBaseWorkFolder(), year, quarter, projectName, size, revNum, templateType, version);
-                    if (!folders) return;
-
-                    var savePath = joinPath(folders.aeFolder, filename);
-                    var saveFile = new File(savePath);
-
-                    if (saveFile.exists) {
-                        if (!confirm("File already exists:\n" + filename + "\n\nOverwrite?")) return;
-                    }
-
-                    if (app.project) app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
-                    app.open(new File(t.path));
-                    app.project.save(saveFile);
-
-                    var mainComp = findMainComp();
-                    if (mainComp) mainComp.openInViewer();
-
-                    addToRecentFiles(savePath);
-
-                    var assetFoldersList = TEMPLATE_FOLDERS[templateType] || TEMPLATE_FOLDERS["default"];
-
-                    var successMsg = "Project Created!\n\nFile: " + filename + "\n\nLocation:\n" + folders.aeFolder;
-                    alert(successMsg);
-
-                    if (ui.w instanceof Window) ui.w.close();
-
-                } catch (e) {
-                    showError("BH-2004", e.toString());
-                }
-            };
-
-            ui.btns.saveAs.onClick = function () {
-                if (!app.project || !app.project.file) { showError("BH-2003"); return; }
-                if (!ui.dropdowns.template.selection) return;
-                var t = ui.templates[ui.dropdowns.template.selection.index];
-
-                var brand = sanitizeName(ui.inputs.brand.text);
-                var campaign = sanitizeName(ui.inputs.campaign.text) || "Campaign";
-                if (!brand) { showError("BH-4001"); return; }
-
-                var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1";
-                var size = t.width + "x" + t.height;
-                var version = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
-                var revision = "R" + (parseInt(ui.inputs.revision.text, 10) || 1);
-
-                var suggestedName = ui.buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
-                suggestedName = suggestedName.replace(/\.aep$/i, "");
-
-                var saveFile = new File(joinPath(app.project.file.parent.fsName, suggestedName + ".aep")).saveDlg("Save Project As");
-                if (saveFile) {
-                    try {
-                        var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep";
-                        app.project.save(new File(savePath));
-                        addToRecentFiles(savePath);
-                        alert("Project saved as:\n" + new File(savePath).name);
-                    } catch (e) {
-                        showError("BH-2001", e.toString());
-                    }
-                }
-            };
-
-            ui.btns.quickDup.onClick = function () {
-                if (!app.project || !app.project.file) { showError("BH-2003"); return; }
-                try {
-                    var currentName = app.project.file.name.replace(/\.aep$/i, "");
-                    var parsed = parseProjectName(currentName);
-                    if (!parsed) { alert("Cannot parse project name format."); return; }
-
-                    // 1. Calculate New Revision
-                    var currentRevNum = parseInt(parsed.revision.replace(/^R/i, ""), 10) || 1;
-                    var newRevNum = currentRevNum + 1;
-                    var revision = "R" + newRevNum;
-                    var version = parsed.version || "V1";
-
-                    // 2. Initial Guess for Year/Quarter (from path or UI)
-                    var currentPath = app.project.file.parent.fsName;
-                    var yearMatch = currentPath.match(/[\/\\](\d{4})[\/\\]/);
-                    var quarterMatch = currentPath.match(/[\/\\](Q[1-4])[\/\\]/);
-
-                    var year = yearMatch ? yearMatch[1] : String(getCurrentYear());
-                    var quarter = parsed.quarter || (quarterMatch ? quarterMatch[1] : (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1"));
-
-                    // 3. POPUP: Confirm/Edit Year & Quarter
-                    var confirmWin = new Window("dialog", "Quick Duplicate");
-                    confirmWin.add("statictext", undefined, "Confirm Target Period:");
-
-                    var grp = confirmWin.add("group");
-                    grp.orientation = "row";
-                    var yInput = grp.add("edittext", undefined, year);
-                    yInput.preferredSize.width = 50;
-                    yInput.helpTip = "Year";
-
-                    var qItems = ["Q1", "Q2", "Q3", "Q4"];
-                    var qInput = grp.add("dropdownlist", undefined, qItems);
-                    qInput.preferredSize.width = 50;
-                    // Select index based on text
-                    for (var i = 0; i < qItems.length; i++) if (qItems[i] === quarter) qInput.selection = i;
-                    if (!qInput.selection) qInput.selection = 0;
-
-                    var btnGrp = confirmWin.add("group");
-                    btnGrp.alignment = ["center", "bottom"];
-                    var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
-                    var cnclBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
-
-                    if (confirmWin.show() !== 1) return; // Cancelled
-
-                    // Update values from dialog
-                    year = yInput.text;
-                    quarter = qInput.selection.text;
-
-                    // 4. Derive Data for Folder Structure
-                    var dims = parsed.size.split("x");
-                    var width = parseInt(dims[0], 10);
-                    var height = parseInt(dims[1], 10);
-
-                    var templateType = getTemplateType(width, height);
-                    var templateFolderName = getTemplateFolderName(width, height);
-                    var sizeFolderName = templateFolderName + "_" + parsed.size; // e.g. Sunrise_750x300
-
-                    var brand = parsed.brand;
-                    var campaign = parsed.campaign || "";
-                    var projectName = buildProjectFolderName(brand, campaign);
-                    var basePath = getBaseWorkFolder();
-
-                    // 5. Create Full Folder Structure (Assets, etc.)
-                    // This function automatically checks existence and creates missing folders
-                    var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
-                    if (!folders) return;
-
-                    // 6. Construct New Filename (Standardized)
-                    var newFilename;
-                    if (parsed.isDOOH) {
-                        newFilename = "DOOH_" + (campaign || brand) + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
-                    } else {
-                        newFilename = brand + "_" + campaign + "_" + quarter + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
-                    }
-
-                    // 7. Save in Correct Location (Inside newly verified structure)
-                    var savePath = joinPath(folders.aeFolder, newFilename);
-                    var saveFile = new File(savePath);
-
-                    if (saveFile.exists) {
-                        if (!confirm("File already exists:\n" + newFilename + "\n\nOverwrite?")) return;
-                    }
-
-                    app.project.save(saveFile);
-
-                    // Update UI and History
-                    ui.inputs.revision.text = String(newRevNum);
-                    ui.updatePreview();
-                    addToRecentFiles(savePath); // Add standard path to recent
-
-                    alert("Quick Saved!\n\nStandardized & Saved to:\n" + folders.aeFolder);
-                    return; // Prevent falling through to old code
-
-                } catch (e) { showError("BH-2001", e.toString()); }
-                /* // OLD CODE STARTS HERE:
-                try {
-                    var currentName = app.project.file.name.replace(/\.aep$/i, "");
-                    var parsed = parseProjectName(currentName);
-                    if (!parsed) { alert("Cannot parse project name format."); return; }
-                
-                    // 1. Calculate New Revision
-                    var currentRevNum = parseInt(parsed.revision.replace(/^R/i, ""), 10) || 1;
-                    var newRevNum = currentRevNum + 1;
-                    var revision = "R" + newRevNum;
-                    var version = parsed.version || "V1";
-                
-                    // 2. Derive Data for Folder Structure
-                    // Need dimensions to determine template type and folder names
-                    var dims = parsed.size.split("x");
-                    var width = parseInt(dims[0], 10);
-                    var height = parseInt(dims[1], 10);
-                
-                    var templateType = getTemplateType(width, height);
-                    var templateFolderName = getTemplateFolderName(width, height);
-                    var sizeFolderName = templateFolderName + "_" + parsed.size; // e.g. Sunrise_750x300
-                
-                    var brand = parsed.brand;
-                    var campaign = parsed.campaign || "";
-                    var projectName = buildProjectFolderName(brand, campaign);
-                
-                    var basePath = getBaseWorkFolder();
-                    var year = String(getCurrentYear());
-                    var quarter = parsed.quarter || (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1");
-                
-                    // 3. Create Full Folder Structure (Assets, etc.)
-                    // This function automatically checks existence and creates missing folders
-                    var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
-                    if (!folders) return;
-                
-                    // 4. Construct New Filename (Standardized)
-                    var newFilename;
-                    if (parsed.isDOOH) {
-                        newFilename = "DOOH_" + (campaign || brand) + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
-                    } else {
-                        newFilename = brand + "_" + campaign + "_" + quarter + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
-                    }
-                
-                    // 5. Save in Correct Location (Inside newly verified structure)
-                    var savePath = joinPath(folders.aeFolder, newFilename);
-                    var saveFile = new File(savePath);
-                
-                    if (saveFile.exists) {
-                        if (!confirm("File already exists:\n" + newFilename + "\n\nOverwrite?")) return;
-                    }
-                
-                    app.project.save(saveFile);
-                
-                    // Update UI and History
-                    ui.inputs.revision.text = String(newRevNum);
-                    ui.updatePreview();
-                    addToRecentFiles(savePath); // Add standard path to recent
-                
-                    alert("Quick Saved!\n\nStandardized & Saved to:\n" + folders.aeFolder);
-                
-                                } catch (e) { showError("BH-2001", e.toString()); } */
-            };
-
-            ui.btns.render.onClick = function () {
-                if (!app.project || !app.project.file) { showError("BH-2003"); return; }
-                var mainComp = findMainComp();
-                if (!mainComp) { showError("BH-3001"); return; }
-
-                var projectName = app.project.file.name.replace(/\.aep$/i, "");
-                var type = getTemplateType(mainComp.width, mainComp.height);
-                var parsed = parseProjectName(projectName);
-                var renderName = projectName + "_" + getDateString();
-
-                if (type === "sunrise" && parsed && parsed.brand) renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
-                // Add other types if needed, simplified for now to standard types
-
-                var aeFolder = app.project.file.parent.fsName;
-                var revision = (parsed && parsed.revision) ? parsed.revision : ui.inputs.revision.text;
-                var renderFolder = joinPath(aeFolder, "Render_" + revision);
-                createFolderRecursive(renderFolder);
-                var outputPath = joinPath(renderFolder, renderName);
-
-                var rqItem = addToRenderQueue(mainComp, outputPath, type);
-                if (!rqItem) return;
-
-                if (ui.btns.ameCheckbox.value && canQueueInAME()) {
-                    queueToAME();
-                    alert("Sent to AME!");
-                } else {
-                    alert("Added to Render Queue!");
-                }
-            };
-
-            // Keyboard Shortcuts
-            ui.w.addEventListener("keydown", function (e) {
-                if (e.ctrlKey && e.keyName === "Enter") { ui.btns.create.notify("onClick"); e.preventDefault(); }
-                if (e.ctrlKey && e.keyName === "S") { ui.btns.saveAs.notify("onClick"); e.preventDefault(); }
-                if (e.ctrlKey && e.keyName === "R") { ui.btns.render.notify("onClick"); e.preventDefault(); }
-            });
-        }
 
         // --- EXECUTE BUILD ---
         createHeader();
@@ -1859,7 +1867,7 @@
 
         // Init
         ui.refreshDropdown();
-        bindEvents();
+        bindEvents(ui);
 
         // Auto-detect project logic
         if (app.project && app.project.file) {
