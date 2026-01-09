@@ -1385,25 +1385,9 @@
             refreshList();
         };
 
-        moveUpBtn.onClick = function () {
-            if (!tmplList.selection || tmplList.selection.index === 0) return;
-            var idx = tmplList.selection.index;
-            var temp = ui.templates[idx];
-            ui.templates[idx] = ui.templates[idx - 1];
-            ui.templates[idx - 1] = temp;
-            refreshList();
-            tmplList.selection = idx - 1;
-        };
 
-        moveDnBtn.onClick = function () {
-            if (!tmplList.selection || tmplList.selection.index === ui.templates.length - 1) return;
-            var idx = tmplList.selection.index;
-            var temp = ui.templates[idx];
-            ui.templates[idx] = ui.templates[idx + 1];
-            ui.templates[idx + 1] = temp;
-            refreshList();
-            tmplList.selection = idx + 1;
-        };
+
+
 
         openFldBtn.onClick = function () {
             var f = new Folder(ui.templatesFolder);
@@ -1791,6 +1775,15 @@
             return inp;
         }
 
+        function setTextColor(element, color) {
+            try {
+                if (element.graphics) {
+                    var pen = element.graphics.newPen(element.graphics.PenType.SOLID_COLOR, color, 1);
+                    element.graphics.foregroundColor = pen;
+                }
+            } catch (e) { }
+        }
+
         ui.btns.settings = null;
 
         // --- SUB-BUILDER FUNCTIONS ---
@@ -1850,13 +1843,9 @@
             // Brand & Campaign
             ui.inputs.brand = addRow(ui.mainGrp, "Brand:", "");
             ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
-            // Capture default background
-
 
             ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
             ui.inputs.campaign.helpTip = "Enter the campaign or project name";
-            // Capture default background
-
 
             // Quarter & Year
             var qyRow = ui.mainGrp.add("group");
@@ -1950,8 +1939,6 @@
         }
 
         function createRenderSection() {
-
-
             ui.btns.render = ui.w.add("button", undefined, "ADD TO RENDER QUEUE");
             ui.btns.render.preferredSize.height = 28;
             ui.btns.render.alignment = ["fill", "top"];
