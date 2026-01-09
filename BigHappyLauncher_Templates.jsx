@@ -41,6 +41,7 @@
     // =========================================================================
 
     var CONFIG = {
+        VERSION: "1.0.0",
         SETTINGS: {
             SECTION: "BigHappyLauncher",
             KEYS: {
@@ -988,6 +989,69 @@
 
 
     // =========================================================================
+    // SECTION 5B: AUTO-UPDATE (LOADER GENERATOR)
+    // =========================================================================
+
+    function generateLoaderFile(sourcePath, isUrl) {
+        var loaderContent =
+            '/**\n' +
+            ' * BigHappyLauncher LOADER Script\n' +
+            ' * -------------------------------------------------------------------------\n' +
+            ' * This script acts as a self-updating wrapper.\n' +
+            ' * It downloads/copies the latest Master version and then executes it.\n' +
+            ' */\n' +
+            '(function() {\n' +
+            '    var masterSource = "' + sourcePath + '";\n' +
+            '    var isUrl = ' + (isUrl ? 'true' : 'false') + ';\n' +
+            '    var cacheFolder = new Folder(Folder.userData.fsName + "/BigHappyLauncher_Cache");\n' +
+            '    if (!cacheFolder.exists) cacheFolder.create();\n' +
+            '    var localFile = new File(cacheFolder.fsName + "/BigHappyLauncher_Cache.jsx");\n\n' +
+            '    try {\n' +
+            '        if (isUrl) {\n' +
+            '            // GIT / WEB MODE: Use cURL to download\n' +
+            '            var tempFile = new File(localFile.fsName + ".tmp");\n' +
+            '            var cmd = "curl -L -o \\"" + tempFile.fsName + "\\" \\"" + masterSource + "\\"";\n' +
+            '            system.callSystem(cmd);\n' +
+            '            if (tempFile.exists && tempFile.length > 500) {\n' + // Check for valid file size (>500 bytes to avoid 404 pages)
+            '                tempFile.copy(localFile.fsName);\n' +
+            '                tempFile.remove();\n' +
+            '            }\n' +
+            '        } else {\n' +
+            '            // NETWORK FILE MODE\n' +
+            '            var masterFile = new File(masterSource);\n' +
+            '            if (masterFile.exists && (!localFile.exists || masterFile.modified > localFile.modified)) {\n' +
+            '                masterFile.copy(localFile.fsName);\n' +
+            '            }\n' +
+            '        }\n\n' +
+            '        if (localFile.exists) {\n' +
+            '            $.evalFile(localFile);\n' +
+            '        } else {\n' +
+            '            alert("BigHappyLauncher Loader Error:\\n\\nCould not find script cache and update failed.\\nSource: " + masterSource);\n' +
+            '        }\n' +
+            '    } catch (e) {\n' +
+            '        alert("Loader Error: " + e.toString());\n' +
+            '    }\n' +
+            '})();\n';
+
+        var f = new File(Folder.desktop.fsName + "/BigHappyLauncher_Loader.jsx").saveDlg("Save Loader Script");
+        if (f) {
+            if (f.name.indexOf(".jsx") === -1) f = new File(f.fsName + ".jsx");
+            var written = false;
+            if (f.open("w")) {
+                f.write(loaderContent);
+                f.close();
+                written = true;
+            }
+            if (written) {
+                alert("Loader Script Generated Successfully!\n\nDistribute this file to your team:\n" + f.fsName);
+            } else {
+                showError("BH-2002", "Could not write loader file.");
+            }
+        }
+    }
+
+
+    // =========================================================================
     // SECTION 5: DIALOGS
     // =========================================================================
 
@@ -1162,115 +1226,236 @@
         d.spacing = 10;
         d.margins = 15;
 
-        // --- PATHS SECTION ---
-        var pPanel = d.add("panel", undefined, "Paths");
-        pPanel.orientation = "column";
-        pPanel.alignChildren = ["fill", "top"];
-        pPanel.spacing = 5;
+        // Tabs
+        var tPanel = d.add("tabbedpanel");
+        tPanel.alignChildren = ["fill", "top"];
+        tPanel.preferredSize = [400, 300];
 
-        // Base Folder
+        // --- TAB 1: GENERAL ---
+        var genTab = tPanel.add("tab", undefined, "General");
+        genTab.alignChildren = ["fill", "top"];
+        genTab.spacing = 10;
+        genTab.margins = 10;
+
+        // Paths
+        var pPanel = genTab.add("panel", undefined, "Paths");
+        pPanel.orientation = "column"; pPanel.alignChildren = ["fill", "top"];
+
         var bGrp = pPanel.add("group");
-        bGrp.orientation = "row";
         bGrp.add("statictext", undefined, "Base Work Folder:");
         var baseInput = bGrp.add("edittext", undefined, getBaseWorkFolder());
         baseInput.alignment = ["fill", "center"];
         var baseBtn = bGrp.add("button", undefined, "...");
         baseBtn.preferredSize = [30, 22];
-        baseBtn.onClick = function () {
-            var f = Folder.selectDialog("Select Base Work Folder");
-            if (f) baseInput.text = f.fsName;
-        };
+        baseBtn.onClick = function () { var f = Folder.selectDialog("Select Base Work Folder"); if (f) baseInput.text = f.fsName; };
 
-        // Templates Folder
         var tGrp = pPanel.add("group");
-        tGrp.orientation = "row";
         tGrp.add("statictext", undefined, "Templates Folder:");
         var tmplInput = tGrp.add("edittext", undefined, ui.templatesFolder);
         tmplInput.alignment = ["fill", "center"];
         var tmplBtn = tGrp.add("button", undefined, "...");
         tmplBtn.preferredSize = [30, 22];
-        tmplBtn.onClick = function () {
-            var f = Folder.selectDialog("Select Templates Folder");
-            if (f) tmplInput.text = f.fsName;
-        };
+        tmplBtn.onClick = function () { var f = Folder.selectDialog("Select Templates Folder"); if (f) tmplInput.text = f.fsName; };
 
-        // --- DEFAULTS SECTION ---
-        var defPanel = d.add("panel", undefined, "New Template Defaults");
-        defPanel.orientation = "column";
+        // Defaults
+        var defPanel = genTab.add("panel", undefined, "New Template Defaults");
         defPanel.alignChildren = ["left", "top"];
-        defPanel.spacing = 5;
-
         var defGrp = defPanel.add("group");
-        defGrp.orientation = "row";
-
         defGrp.add("statictext", undefined, "Duration (sec):");
         var durInput = defGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_DURATION) || "15");
         durInput.preferredSize.width = 40;
-
         defGrp.add("statictext", undefined, "FPS:");
         var fpsInput = defGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_FPS) || "24");
         fpsInput.preferredSize.width = 40;
 
-        // --- RENDER SECTION ---
-        var rPanel = d.add("panel", undefined, "Render & Output");
-        rPanel.orientation = "column";
+        // Render
+        var rPanel = genTab.add("panel", undefined, "Render");
         rPanel.alignChildren = ["left", "top"];
-
         var ameCheck = rPanel.add("checkbox", undefined, "Enable Adobe Media Encoder (AME)");
         ameCheck.value = (getSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED) === "true");
 
-        // --- SYSTEM SECTION ---
-        var sPanel = d.add("panel", undefined, "System");
-        sPanel.orientation = "column";
-        sPanel.alignChildren = ["left", "top"];
 
-        var logGrp = sPanel.add("group");
+        // --- TAB 2: TEMPLATES ---
+        var tmplTab = tPanel.add("tab", undefined, "Templates");
+        tmplTab.alignChildren = ["fill", "fill"];
+
+        var tmplList = tmplTab.add("listbox", undefined, [], { multiselect: false });
+        tmplList.preferredSize.height = 180;
+        // Populate List
+        for (var i = 0; i < ui.templates.length; i++) {
+            tmplList.add("item", ui.templates[i].name);
+        }
+
+        var tmplBtnGrp = tmplTab.add("group");
+        tmplBtnGrp.orientation = "row";
+        tmplBtnGrp.alignment = ["center", "bottom"];
+
+        var addBtn = tmplBtnGrp.add("button", undefined, "Add");
+        var editBtn = tmplBtnGrp.add("button", undefined, "Edit");
+        var dupBtn = tmplBtnGrp.add("button", undefined, "Dup");
+        var delBtn = tmplBtnGrp.add("button", undefined, "Del");
+        var moveUpBtn = tmplBtnGrp.add("button", undefined, "▲");
+        var moveDnBtn = tmplBtnGrp.add("button", undefined, "▼");
+
+        moveUpBtn.preferredSize = moveDnBtn.preferredSize = [30, 25];
+
+        var subBtnGrp = tmplTab.add("group");
+        subBtnGrp.orientation = "row";
+        subBtnGrp.alignment = ["center", "bottom"];
+        var openFldBtn = subBtnGrp.add("button", undefined, "Open Folder");
+        var regenBtn = subBtnGrp.add("button", undefined, "Regenerate JS");
+
+
+        // --- TAB 3: SYSTEM ---
+        var sysTab = tPanel.add("tab", undefined, "System");
+        sysTab.alignChildren = ["fill", "top"];
+        sysTab.margins = 10; sysTab.spacing = 10;
+
+        var loaderGrp = sysTab.add("panel", undefined, "Auto-Update Generator");
+        loaderGrp.alignChildren = ["left", "top"];
+        loaderGrp.add("statictext", undefined, "Git Raw URL:");
+        var gitUrlInput = loaderGrp.add("edittext", undefined, "https://raw.githubusercontent.com/...");
+        gitUrlInput.alignment = ["fill", "top"];
+
+        var genBtn = loaderGrp.add("button", undefined, "Generate Loader Script...");
+        genBtn.onClick = function () {
+            var url = gitUrlInput.text;
+            if (url.indexOf("http") === -1) { alert("Invalid URL"); return; }
+            generateLoaderFile(url, true);
+        };
+
+        var logGrp = sysTab.add("group");
         logGrp.add("statictext", undefined, "Log File:");
         var openLogBtn = logGrp.add("button", undefined, "Open Log");
         openLogBtn.onClick = function () {
-            var logF = new File(CONFIG.PATHS.LOG_FILE);
-            if (logF.exists) logF.execute();
-            else alert("Log file not found yet.");
+            var f = new File(CONFIG.PATHS.LOG_FILE);
+            if (f.exists) f.execute(); else alert("Log file not found.");
         };
 
-        // --- BUTTONS ---
+        // --- BOTTOM BUTTONS ---
         var btnGrp = d.add("group");
-        btnGrp.orientation = "row";
         btnGrp.alignment = ["center", "bottom"];
-        var saveBtn = btnGrp.add("button", undefined, "Save");
+        var saveBtn = btnGrp.add("button", undefined, "Save & Close");
         var cancelBtn = btnGrp.add("button", undefined, "Cancel");
 
-        saveBtn.onClick = function () {
-            // Validation
-            if (!baseInput.text) { alert("Base Work Folder cannot be empty."); return; }
-            if (!tmplInput.text) { alert("Templates Folder cannot be empty."); return; }
+        // --- EVENTS: TEMPLATE MANAGEMENT ---
 
-            // Save
+        function refreshList() {
+            tmplList.removeAll();
+            for (var i = 0; i < ui.templates.length; i++) {
+                tmplList.add("item", ui.templates[i].name);
+            }
+        }
+
+        addBtn.onClick = function () {
+            var defFps = parseFloat(fpsInput.text) || 24; // Use current input as default
+            var defDur = parseFloat(durInput.text) || 15;
+            var newT = showTemplateDialog({ name: "", width: 1920, height: 1080, fps: defFps, duration: defDur, path: "" }, true);
+            if (newT) {
+                ui.templates.push(newT);
+                refreshList();
+            }
+        };
+
+        editBtn.onClick = function () {
+            if (!tmplList.selection) return;
+            var idx = tmplList.selection.index;
+            var edited = showTemplateDialog(ui.templates[idx], false);
+            if (edited) {
+                ui.templates[idx] = edited;
+                refreshList();
+                tmplList.selection = idx;
+            }
+        };
+
+        dupBtn.onClick = function () {
+            if (!tmplList.selection) return;
+            var idx = tmplList.selection.index;
+            var orig = ui.templates[idx];
+            var copy = { name: orig.name + " Copy", width: orig.width, height: orig.height, fps: orig.fps, duration: orig.duration, path: "" };
+            ui.templates.push(copy);
+            refreshList();
+            tmplList.selection = ui.templates.length - 1;
+        };
+
+        delBtn.onClick = function () {
+            if (!tmplList.selection) return;
+            if (!confirm("Are you sure you want to delete template '" + tmplList.selection.text + "'?")) return;
+            ui.templates.splice(tmplList.selection.index, 1);
+            refreshList();
+        };
+
+        moveUpBtn.onClick = function () {
+            if (!tmplList.selection || tmplList.selection.index === 0) return;
+            var idx = tmplList.selection.index;
+            var temp = ui.templates[idx];
+            ui.templates[idx] = ui.templates[idx - 1];
+            ui.templates[idx - 1] = temp;
+            refreshList();
+            tmplList.selection = idx - 1;
+        };
+
+        moveDnBtn.onClick = function () {
+            if (!tmplList.selection || tmplList.selection.index === ui.templates.length - 1) return;
+            var idx = tmplList.selection.index;
+            var temp = ui.templates[idx];
+            ui.templates[idx] = ui.templates[idx + 1];
+            ui.templates[idx + 1] = temp;
+            refreshList();
+            tmplList.selection = idx + 1;
+        };
+
+        openFldBtn.onClick = function () {
+            var f = new Folder(ui.templatesFolder);
+            if (f.exists) f.execute(); else alert("Templates folder not found: " + ui.templatesFolder);
+        };
+
+        regenBtn.onClick = function () {
+            if (!tmplList.selection) return;
+            var t = ui.templates[tmplList.selection.index];
+            var res = generateTemplateFile(t, ui.templatesFolder);
+            if (res) alert("Regenerated: " + t.name);
+        };
+
+
+        saveBtn.onClick = function () {
+            // Validate & Save
+            if (!baseInput.text) { alert("Base Work Folder cannot be empty."); return; }
+
+            // Save settings mappings
             setBaseWorkFolder(baseInput.text);
             setSetting(CONFIG.SETTINGS.KEYS.TEMPLATES_FOLDER, tmplInput.text);
             setSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED, String(ameCheck.value));
 
-            // Validate & Save Defaults
             var newDur = parseFloat(durInput.text);
             var newFps = parseFloat(fpsInput.text);
             if (!isNaN(newDur)) setSetting(CONFIG.SETTINGS.KEYS.DEFAULT_DURATION, String(newDur));
             if (!isNaN(newFps)) setSetting(CONFIG.SETTINGS.KEYS.DEFAULT_FPS, String(newFps));
 
-            // Update UI state
+            // Save Templates
+            saveTemplates(ui.templates);
+
+            // Update UI State Mappings
             ui.templatesFolder = tmplInput.text;
             ui.labels.basePath.text = baseInput.text;
 
-            // Reload templates if folder changed
-            ui.templates = loadTemplates();
+            // Reload and Refresh Main UI
+            ui.templates = loadTemplates(); // Reload to be safe (or just strictly use memory)
             ui.refreshDropdown();
             ui.updatePreview();
 
             d.close();
         };
-        cancelBtn.onClick = function () { d.close(); };
+
+        cancelBtn.onClick = function () {
+            // Revert changes to templates by reloading from disk (discard memory changes)
+            ui.templates = loadTemplates();
+            d.close();
+        };
 
         d.center();
         d.show();
+
     }
 
     function bindEvents(ui) {
@@ -1295,113 +1480,11 @@
             };
         }
 
-        // Template Mgmt
-        ui.btns.template.add.onClick = function () {
-            var defFps = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_FPS)) || 24;
-            var defDur = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_DURATION)) || 15;
-            var newT = showTemplateDialog({ name: "", width: 1920, height: 1080, fps: defFps, duration: defDur, path: "" }, true);
-            if (newT) {
-                ui.templates.push(newT);
-                saveTemplates(ui.templates);
-                ui.refreshDropdown();
-                ui.dropdowns.template.selection = ui.templates.length - 1;
-                ui.updateStatus();
-                ui.updatePreview();
-            }
-        };
 
-        ui.btns.template.edit.onClick = function () {
-            if (!ui.dropdowns.template.selection) return;
-            var idx = ui.dropdowns.template.selection.index;
-            var edited = showTemplateDialog(ui.templates[idx], false);
-            if (edited) {
-                ui.templates[idx] = edited;
-                saveTemplates(ui.templates);
-                ui.refreshDropdown();
-                ui.dropdowns.template.selection = idx;
-                ui.updateStatus();
-                ui.updatePreview();
-            }
-        };
 
-        ui.btns.template.dup.onClick = function () {
-            if (!ui.dropdowns.template.selection) return;
-            var idx = ui.dropdowns.template.selection.index;
-            var orig = ui.templates[idx];
-            var copy = {
-                name: orig.name + " Copy",
-                width: orig.width,
-                height: orig.height,
-                fps: orig.fps,
-                duration: orig.duration,
-                path: ""
-            };
-            ui.templates.splice(idx + 1, 0, copy);
-            saveTemplates(ui.templates);
-            ui.refreshDropdown();
-            ui.dropdowns.template.selection = idx + 1;
-            ui.updateStatus();
-            ui.updatePreview();
-        };
 
-        ui.btns.template.del.onClick = function () {
-            if (!ui.dropdowns.template.selection) return;
-            var idx = ui.dropdowns.template.selection.index;
-            if (!confirm("Delete '" + ui.templates[idx].name + "'?")) return;
-            ui.templates.splice(idx, 1);
-            saveTemplates(ui.templates);
-            ui.refreshDropdown();
-            ui.updateStatus();
-            ui.updatePreview();
-        };
 
-        ui.btns.template.up.onClick = function () {
-            if (!ui.dropdowns.template.selection) return;
-            var idx = ui.dropdowns.template.selection.index;
-            if (idx === 0) return;
-            var temp = ui.templates[idx];
-            ui.templates[idx] = ui.templates[idx - 1];
-            ui.templates[idx - 1] = temp;
-            saveTemplates(ui.templates);
-            ui.refreshDropdown();
-            ui.dropdowns.template.selection = idx - 1;
-            ui.updateStatus();
-            ui.updatePreview();
-        };
 
-        ui.btns.template.down.onClick = function () {
-            if (!ui.dropdowns.template.selection) return;
-            var idx = ui.dropdowns.template.selection.index;
-            if (idx >= ui.templates.length - 1) return;
-            var temp = ui.templates[idx];
-            ui.templates[idx] = ui.templates[idx + 1];
-            ui.templates[idx + 1] = temp;
-            saveTemplates(ui.templates);
-            ui.refreshDropdown();
-            ui.dropdowns.template.selection = idx + 1;
-            ui.updateStatus();
-            ui.updatePreview();
-        };
-
-        ui.btns.template.regen.onClick = function () {
-            if (!confirm("Regenerate ALL templates?\nThis will delete and recreate template files.\nFolder: " + ui.templatesFolder)) return;
-            ui.setStatus("Regenerating...", [0.6, 0.6, 0.6]);
-            for (var i = 0; i < ui.templates.length; i++) ui.templates[i].path = "";
-            var result = ensureTemplatesExist(ui.templates, ui.templatesFolder, true);
-            ui.templates = result.templates;
-            ui.setStatus("Generated " + result.generated.length, [0.5, 0.8, 0.5]);
-            ui.refreshDropdown();
-            ui.updateStatus();
-        };
-
-        ui.btns.template.folder.onClick = function () {
-            var f = Folder.selectDialog("Select Templates Folder");
-            if (f) {
-                ui.templatesFolder = f.fsName;
-                setSetting(CONFIG.SETTINGS.KEYS.TEMPLATES_FOLDER, ui.templatesFolder);
-                ui.setStatus("Folder updated", [0.5, 0.8, 0.5]);
-            }
-        };
 
         // Main Actions
         ui.btns.create.onClick = function () {
@@ -1718,9 +1801,16 @@
             hdrGrp.alignment = ["fill", "top"];
             hdrGrp.alignChildren = ["fill", "center"];
 
-            var title = hdrGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
-            title.alignment = ["center", "center"];
+            var titleGrp = hdrGrp.add("group");
+            titleGrp.orientation = "row";
+            titleGrp.alignChildren = ["left", "center"];
+
+            var title = titleGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
             try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
+
+            // Version Label
+            var ver = titleGrp.add("statictext", undefined, "v" + CONFIG.VERSION);
+            try { ver.graphics.foregroundColor = ver.graphics.newPen(ver.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
 
             // DEBUG TRIGGER: Alt+Click title to run unit tests
             title.addEventListener("click", function (e) {
@@ -1855,34 +1945,8 @@
             ui.labels.status = ui.w.add("statictext", undefined, "Ready");
             ui.labels.status.alignment = ["center", "top"];
             try { ui.labels.status.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
-
-            var tmplMgmt1 = ui.w.add("group");
-            tmplMgmt1.orientation = "row";
-            tmplMgmt1.alignChildren = ["center", "center"];
-            tmplMgmt1.spacing = 3;
-
-            ui.btns.template.add = tmplMgmt1.add("button", undefined, "+");
-            ui.btns.template.add.preferredSize = [25, 22];
-            ui.btns.template.edit = tmplMgmt1.add("button", undefined, "Edit");
-            ui.btns.template.edit.preferredSize = [40, 22];
-            ui.btns.template.dup = tmplMgmt1.add("button", undefined, "Dup");
-            ui.btns.template.dup.preferredSize = [35, 22];
-            ui.btns.template.del = tmplMgmt1.add("button", undefined, "Del");
-            ui.btns.template.del.preferredSize = [35, 22];
-            ui.btns.template.up = tmplMgmt1.add("button", undefined, "▲");
-            ui.btns.template.up.preferredSize = [22, 22];
-            ui.btns.template.down = tmplMgmt1.add("button", undefined, "▼");
-            ui.btns.template.down.preferredSize = [22, 22];
-
-            var tmplMgmt2 = ui.w.add("group");
-            tmplMgmt2.orientation = "row";
-            tmplMgmt2.alignChildren = ["center", "center"];
-            tmplMgmt2.spacing = 5;
-
-            ui.btns.template.regen = tmplMgmt2.add("button", undefined, "Regenerate");
-            ui.btns.template.regen.preferredSize.height = 22;
-            ui.btns.template.folder = tmplMgmt2.add("button", undefined, "Folder...");
-            ui.btns.template.folder.preferredSize.height = 22;
+            setTextColor(ui.labels.status, [0.5, 0.5, 0.5]);
+            // Template management buttons moved to Settings
         }
 
         function createRenderSection() {
