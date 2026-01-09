@@ -49,12 +49,15 @@
                 DEFAULT_SAVE_FOLDER: "default_save_folder",
                 AME_ENABLED: "ame_enabled",
                 RECENT_FILES: "recent_files",
-                BASE_WORK_FOLDER: "base_work_folder"
+                BASE_WORK_FOLDER: "base_work_folder",
+                DEFAULT_DURATION: "default_duration",
+                DEFAULT_FPS: "default_fps"
             },
             MAX_RECENT_FILES: 10
         },
         PATHS: {
-            LOG_FILE: joinPath(Folder.myDocuments.fsName, "BigHappyLauncher_Log.txt")
+            LOG_FILE: joinPath(Folder.myDocuments.fsName, "BigHappyLauncher_Log.txt"),
+            GLOBAL_ASSETS: "_GlobalAssets"
         },
         DEFAULTS: {
             TEMPLATES: [
@@ -626,6 +629,54 @@
     }
 
     // =========================================================================
+    // SECTION 2B: UNIT TESTS (DEBUG)
+    // =========================================================================
+
+    function runUnitTests() {
+        var tests = [
+            { input: "Nike_AirMax_Q3_750x300_V1_R1", expected: { brand: "Nike", campaign: "AirMax", quarter: "Q3", size: "750x300", version: "V1", revision: "R1", isDOOH: false } },
+            { input: "CocaCola_Summer_Vibes_Q1_300x250_V2_R5", expected: { brand: "CocaCola", campaign: "Summer_Vibes", quarter: "Q1", size: "300x250", version: "V2", revision: "R5", isDOOH: false } },
+            { input: "TechCorp_Q4_1920x1080_V1_R15", expected: { brand: "TechCorp", campaign: "", quarter: "Q4", size: "1920x1080", version: "V1", revision: "R15", isDOOH: false } },
+            { input: "DOOH_Spotify_Wrapped_1080x1920_V3_R2", expected: { brand: null, campaign: "Spotify_Wrapped", quarter: null, size: "1080x1920", version: "V3", revision: "R2", isDOOH: true } },
+            { input: "DOOH_Generic_1920x1080_V1_R1", expected: { brand: null, campaign: "Generic", quarter: null, size: "1920x1080", version: "V1", revision: "R1", isDOOH: true } },
+            { input: "SimpleBrand_300x600_V1_R1", expected: { brand: "SimpleBrand", campaign: "", quarter: null, size: "300x600", version: "V1", revision: "R1", isDOOH: false } }
+        ];
+
+        var passed = 0;
+        var failed = 0;
+        var log = "Running Unit Tests...\n\n";
+
+        for (var i = 0; i < tests.length; i++) {
+            var t = tests[i];
+            var result = parseProjectName(t.input);
+            var tPass = true;
+            var failReason = "";
+
+            if (!result) {
+                tPass = false;
+                failReason = "Returned Null";
+            } else {
+                // Check key fields
+                if (result.brand !== t.expected.brand) { tPass = false; failReason += "Brand mismatch (" + result.brand + "); "; }
+                if (result.campaign !== t.expected.campaign) { tPass = false; failReason += "Campaign mismatch (" + result.campaign + "); "; }
+                if (result.size !== t.expected.size) { tPass = false; failReason += "Size mismatch (" + result.size + "); "; }
+                if (result.quarter !== t.expected.quarter) { tPass = false; failReason += "Quarter mismatch (" + result.quarter + "); "; }
+                if (result.isDOOH !== t.expected.isDOOH) { tPass = false; failReason += "DOOH flag mismatch; "; }
+            }
+
+            if (tPass) {
+                passed++;
+                log += "[PASS] " + t.input + "\n";
+            } else {
+                failed++;
+                log += "[FAIL] " + t.input + "\nREASON: " + failReason + "\n";
+            }
+        }
+
+        alert(log + "\nTotal: " + tests.length + " | Passed: " + passed + " | Failed: " + failed);
+    }
+
+    // =========================================================================
     // SECTION 4: TEMPLATE MANAGEMENT
     // =========================================================================
 
@@ -878,6 +929,65 @@
 
 
     // =========================================================================
+    // SECTION 4B: ASSET IMPORT AUTOMATION
+    // =========================================================================
+
+    function importGlobalAssets() {
+        try {
+            var templatesFolder = getTemplatesFolder();
+            if (!templatesFolder) return;
+
+            var globalAssetsPath = joinPath(templatesFolder, CONFIG.PATHS.GLOBAL_ASSETS);
+            var folder = new Folder(globalAssetsPath);
+
+            if (!folder.exists) return; // No global assets folder, skip
+
+            var files = folder.getFiles(); // Get all files/folders
+            if (!files || files.length === 0) return;
+
+            writeLog("Importing Global Assets from: " + globalAssetsPath, "INFO");
+
+            // Create or Find "00_Assets" bin
+            var assetsBinName = "00_Global_Assets";
+            var assetsBin = null;
+
+            for (var i = 1; i <= app.project.items.length; i++) {
+                if (app.project.items[i] instanceof FolderItem && app.project.items[i].name === assetsBinName) {
+                    assetsBin = app.project.items[i];
+                    break;
+                }
+            }
+
+            if (!assetsBin) {
+                assetsBin = app.project.items.addFolder(assetsBinName);
+            }
+
+            // Import files
+            for (var f = 0; f < files.length; f++) {
+                var fileObj = files[f];
+                if (fileObj instanceof File) {
+                    // Skip hidden files or system files
+                    if (fileObj.name.indexOf(".") === 0) continue;
+
+                    try {
+                        var io = new ImportOptions(fileObj);
+                        if (io.canImportAs(ImportAsType.FOOTAGE)) {
+                            var imported = app.project.importFile(io);
+                            imported.parentFolder = assetsBin;
+                        }
+                    } catch (impErr) {
+                        writeLog("Failed to import asset: " + fileObj.name, "WARN");
+                    }
+                }
+            }
+
+        } catch (e) {
+            writeLog("Global Asset Import Failed: " + e.toString(), "ERROR");
+        }
+    }
+
+
+    // =========================================================================
     // SECTION 5: DIALOGS
     // =========================================================================
 
@@ -1084,6 +1194,23 @@
             if (f) tmplInput.text = f.fsName;
         };
 
+        // --- DEFAULTS SECTION ---
+        var defPanel = d.add("panel", undefined, "New Template Defaults");
+        defPanel.orientation = "column";
+        defPanel.alignChildren = ["left", "top"];
+        defPanel.spacing = 5;
+
+        var defGrp = defPanel.add("group");
+        defGrp.orientation = "row";
+
+        defGrp.add("statictext", undefined, "Duration (sec):");
+        var durInput = defGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_DURATION) || "15");
+        durInput.preferredSize.width = 40;
+
+        defGrp.add("statictext", undefined, "FPS:");
+        var fpsInput = defGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_FPS) || "24");
+        fpsInput.preferredSize.width = 40;
+
         // --- RENDER SECTION ---
         var rPanel = d.add("panel", undefined, "Render & Output");
         rPanel.orientation = "column";
@@ -1122,6 +1249,12 @@
             setBaseWorkFolder(baseInput.text);
             setSetting(CONFIG.SETTINGS.KEYS.TEMPLATES_FOLDER, tmplInput.text);
             setSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED, String(ameCheck.value));
+
+            // Validate & Save Defaults
+            var newDur = parseFloat(durInput.text);
+            var newFps = parseFloat(fpsInput.text);
+            if (!isNaN(newDur)) setSetting(CONFIG.SETTINGS.KEYS.DEFAULT_DURATION, String(newDur));
+            if (!isNaN(newFps)) setSetting(CONFIG.SETTINGS.KEYS.DEFAULT_FPS, String(newFps));
 
             // Update UI state
             ui.templatesFolder = tmplInput.text;
@@ -1164,7 +1297,9 @@
 
         // Template Mgmt
         ui.btns.template.add.onClick = function () {
-            var newT = showTemplateDialog({ name: "", width: 1920, height: 1080, fps: 24, duration: 15, path: "" }, true);
+            var defFps = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_FPS)) || 24;
+            var defDur = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DEFAULT_DURATION)) || 15;
+            var newT = showTemplateDialog({ name: "", width: 1920, height: 1080, fps: defFps, duration: defDur, path: "" }, true);
             if (newT) {
                 ui.templates.push(newT);
                 saveTemplates(ui.templates);
@@ -1316,6 +1451,7 @@
                 if (mainComp) mainComp.openInViewer();
 
                 addToRecentFiles(savePath);
+                importGlobalAssets(); // Import global assets after project is ready
 
                 var assetFoldersList = CONFIG.TEMPLATE_FOLDERS[templateType] || CONFIG.TEMPLATE_FOLDERS["default"];
 
@@ -1586,6 +1722,13 @@
             title.alignment = ["center", "center"];
             try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
 
+            // DEBUG TRIGGER: Alt+Click title to run unit tests
+            title.addEventListener("click", function (e) {
+                if (e.altKey) {
+                    runUnitTests();
+                }
+            });
+
             // Spacer to push settings button to right
             var spacer = hdrGrp.add("group");
             spacer.alignment = ["fill", "fill"];
@@ -1853,6 +1996,21 @@
 
             ui.inputs.revision.text = String(foundR);
             ui.updatePreview();
+
+            // SMART VERSIONING: Check if higher versions exist
+            var currentV = parseInt(ui.inputs.version.text, 10);
+            var sizeFolder = joinPath(joinPath(joinPath(joinPath(getBaseWorkFolder(), year), quarter), projectFolderName), size);
+
+            for (var v = currentV + 1; v <= currentV + 10; v++) {
+                var checkV = "V" + v;
+                var vFolder = new Folder(joinPath(sizeFolder, checkV));
+                // Also check if any file exists with that version if folder structure isn't strict?
+                // For now, rely on standard "V#" folder presence
+                if (vFolder.exists) {
+                    ui.setStatus("Note: Newer version " + checkV + " already exists", [1, 0.5, 0]);
+                    break;
+                }
+            }
         };
 
 
