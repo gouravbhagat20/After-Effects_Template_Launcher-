@@ -52,7 +52,12 @@
                 RECENT_FILES: "recent_files",
                 BASE_WORK_FOLDER: "base_work_folder",
                 DEFAULT_DURATION: "default_duration",
-                DEFAULT_FPS: "default_fps"
+                DEFAULT_FPS: "default_fps",
+                FFMPEG_PATH: "ffmpeg_path",
+                POST_RENDER_WEBM: "post_render_webm",
+                POST_RENDER_MOV: "post_render_mov",
+                POST_RENDER_HTML: "post_render_html",
+                TARGET_SIZE_MB: "target_size_mb"
             },
             MAX_RECENT_FILES: 10
         },
@@ -1392,6 +1397,42 @@
         // --- TAB 3: SYSTEM ---
         var sysTab = tPanel.add("tab", undefined, "System");
         sysTab.alignChildren = ["fill", "top"];
+        // --- TAB 3: POST-RENDER ---
+        var convTab = tabs.add("tab", undefined, "Post-Render");
+        convTab.alignChildren = ["fill", "top"];
+        convTab.margins = 10; convTab.spacing = 10;
+
+        // FFmpeg Path
+        var ffmpegGrp = convTab.add("group");
+        ffmpegGrp.add("statictext", undefined, "FFmpeg Path:");
+        var ffmpegInput = ffmpegGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ""));
+        ffmpegInput.dimensions = [300, 25];
+        var browseFfmpegBtn = ffmpegGrp.add("button", undefined, "...");
+        browseFfmpegBtn.size = [30, 25];
+        browseFfmpegBtn.onClick = function () {
+            var f = File.openDialog("Select FFmpeg Executable");
+            if (f) ffmpegInput.text = f.fsName;
+        };
+
+        // Options
+        var webmCheck = convTab.add("checkbox", undefined, "Convert to WebM (VP9 + Alpha)");
+        webmCheck.value = (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_WEBM, "true") === "true");
+
+        var movCheck = convTab.add("checkbox", undefined, "Convert to MOV (QTRLE/ProRes + Alpha)");
+        movCheck.value = (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_MOV, "true") === "true");
+
+        var htmlCheck = convTab.add("checkbox", undefined, "Generate HTML Player (Mediabunny)");
+        htmlCheck.value = (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_HTML, "true") === "true");
+
+        // Target Size
+        var sizeGrp = convTab.add("group");
+        sizeGrp.add("statictext", undefined, "Target WebM Size (MB):");
+        var sizeInput = sizeGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, "2.5"));
+        sizeInput.characters = 5;
+
+        // --- TAB 4: SYSTEM ---
+        var sysTab = tabs.add("tab", undefined, "System");
+        sysTab.alignChildren = ["fill", "top"];
         sysTab.margins = 10; sysTab.spacing = 10;
 
         var loaderGrp = sysTab.add("panel", undefined, "Auto-Update Generator");
@@ -1498,6 +1539,14 @@
             var newFps = parseFloat(fpsInput.text);
             if (!isNaN(newDur)) setSetting(CONFIG.SETTINGS.KEYS.DEFAULT_DURATION, String(newDur));
             if (!isNaN(newFps)) setSetting(CONFIG.SETTINGS.KEYS.DEFAULT_FPS, String(newFps));
+
+            // Save Post-Render Settings
+            setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegInput.text);
+            setSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_WEBM, String(webmCheck.value));
+            setSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_MOV, String(movCheck.value));
+            setSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_HTML, String(htmlCheck.value));
+            var tSize = parseFloat(sizeInput.text);
+            if (!isNaN(tSize)) setSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, String(tSize));
 
             // Save Templates
             saveTemplates(ui.templates);
@@ -1782,6 +1831,10 @@
             }
         };
 
+        ui.btns.convert.onClick = function () {
+            processPostRender(ui);
+        };
+
         // Keyboard Shortcuts
         ui.w.addEventListener("keydown", function (e) {
             if (e.ctrlKey && e.keyName === "Enter") { ui.btns.create.notify("onClick"); e.preventDefault(); }
@@ -1793,6 +1846,389 @@
     // =========================================================================
     // SECTION 8: BUILD UI
     // =========================================================================
+    // --- POST-RENDER CONVERSION HELPERS ---
+
+    function escapePath(path) {
+        return "\"" + path + "\"";
+    }
+
+    function getNullDev() {
+        return ($.os.indexOf("Windows") !== -1) ? "NUL" : "/dev/null";
+    }
+
+    function checkFFmpeg() {
+        var path = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        // 1. Try Configured Path or Global Command
+        var cmd = (path ? escapePath(path) : "ffmpeg") + " -version";
+        var res = system.callSystem(cmd);
+        if (res.indexOf("ffmpeg version") !== -1) return true;
+
+        // 2. If failure and no path set, try common paths (Mac)
+        if (!path && $.os.indexOf("Mac") !== -1) {
+            var common = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"];
+            for (var i = 0; i < common.length; i++) {
+                var f = new File(common[i]);
+                if (f.exists) {
+                    // Check version to be sure
+                    var cmd2 = escapePath(common[i]) + " -version";
+                    if (system.callSystem(cmd2).indexOf("ffmpeg version") !== -1) {
+                        // Found it! Save it so other functions use it.
+                        setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, common[i]);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    function detectPNGSequence(folder) {
+        var files = folder.getFiles("*.png");
+        if (!files || files.length === 0) return null;
+        files.sort();
+
+        // Assume format like Name_00000.png or Name00000.png
+        var first = files[0].name;
+        var match = first.match(/^(.*?)(\d+)(\.png)$/i);
+        if (!match) return null;
+
+        var prefix = match[1];
+        var numStr = match[2];
+        var padding = numStr.length;
+        var startNum = parseInt(numStr, 10);
+
+        return {
+            prefix: prefix,
+            padding: padding,
+            start: startNum,
+            count: files.length,
+            fileObj: files[0]
+        };
+    }
+
+    function calculateBitrate(frames, fps, targetMB) {
+        var duration = frames / fps;
+        if (duration <= 0) duration = 1;
+        // Formula: (TargetMB * 8 * 1024) / duration ==> kbps
+        var safeTarget = targetMB * 0.92; // Safety margin
+        var bits = safeTarget * 8 * 1024 * 1024;
+        var bps = bits / duration;
+        return Math.floor(bps / 1000); // kbps
+    }
+
+    function convertToWebM(seq, outFolder, fps, targetMB, ffmpegPath) {
+        var bitrate = calculateBitrate(seq.count, fps, targetMB);
+        var exe = ffmpegPath ? escapePath(ffmpegPath) : "ffmpeg";
+        var pattern = escapePath(seq.fileObj.parent.fsName + "/" + seq.prefix + "%0" + seq.padding + "d.png");
+        var outFile = escapePath(outFolder.fsName + "/output.webm");
+        var passLog = escapePath(outFolder.fsName + "/ffmpeg2pass");
+        var nullDev = getNullDev();
+
+        // Pass 1
+        var cmd1 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + bitrate + "k -pass 1 -passlogfile " + passLog + " -an -f null " + nullDev;
+        var r1 = system.callSystem(cmd1);
+
+        // Pass 2
+        var cmd2 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + bitrate + "k -pass 2 -passlogfile " + passLog + " -an " + outFile;
+        var r2 = system.callSystem(cmd2);
+
+        // Cleanup log
+        var logFile1 = new File(outFolder.fsName + "/ffmpeg2pass-0.log");
+        if (logFile1.exists) logFile1.remove();
+
+        return (new File(outFolder.fsName + "/output.webm").exists);
+    }
+
+    function convertToMOV(seq, outFolder, fps, targetMB, ffmpegPath) {
+        var exe = ffmpegPath ? escapePath(ffmpegPath) : "ffmpeg";
+        var pattern = escapePath(seq.fileObj.parent.fsName + "/" + seq.prefix + "%0" + seq.padding + "d.png");
+        var outFile = escapePath(outFolder.fsName + "/output.mov");
+
+        if ($.os.indexOf("Mac") !== -1) {
+            // macOS: HEVC with Higher Quality
+            // Increased bitrate to 6M (good balance) and alpha_quality to 1.0 (lossless alpha)
+            var cmd = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v hevc_videotoolbox -allow_sw 1 -alpha_quality 1 -b:v 6000k -tag:v hvc1 " + outFile;
+            system.callSystem(cmd);
+        } else {
+            // Windows: QTRLE
+            var cmd = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v qtrle -pix_fmt argb " + outFile;
+            system.callSystem(cmd);
+        }
+
+        var f = new File(outFolder.fsName + "/output.mov");
+        return f.exists;
+    }
+
+    function fileToBase64(file) {
+        if (!file.exists) return "";
+        var b64 = "";
+
+        if ($.os.indexOf("Windows") !== -1) {
+            // Windows: Use PowerShell
+            var cmd = "powershell -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('" + file.fsName + "'))\"";
+            b64 = system.callSystem(cmd);
+        } else {
+            // Mac: Use base64 command
+            var cmd = "base64 -i \"" + file.fsName + "\"";
+            b64 = system.callSystem(cmd);
+        }
+        // Cleanup whitespace/newlines from stdout
+        return b64.replace(/\s/g, "");
+    }
+
+    function generateHTMLPlayer(outFolder, width, height, title) {
+        var webmFile = new File(outFolder.fsName + "/output.webm");
+        if (!webmFile.exists) return false;
+
+        var htmlFile = new File(outFolder.fsName + "/output.html");
+
+        // PART 1: HTML Header
+        var htmlHead = "<!DOCTYPE html>\n" +
+            "<html>\n" +
+            "  <head>\n" +
+            "    <meta charset=\"UTF-8\" />\n" +
+            "    <title>" + (title || "Sunrise - Big Happy") + "</title>\n" +
+            "    <script src=\"https://cdn.bighappy.co/libs/mediabunny/v1.25.0/mediabunny.min.cjs\"></script>\n" +
+            "    <style>\n" +
+            "      html, body { margin: 0; padding: 0; }\n" +
+            "    </style>\n" +
+            "  </head>\n" +
+            "  <body>\n" +
+            "    <div id=\"animation_container\">\n" +
+            "      <canvas id=\"webmCanvas\" width=\"" + width + "\" height=\"" + height + "\"></canvas>\n" +
+            "    </div>\n" +
+            "    <!-- Hidden Div for Base64 Storage -->\n" +
+            "    <div id=\"b64data\" style=\"display:none;\">";
+
+        htmlFile.open("w");
+        htmlFile.write(htmlHead);
+        htmlFile.close();
+
+        // PART 2: Append Base64
+        var cmd = "";
+        if ($.os.indexOf("Windows") !== -1) {
+            cmd = "powershell -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('" + webmFile.fsName + "'))\" >> \"" + htmlFile.fsName + "\"";
+        } else {
+            cmd = "base64 -i \"" + webmFile.fsName + "\" >> \"" + htmlFile.fsName + "\"";
+        }
+
+        var res = system.callSystem(cmd);
+
+        // PART 3: HTML Footer
+        var htmlTail = "</div>\n" +
+            "    <script>\n" +
+            "      const { Input, BlobSource, WEBM, VideoSampleSink } = Mediabunny;\n" +
+            "      var rawB64 = document.getElementById(\"b64data\").textContent.replace(/\\s/g, \"\");\n" +
+            "      const videoBase64 = \"data:video/webm;base64,\" + rawB64;\n" +
+            "\n" +
+            "      (async function playWithMediabunny(url) {\n" +
+            "        const canvas = document.getElementById(\"webmCanvas\");\n" +
+            "        if (!canvas) { console.error(\"Canvas not found\"); return; }\n" +
+            "        const ctx = canvas.getContext(\"2d\", { alpha: true });\n" +
+            "\n" +
+            "        const resp = await fetch(url);\n" +
+            "        const blob = await resp.blob();\n" +
+            "\n" +
+            "        const input = new Input({\n" +
+            "          source: new BlobSource(blob),\n" +
+            "          formats: [WEBM],\n" +
+            "        });\n" +
+            "\n" +
+            "        const videoTrack = await input.getPrimaryVideoTrack();\n" +
+            "        if (!videoTrack) return;\n" +
+            "        if (!await videoTrack.canDecode()) return;\n" +
+            "\n" +
+            "        const sink = new VideoSampleSink(videoTrack);\n" +
+            "\n" +
+            "        let firstTimestamp = null;\n" +
+            "        let startWallClock = null;\n" +
+            "\n" +
+            "        for await (const sample of sink.samples()) {\n" +
+            "          try {\n" +
+            "            if (firstTimestamp === null) {\n" +
+            "              firstTimestamp = sample.timestamp;\n" +
+            "              startWallClock = performance.now();\n" +
+            "            }\n" +
+            "\n" +
+            "            const targetTime = startWallClock + (sample.timestamp - firstTimestamp) * 1000;\n" +
+            "            const delay = targetTime - performance.now();\n" +
+            "            if (delay > 0) await new Promise((r) => setTimeout(r, delay));\n" +
+            "\n" +
+            "            ctx.clearRect(0, 0, canvas.width, canvas.height);\n" +
+            "            sample.drawWithFit(ctx, { fit: \"cover\" });\n" +
+            "          } finally {\n" +
+            "            sample.close();\n" +
+            "          }\n" +
+            "        }\n" +
+            "      })(videoBase64);\n" +
+            "    </script>\n" +
+            "  </body>\n" +
+            "</html>";
+
+        var f2 = new File(htmlFile.fsName);
+        f2.open("a");
+        f2.write(htmlTail);
+        f2.close();
+        return htmlFile.exists;
+    }
+
+    function showPostRenderDialog(outFolder, seq, ffmpegRes, options, dims) {
+        var d = new Window("palette", "Post-Render Conversion");
+        d.orientation = "column";
+        d.alignChildren = ["fill", "top"];
+
+        d.add("statictext", undefined, "Source: " + seq.fileObj.parent.fsName);
+        d.add("statictext", undefined, "Sequence: " + seq.prefix + " [" + seq.count + " frames]");
+
+        var ffmpegColor = ffmpegRes ? [0, 0.5, 0] : [0.8, 0, 0];
+        var ffmpegText = ffmpegRes ? "FFmpeg Found" : "FFmpeg NOT FOUND";
+        var lbl = d.add("statictext", undefined, ffmpegText);
+        setTextColor(lbl, ffmpegColor);
+
+        var pBar = d.add("progressbar", undefined, 0, 100);
+        pBar.preferredSize.width = 400;
+
+        var statusLbl = d.add("statictext", undefined, "Ready to convert...");
+        statusLbl.preferredSize.width = 400;
+
+        var btnGrp = d.add("group");
+        btnGrp.alignment = ["center", "top"];
+        var startBtn = btnGrp.add("button", undefined, "Start Conversion");
+        var cancelBtn = btnGrp.add("button", undefined, "Cancel");
+
+        var isCancelled = false;
+
+        startBtn.onClick = function () {
+            if (!ffmpegRes) { alert("Cannot convert: FFmpeg not found."); return; }
+
+            try {
+                startBtn.enabled = false;
+                cancelBtn.text = "Cancel (After Step)";
+
+                // Process
+                var successCount = 0;
+                var path = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+
+                statusLbl.text = "Starting... UI will freeze during conversion.";
+                d.update();
+                d.update();
+
+                // WebM
+                if (options.webm) {
+                    if (isCancelled) { statusLbl.text = "Cancelled."; return; }
+                    statusLbl.text = "Converting to WebM (Pass 1 & 2)...";
+                    pBar.value = 20;
+                    d.update();
+                    d.update();
+
+                    // Adjust target size for HTML overhead if HTML is enabled
+                    // Base64 adds ~33% overhead. HTML boilerplate is small.
+                    // If Target is 2.5MB, Video must be ~1.85MB.
+                    var effTarget = options.targetMB;
+                    if (options.html) {
+                        effTarget = options.targetMB * 0.72; // Safety factor for Base64
+                    }
+
+                    var resWebM = convertToWebM(seq, outFolder, dims.fps, effTarget, path);
+                    if (resWebM) successCount++;
+                    pBar.value = 50;
+                }
+
+                // MOV
+                if (options.mov) {
+                    if (isCancelled) { statusLbl.text = "Cancelled."; return; }
+                    statusLbl.text = "Converting to MOV (QTRLE/ProRes)...";
+                    d.update();
+                    d.update();
+
+                    var resMov = convertToMOV(seq, outFolder, dims.fps, options.targetMB, path);
+                    if (resMov) successCount++;
+                    pBar.value = 80;
+                }
+
+                // HTML
+                if (options.html) {
+                    if (isCancelled) { statusLbl.text = "Cancelled."; return; }
+                    statusLbl.text = "Generating HTML Player...";
+                    d.update();
+                    d.update();
+
+                    var resHtml = generateHTMLPlayer(outFolder, dims.width, dims.height, options.title);
+                    if (resHtml) successCount++;
+                    pBar.value = 95;
+                }
+
+                statusLbl.text = "Done! " + successCount + " conversions finished.";
+                pBar.value = 100;
+                // Removed blocking alert to prevent crashes
+
+            } catch (e) {
+                alert("An error occurred:\n" + e.toString());
+                statusLbl.text = "Error: " + e.toString();
+            } finally {
+                $.sleep(100); // Allow UI to catch up
+                startBtn.enabled = true;
+                cancelBtn.text = "Close";
+            }
+        };
+
+        cancelBtn.onClick = function () {
+            if (startBtn.enabled) {
+                d.close();
+            } else {
+                isCancelled = true;
+                statusLbl.text = "Cancelling after current step...";
+            }
+        };
+
+        d.show();
+    }
+
+    // Main Function to trigger from UI
+    function processPostRender(ui) {
+        // 1. Determine Folder
+        var aeFile = (app.project.file) ? app.project.file : null;
+        if (!aeFile) { alert("Save project first."); return; }
+
+        // Try to guess Render folder
+        var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
+        var possibleRenderFolder = new Folder(aeFile.parent.fsName + "/Render_R" + projectRev);
+
+        var targetFolder = null;
+        if (possibleRenderFolder.exists) {
+            targetFolder = possibleRenderFolder;
+        } else {
+            // Check previous revision? Or just prompt
+            targetFolder = Folder.selectDialog("Select the Render_R# folder containing PNG sequence");
+        }
+
+        if (!targetFolder || !targetFolder.exists) return;
+
+        // 2. Detect PNG
+        var seq = detectPNGSequence(targetFolder);
+        if (!seq) { alert("No valid PNG sequence (frame_xxxxx.png or similar) found in:\n" + targetFolder.fsName); return; }
+
+        // 3. Get Options
+        var ffmpegOk = checkFFmpeg();
+        var opts = {
+            webm: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_WEBM, "true") === "true"),
+            mov: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_MOV, "true") === "true"),
+            html: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_HTML, "true") === "true"),
+            targetMB: parseFloat(getSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, "2.5")) || 2.5,
+            title: app.project.file.name.replace(/\.aep/i, "")
+        };
+
+        // 4. Dimensions/FPS
+        var mainComp = findMainComp(); // Helper existing in script
+        var dims = {
+            width: (mainComp) ? mainComp.width : 750,
+            height: (mainComp) ? mainComp.height : 300,
+            fps: (mainComp) ? mainComp.frameRate : 24
+        };
+
+        showPostRenderDialog(targetFolder, seq, ffmpegOk, opts, dims);
+    }
+
     function buildUI(thisObj) {
         writeLog("Starting BigHappyLauncher UI...", "INFO");
 
@@ -2035,6 +2471,11 @@
             ui.btns.render.preferredSize.height = 28;
             ui.btns.render.alignment = ["fill", "top"];
             try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
+
+            ui.btns.convert = ui.w.add("button", undefined, "CONVERT (WebM / MOV)");
+            ui.btns.convert.preferredSize.height = 25;
+            ui.btns.convert.alignment = ["fill", "top"];
+            ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
         }
 
         // --- LOGIC FUNCTIONS (Methods attached to UI object) ---
