@@ -89,6 +89,7 @@
             "interscroller": { format: "mp4", outputModule: "H.264" },
             "dooh_horizontal": { format: "mp4", outputModule: "H.264" },
             "dooh_vertical": { format: "mp4", outputModule: "H.264" },
+            "dooh": { format: "mp4", outputModule: "H.264" },
             "default": { format: "png_sequence", outputModule: "Lossless with Alpha" }
         }
     };
@@ -1203,26 +1204,68 @@
                 }
             }
 
-            // [NEW] FORCE CHANNELS TO RGB+ALPHA FOR SUNRISE
+            // [NEW] AUTOMATICALLY ENFORCE SETTINGS FOR SUNRISE & DOOH
+            // This attempts to bypass the need for manually saved presets
+
             if (templateType === "sunrise") {
                 try {
-                    var omSettings = om.getSettings(GetSettingsFormat.STRING);
-                    // We can't easily set "settings" object for channels in all AE versions via script unless using a specific preset
-                    // BUT for "PNG Sequence", it usually defaults to "RGB".
-                    // The robust way is to specifically apply a preset we KNOW has alpha, or verify the settings.
-                    // Since "PNG Sequence with Alpha" is the config name, let's assume the user has that preset.
-                    // If not, we try to set "Channels" property if accessible, or warn.
+                    // Force PNG Sequence + Alpha with fallbacks for "Color" string format
+                    var baseSettings = {
+                        "Format": "PNG Sequence",
+                        "Video Output": {
+                            "Channels": "RGB + Alpha",
+                            "Depth": "Millions of Colors+"
+                        }
+                    };
 
-                    // Actually, if om.applyTemplate("PNG Sequence with Alpha") succeeded, it should be fine.
-                    // But if it fell back to "PNG Sequence", it might be RGB only.
-
-                    // Let's attempt to force "Lossless with Alpha" as a robust fallback base for PNG if available?
-                    // No, that might be huge files.
-
-                    // Best approach: If we are sunrise, ensure the preset name contains "Alpha".
-                    // If the applied preset didn't throw, we hope it's correct.
-                    // For now, let's log that we are enforcing alpha intent.
-                } catch (e) { }
+                    try {
+                        // Try exact match from screenshot
+                        var fullSettings = {
+                            "Format": "PNG Sequence",
+                            "Video Output": {
+                                "Channels": "RGB + Alpha",
+                                "Depth": "Millions of Colors+",
+                                "Color": "Straight (Unmatted)"
+                            }
+                        };
+                        om.setSettings(fullSettings);
+                    } catch (e1) {
+                        try {
+                            // Try simpler "Straight"
+                            var straightSettings = {
+                                "Format": "PNG Sequence",
+                                "Video Output": {
+                                    "Channels": "RGB + Alpha",
+                                    "Depth": "Millions of Colors+",
+                                    "Color": "Straight"
+                                }
+                            };
+                            om.setSettings(straightSettings);
+                        } catch (e2) {
+                            // Fallback to minimal settings (Just Format/Channels/Depth)
+                            try {
+                                om.setSettings(baseSettings);
+                            } catch (e3) {
+                                writeLog("Failed to auto-set Sunrise PNG settings: " + e3.toString(), "WARN");
+                            }
+                        }
+                    }
+                } catch (e) {
+                    writeLog("Failed to auto-set Sunrise PNG settings: " + e.toString(), "WARN");
+                }
+            } else if (templateType === "dooh" || templateType === "interscroller" || templateType.indexOf("dooh") !== -1) {
+                try {
+                    // Force H.264
+                    var mp4Settings = {
+                        "Format": "H.264"
+                    };
+                    om.setSettings(mp4Settings);
+                } catch (e) {
+                    // Fallback to QuickTime if H.264 is unavailable as a direct Format
+                    try {
+                        om.setSettings({ "Format": "QuickTime" });
+                    } catch (err2) { }
+                }
             }
 
             om.file = new File(outputPath);
@@ -1661,6 +1704,8 @@
                 var sizeFolderName = templateFolderName + "_" + parsed.size; // e.g. Sunrise_750x300
 
                 var brand = parsed.brand;
+                if (parsed.isDOOH && !brand) brand = "DOOH"; // Fix null brand for DOOH
+
                 var campaign = parsed.campaign || "";
                 var projectName = buildProjectFolderName(brand, campaign);
                 var basePath = getBaseWorkFolder();
@@ -1708,6 +1753,13 @@
             var projectName = app.project.file.name.replace(/\.aep$/i, "");
             var type = getTemplateType(mainComp.width, mainComp.height);
             var parsed = parseProjectName(projectName);
+
+            // [FIX] Force type to 'dooh' if filename indicates DOOH, or 'interscroller' if detected
+            // This ensures MP4 render settings are used even if resolution is custom
+            if (parsed && parsed.isDOOH) type = "dooh";
+            // Interscroller should be caught by dimensions, but just in case:
+            if (type === "default" && projectName.toLowerCase().indexOf("interscroller") !== -1) type = "interscroller";
+
             var renderName = projectName + "_" + getDateString();
 
             if (type === "sunrise" && parsed && parsed.brand) renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
@@ -2156,9 +2208,25 @@
                         }
                     }
                 } else if (parsed && parsed.isDOOH && mainComp) {
-                    if (parsed.campaign) {
-                        ui.inputs.brand.text = parsed.campaign;
+                    // DOOH Auto-Detect Fix
+                    var type = getTemplateType(mainComp.width, mainComp.height);
+                    for (var i = 0; i < ui.templates.length; i++) {
+                        var t = ui.templates[i];
+                        if (type.indexOf("dooh") !== -1) {
+                            // Match dimensions specifically for DOOH
+                            if (mainComp.width === t.width && mainComp.height === t.height) {
+                                ui.dropdowns.template.selection = i;
+                                break;
+                            }
+                        }
                     }
+
+                    if (parsed.campaign) {
+                        ui.inputs.brand.text = "DOOH"; // Set brand generic
+                        ui.inputs.campaign.text = parsed.campaign; // Set campaign correctly
+                    }
+                    if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
+                    if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
                 }
             } catch (e) { }
         }
