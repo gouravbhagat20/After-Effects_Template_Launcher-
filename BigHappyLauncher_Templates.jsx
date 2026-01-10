@@ -1925,11 +1925,11 @@
         var nullDev = getNullDev();
 
         // Pass 1
-        var cmd1 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + bitrate + "k -pass 1 -passlogfile " + passLog + " -an -f null " + nullDev;
+        var cmd1 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + bitrate + "k -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile " + passLog + " -an -f null " + nullDev;
         var r1 = system.callSystem(cmd1);
 
         // Pass 2
-        var cmd2 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + bitrate + "k -pass 2 -passlogfile " + passLog + " -an " + outFile;
+        var cmd2 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + bitrate + "k -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile " + passLog + " -an " + outFile;
         var r2 = system.callSystem(cmd2);
 
         // Cleanup log
@@ -1945,13 +1945,17 @@
         var outFile = escapePath(outFolder.fsName + "/output.mov");
 
         if ($.os.indexOf("Mac") !== -1) {
-            // macOS: HEVC with Higher Quality
-            // Increased bitrate to 6M (good balance) and alpha_quality to 1.0 (lossless alpha)
-            var cmd = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v hevc_videotoolbox -allow_sw 1 -alpha_quality 1 -b:v 6000k -tag:v hvc1 " + outFile;
+            // macOS: HEVC with Alpha
+            // Use calculated bitrate to ensure < 2.5MB size, but with a 1.2x boost because HEVC is more efficient
+            var bitrate = calculateBitrate(seq.count, fps, targetMB * 1.2);
+            // -b:v [bitrate]k
+            var cmd = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v hevc_videotoolbox -allow_sw 1 -alpha_quality 1 -b:v " + bitrate + "k -tag:v hvc1 " + outFile;
             system.callSystem(cmd);
         } else {
-            // Windows: QTRLE
-            var cmd = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v qtrle -pix_fmt argb " + outFile;
+            // Windows: Use ProRes 4444 (Standard Alpha support on Windows)
+            // QTRLE is too big. ProRes is the best tradeoff.
+            // profile:v 4444 = 4 (standard 4444)
+            var cmd = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + pattern + " -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le " + outFile;
             system.callSystem(cmd);
         }
 
@@ -1959,22 +1963,7 @@
         return f.exists;
     }
 
-    function fileToBase64(file) {
-        if (!file.exists) return "";
-        var b64 = "";
 
-        if ($.os.indexOf("Windows") !== -1) {
-            // Windows: Use PowerShell
-            var cmd = "powershell -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('" + file.fsName + "'))\"";
-            b64 = system.callSystem(cmd);
-        } else {
-            // Mac: Use base64 command
-            var cmd = "base64 -i \"" + file.fsName + "\"";
-            b64 = system.callSystem(cmd);
-        }
-        // Cleanup whitespace/newlines from stdout
-        return b64.replace(/\s/g, "");
-    }
 
     function generateHTMLPlayer(outFolder, width, height, title) {
         var webmFile = new File(outFolder.fsName + "/output.webm");
