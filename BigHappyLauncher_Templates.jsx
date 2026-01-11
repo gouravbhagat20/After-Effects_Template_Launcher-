@@ -1845,12 +1845,7 @@
             var rqItem = addToRenderQueue(mainComp, outputPath, type);
             if (!rqItem) return;
 
-            if (ui.btns.ameCheckbox.value && canQueueInAME()) {
-                queueToAME();
-                alert("Sent to AME!");
-            } else {
-                alert("Added to Render Queue!");
-            }
+            alert("Added to Render Queue!");
         };
 
         ui.btns.convert.onClick = function () {
@@ -2627,15 +2622,6 @@
             ui.btns.render.alignment = ["fill", "top"];
             try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
 
-            // AME Checkbox
-            var ameGrp = ui.w.add("group");
-            ameGrp.alignment = ["center", "top"];
-            ui.btns.ameCheckbox = ameGrp.add("checkbox", undefined, "Send to Adobe Media Encoder");
-            ui.btns.ameCheckbox.value = (getSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED, "false") === "true");
-            ui.btns.ameCheckbox.onClick = function () {
-                setSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED, String(this.value));
-            };
-
             ui.btns.convert = ui.w.add("button", undefined, "CONVERT (WebM / MOV)");
             ui.btns.convert.preferredSize.height = 25;
             ui.btns.convert.alignment = ["fill", "top"];
@@ -2873,7 +2859,8 @@
         var fps = dims.fps;
 
         // Calculate bitrates
-        var webmTarget = options.html ? (options.targetMB * 0.72) : options.targetMB;
+        // FIX: Lower multiplier from 0.72 to 0.65 to ensure HTML Base64 overhead stays under limit
+        var webmTarget = options.html ? (options.targetMB * 0.65) : options.targetMB;
         var webmBitrate = Math.floor((webmTarget * 0.92 * 8 * 1024 * 1024) / (seq.count / fps) / 1000);
         var movBitrate = Math.floor((options.targetMB * 1.2 * 0.92 * 8 * 1024 * 1024) / (seq.count / fps) / 1000);
 
@@ -2916,6 +2903,7 @@
 
             // HTML
             if (options.html) {
+                script += "echo [3/4] Generating HTML... >> \"" + logPath + "\"\r\n";
                 script += "echo [3/4] Generating HTML... >> \"" + logPath + "\"\r\n";
                 script += "echo ^<^^!DOCTYPE html^>^<html^>^<head^>^<meta charset=\"UTF-8\"/^>^<title^>" + (options.title || "Animation") + "^</title^>^<script src=\"https://cdn.bighappy.co/libs/mediabunny/v1.25.0/mediabunny.min.cjs\"^>^</script^>^<style^>html,body{margin:0;padding:0}^</style^>^</head^>^<body^>^<div id=\"animation_container\"^>^<canvas id=\"webmCanvas\" width=\"" + dims.width + "\" height=\"" + dims.height + "\"^>^</canvas^>^</div^>^<div id=\"b64data\" style=\"display:none\"^> > \"" + outHtml + "\"\r\n";
                 script += "powershell -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('" + outWebM + "'))\" >> \"" + outHtml + "\"\r\n";
