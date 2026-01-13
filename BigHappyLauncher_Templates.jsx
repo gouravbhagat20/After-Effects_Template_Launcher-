@@ -2779,7 +2779,12 @@
             ui.checkRevision();
 
             writeLog("Imported & Standardized: " + file.fsName + " -> " + savePath + " (Assets: " + collectedCount + ")", "INFO");
-            alert("Import Successful!\n\nStandardized: " + stdName + "\nAssets Collected: " + collectedCount + "\n\nLocation:\n" + savePath);
+
+            // Auto-open the folder
+            var saveFile = new File(savePath);
+            if (saveFile.parent) saveFile.parent.execute();
+
+            alert("Import Successful!\n\nStandardized: " + stdName + "\nAssets Collected: " + collectedCount + "\n\nFolder opened.");
         };
 
         // --- EXECUTE BUILD ---
@@ -3072,13 +3077,40 @@
         if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
         writeLog("Running conversion script: " + scriptPath, "INFO");
 
+        // Show "Busy" UI
+        var w = new Window("palette", "Processing...", undefined, { closeButton: false });
+        w.orientation = "column";
+        w.alignChildren = ["center", "center"];
+        w.margins = 20;
+
+        // Icon/Text
+        var t1 = w.add("statictext", undefined, "Optimizing & Converting...");
+        t1.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14);
+
+        var t2 = w.add("statictext", undefined, "This may take a moment. After Effects will pause.");
+        t2.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 11);
+        setTextColor(t2, [0.4, 0.4, 0.4]);
+
+        w.center();
+        w.show();
+        w.update(); // Force paint
+
+        // Execute (Blocking)
         var execCmd = isWin ? "cmd /c \"" + scriptPath + "\"" : "bash \"" + scriptPath + "\"";
         if (!isWin) {
+            // Safe execution for Mac
             var safePath = scriptPath.replace(/"/g, '\\"');
             execCmd = 'osascript -e \'do shell script "/bin/bash \\"' + safePath + '\\""\'';
         }
 
-        system.callSystem(execCmd);
+        try {
+            system.callSystem(execCmd);
+        } catch (e) {
+            alert("Error executing conversion script:\n" + e.toString());
+        }
+
+        w.close();
+
         $.sleep(2000); // 2 seconds delay
 
         // Check Success
