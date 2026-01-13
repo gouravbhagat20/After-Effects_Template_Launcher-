@@ -237,19 +237,8 @@
         return new File(path).exists;
     }
 
-    function folderExists(path) {
-        if (!path) return false;
-        return new Folder(path).exists;
-    }
-
-    function createFolderRecursive(path) {
-        var f = new Folder(path);
-        if (!f.exists) {
-            var parent = f.parent;
-            if (parent && !parent.exists) createFolderRecursive(parent.fsName);
-            f.create();
-        }
-    }
+    // Removed Duplicate folderExists and createFolderRecursive
+    // They are defined fully in SECTION 2 (lines 355-371) to avoid duplication. The code below now just relies on those definitions or standard objects.
 
     function getParentFolder(path) {
         var f = new File(path);
@@ -401,6 +390,11 @@
 
 
     function validateInput(text, type) {
+        // Fix 2: Campaign is optional - allow empty
+        if (type === "campaign" && (!text || text.length === 0)) {
+            return { isValid: true, msg: "OK" };
+        }
+
         if (!text || text.length === 0) return { isValid: false, msg: "Required" };
 
         if (text.length > CONFIG.LIMITS.BRAND_MAX && type === "brand") return { isValid: false, msg: "Too long (>" + CONFIG.LIMITS.BRAND_MAX + ")" };
@@ -626,6 +620,7 @@
         // Step 3: Check for DOOH prefix
         if (remaining.match(/^DOOH/i)) {
             result.isDOOH = true;
+            result.brand = "DOOH"; // Fix 4: Ensure brand is set for DOOH
             // prefix = everything before suffix was removed
             // We need to reconstruct the prefix since we've been stripping from 'remaining'
             // The logic below for DOOH parsing needs to just look at what's left in 'remaining'
@@ -2537,7 +2532,8 @@
 
             // SMART VERSIONING
             var folderObj = new Folder(aeFolder);
-            var sizeFolderObj = (folderObj.parent) ? folderObj.parent.parent : null;
+            // Fix 6: Safe parent check
+            var sizeFolderObj = (folderObj.parent && folderObj.parent.parent) ? folderObj.parent.parent : null;
 
             if (sizeFolderObj && sizeFolderObj.exists) {
                 var currentV = parseInt(ui.inputs.version.text, 10);
@@ -2555,6 +2551,7 @@
         // --- NEW: IMPORT WORKFLOW ---
 
         function collectAssets(targetFolder) {
+            var w = null; // Fix 3: Declare w at top scope
             try {
                 var footageFolder = new Folder(joinPath(targetFolder.fsName, "(Footage)"));
                 if (!footageFolder.exists) footageFolder.create();
@@ -2564,7 +2561,7 @@
                 var count = 0;
 
                 // Simple Progress UI
-                var w = new Window("palette", "Importing Project...", undefined, { closeButton: false });
+                w = new Window("palette", "Importing Project...", undefined, { closeButton: false });
                 w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.margins = 15; w.spacing = 10;
                 w.add("statictext", undefined, "Collecting and unifying assets...");
                 var pb = w.add("progressbar", [0, 0, 300, 15], 0, totalItems);
@@ -2608,12 +2605,15 @@
                         }
                     }
                 }
-                w.close();
+                if (w) w.close();
                 return count;
             } catch (e) {
                 if (w) w.close();
                 writeLog("Asset collection failed: " + e.toString(), "ERROR");
                 return 0;
+            } finally {
+                // Fix 8: Ensure window always closes
+                if (w && w.close) w.close();
             }
         }
 
