@@ -2598,7 +2598,7 @@
             }
         }
 
-        function showMetadataDialog(dims) {
+        function showMetadataDialog(dims, prefill) {
             var dlg = new Window("dialog", "Standardize Project Details");
             dlg.orientation = "column";
             dlg.alignChildren = ["fill", "top"];
@@ -2610,23 +2610,47 @@
 
             // Inputs
             var grp = dlg.add("group"); grp.orientation = "column"; grp.alignChildren = ["fill", "top"];
+
+            // Brand
             var bRow = grp.add("group"); bRow.add("statictext", undefined, "Brand (Req):").preferredSize.width = 90;
-            var dBrand = bRow.add("edittext", undefined, ""); dBrand.preferredSize.width = 200;
+            var defBrand = (prefill && prefill.brand) ? prefill.brand : "";
+            var dBrand = bRow.add("edittext", undefined, defBrand); dBrand.preferredSize.width = 200;
 
+            // Campaign
             var cRow = grp.add("group"); cRow.add("statictext", undefined, "Campaign:").preferredSize.width = 90;
-            var dCamp = cRow.add("edittext", undefined, ""); dCamp.preferredSize.width = 200;
+            var defCamp = (prefill && prefill.campaign) ? prefill.campaign : "";
+            var dCamp = cRow.add("edittext", undefined, defCamp); dCamp.preferredSize.width = 200;
 
+            // Quarter
             var qRow = grp.add("group"); qRow.add("statictext", undefined, "Quarter:").preferredSize.width = 90;
             var dQuart = qRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
-            dQuart.selection = getCurrentQuarter();
+            var qSel = getCurrentQuarter();
+            if (prefill && prefill.quarter) {
+                // Try to match prefill quarter "Q1", "Q2" etc
+                for (var i = 0; i < dQuart.items.length; i++) {
+                    if (dQuart.items[i].text === prefill.quarter) { qSel = i; break; }
+                }
+            }
+            dQuart.selection = qSel;
 
+            // Year
             var yRow = grp.add("group"); yRow.add("statictext", undefined, "Year:").preferredSize.width = 90;
             var curY = getCurrentYear();
             var dYear = yRow.add("dropdownlist", undefined, [String(curY - 1), String(curY), String(curY + 1)]);
-            dYear.selection = 1;
+            dYear.selection = 1; // Default to current
+            if (prefill && prefill.year) {
+                for (var i = 0; i < dYear.items.length; i++) {
+                    if (dYear.items[i].text === prefill.year) { dYear.selection = i; break; }
+                }
+            }
 
+            // Version
             var vRow = grp.add("group"); vRow.add("statictext", undefined, "Version:").preferredSize.width = 90;
-            var dVer = vRow.add("edittext", undefined, "1"); dVer.preferredSize.width = 50;
+            var defVer = (prefill && prefill.version) ? prefill.version.replace(/^V/i, "") : "1";
+            var dVer = vRow.add("edittext", undefined, defVer); dVer.preferredSize.width = 50;
+
+            var helpTxt = vRow.add("statictext", undefined, "(Change this to V2, V3 etc)");
+            setTextColor(helpTxt, [0.5, 0.5, 0.5]);
 
             // Buttons
             var btnRow = dlg.add("group"); btnRow.alignment = ["center", "bottom"];
@@ -2649,7 +2673,7 @@
                     quarter: dQuart.selection.text,
                     year: dYear.selection.text,
                     version: "V" + (parseInt(dVer.text) || 1),
-                    revision: "R1"
+                    revision: "R1" // Always start at R1 for new Imports, or let auto-bump handle collisions
                 };
             }
             return null;
@@ -2680,24 +2704,20 @@
             var sizeStr = templateFolderName + "_" + width + "x" + height;
             var sizeForFilename = width + "x" + height;
 
-            // 3. Parse Metadata
+            // 3. Parse Metadata (for Prefill)
             var oldName = file.name.replace(/\.aep$/i, "");
             var parsed = parseProjectName(oldName);
-            var meta = null;
+            var prefill = {};
 
             if (parsed && parsed.brand) {
-                meta = {
-                    brand: parsed.isDOOH ? "DOOH" : parsed.brand,
-                    campaign: parsed.campaign || "",
-                    quarter: parsed.quarter || "Q" + (getCurrentQuarter() + 1), // Default if missing
-                    year: String(getCurrentYear()), // Filename doesn't usually track year, assume current
-                    version: parsed.version || "V1",
-                    revision: parsed.revision || "R1"
-                };
-            } else {
-                // Dialog
-                meta = showMetadataDialog({ width: width, height: height });
+                prefill.brand = parsed.isDOOH ? "DOOH" : parsed.brand;
+                prefill.campaign = parsed.campaign || "";
+                prefill.quarter = parsed.quarter || "Q" + (getCurrentQuarter() + 1);
+                prefill.version = parsed.version || "V1";
             }
+
+            // ALWAYS SHOW DIALOG to allow user to confirm/edit logic
+            var meta = showMetadataDialog({ width: width, height: height }, prefill);
 
             if (!meta) return; // Cancelled
 
