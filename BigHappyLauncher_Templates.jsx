@@ -214,49 +214,80 @@
     }
 
     // =========================================================================
-    // SECTION 2: PATH & IO UTILITIES
+    // SECTION 2: UTILITIES
     // =========================================================================
 
-    // Get separator with fallback - Folder.separator can be undefined at load time
     function getSeparator() {
-        try {
-            if (Folder.separator) return Folder.separator;
-        } catch (e) { }
-        // Fallback: detect OS
-        return ($.os && $.os.indexOf("Windows") !== -1) ? "\\" : "/";
+        if (typeof Folder !== "undefined" && Folder.fs === "Macintosh") return "/";
+        if (typeof Folder !== "undefined" && Folder.fs === "Windows") return "\\";
+        return ($.os.indexOf("Windows") !== -1) ? "\\" : "/";
     }
+
     var SEP = getSeparator();
 
     function joinPath(a, b) {
         if (!a) return b;
         if (!b) return a;
-        // Ensure SEP is valid
-        var sep = SEP || "\\";
-        // Remove trailing separator from a, leading from b
-        a = String(a).replace(/[\/\\]$/, "");
-        b = String(b).replace(/^[\/\\]/, "");
-        return a + sep + b;
+        var combo = a + SEP + b;
+        return combo.replace(/[\/\\]+/g, SEP);
     }
 
     function fileExists(path) {
-        try {
-            return path && new File(path).exists;
-        } catch (e) {
-            return false;
+        if (!path) return false;
+        return new File(path).exists;
+    }
+
+    function folderExists(path) {
+        if (!path) return false;
+        return new Folder(path).exists;
+    }
+
+    function createFolderRecursive(path) {
+        var f = new Folder(path);
+        if (!f.exists) {
+            var parent = f.parent;
+            if (parent && !parent.exists) createFolderRecursive(parent.fsName);
+            f.create();
         }
     }
 
     function getParentFolder(path) {
-        try {
-            var f = new File(path);
-            return f.parent ? f.parent.fsName : "";
-        } catch (e) {
-            return "";
-        }
+        var f = new File(path);
+        return f.parent ? f.parent.fsName : "";
     }
 
     function isSameFolder(p1, p2) {
         return getParentFolder(p1).toLowerCase() === getParentFolder(p2).toLowerCase();
+    }
+
+    /**
+     * Sanitize filename/folder name
+     * Rules: Trim, Remove illegal chars, Space->Underscore, Collapse Underscores, Reserved Names
+     */
+    function sanitizeName(str) {
+        if (!str) return "";
+        // 1. Trim
+        var s = str.replace(/^\s+|\s+$/g, "");
+        // 2. Remove illegal chars < > : " / \ | ? *
+        s = s.replace(/[<>:"\/\\|?*]/g, "");
+        // 3. Space to Underscore
+        s = s.replace(/\s+/g, "_");
+        // 4. Collapse Underscores
+        s = s.replace(/_+/g, "_");
+        // 5. Reserved Names
+        if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(s)) {
+            s += "_";
+        }
+        return s;
+    }
+
+    function setTextColor(element, color) {
+        try {
+            if (element.graphics) {
+                var pen = element.graphics.newPen(element.graphics.PenType.SOLID_COLOR, color, 1);
+                element.graphics.foregroundColor = pen;
+            }
+        } catch (e) { }
     }
 
     // =========================================================================
@@ -367,10 +398,7 @@
     // SECTION 2B.1: VALIDATION HELPERS
     // =========================================================================
 
-    function sanitizeName(str) {
-        if (!str) return "";
-        return str.replace(/[^a-zA-Z0-9_\-\s]/g, "").replace(/\s+/g, "_");
-    }
+
 
     function validateInput(text, type) {
         if (!text || text.length === 0) return { isValid: false, msg: "Required" };
@@ -503,33 +531,13 @@
         }
     }
 
-    // =========================================================================
-    // SECTION 2E: UI UTILITIES
-    // =========================================================================
 
-    function setTextColor(element, color) {
-        try {
-            var graphics = element.graphics;
-            var pen = graphics.newPen(graphics.PenType.SOLID_COLOR, color, 1);
-            graphics.foregroundColor = pen;
-        } catch (e) { }
-    }
 
     // =========================================================================
     // SECTION 3: NAMING & PARSING
     // =========================================================================
 
-    function sanitizeName(name) {
-        var result = "";
-        var invalid = "<>:\"/\\|?*";
-        for (var i = 0; i < name.length; i++) {
-            var c = name.charAt(i);
-            if (invalid.indexOf(c) === -1 && name.charCodeAt(i) >= 32) {
-                result += (c === " ") ? "_" : c;
-            }
-        }
-        return result;
-    }
+
 
     function getDateString() {
         var d = new Date();
@@ -2251,14 +2259,7 @@
             return inp;
         }
 
-        function setTextColor(element, color) {
-            try {
-                if (element.graphics) {
-                    var pen = element.graphics.newPen(element.graphics.PenType.SOLID_COLOR, color, 1);
-                    element.graphics.foregroundColor = pen;
-                }
-            } catch (e) { }
-        }
+
 
         ui.btns.settings = null;
 
