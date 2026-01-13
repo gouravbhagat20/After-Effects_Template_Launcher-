@@ -1943,1004 +1943,943 @@
                 }
             }
         }
-        function downloadFFmpeg() {
-            var scriptFile = new File($.fileName);
-            var scriptDir = scriptFile.parent;
-            var binDir = new Folder(scriptDir.fsName + "/bin");
-            if (!binDir.exists) binDir.create();
+        return false;
+    }
 
-            var isWin = ($.os.indexOf("Windows") !== -1);
-            var confirmMsg = "FFmpeg is missing. Download it now?\n\nThis will download (~30-80MB) and install it into a 'bin' folder next to the script.\n\nA terminal window will open to show progress.";
+    function downloadFFmpeg() {
+        var scriptFile = new File($.fileName);
+        var scriptDir = scriptFile.parent;
+        var binDir = new Folder(scriptDir.fsName + "/bin");
+        if (!binDir.exists) binDir.create();
 
-            if (!confirm(confirmMsg)) return false;
+        var isWin = ($.os.indexOf("Windows") !== -1);
+        var confirmMsg = "FFmpeg is missing. Download it now?\n\nThis will download (~30-80MB) and install it into a 'bin' folder next to the script.\n\nA terminal window will open to show progress.";
 
-            if (isWin) {
-                // WINDOWS DOWNLOADER (PowerShell)
-                var psScriptPath = scriptDir.fsName + "/install_ffmpeg.ps1";
-                var batScriptPath = scriptDir.fsName + "/install_ffmpeg.bat";
+        if (!confirm(confirmMsg)) return false;
 
-                var psCode = [
-                    '$ProgressPreference = "SilentlyContinue"',
-                    'Write-Host "Downloading FFmpeg (Please Wait)..." -ForegroundColor Cyan',
-                    '$url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"',
-                    '$zip = "' + scriptDir.fsName + '\\ffmpeg.zip"',
-                    '$dest = "' + scriptDir.fsName + '\\ffmpeg_temp"',
-                    '$final = "' + binDir.fsName + '\\ffmpeg.exe"',
-                    'try {',
-                    '    Invoke-WebRequest -Uri $url -OutFile $zip',
-                    '    Write-Host "Extracting..." -ForegroundColor Yellow',
-                    '    Expand-Archive -Path $zip -DestinationPath $dest -Force',
-                    '    Write-Host "Installing..." -ForegroundColor Green',
-                    '    $exe = Get-ChildItem -Path $dest -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1',
-                    '    if ($exe) { Move-Item -Path $exe.FullName -Destination $final -Force }',
-                    '    Write-Host "Done! You can close this window." -ForegroundColor Green',
-                    '} catch {',
-                    '    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red',
-                    '    Read-Host "Press Enter to exit"',
-                    '}',
-                    'Remove-Item $zip -Force -ErrorAction SilentlyContinue',
-                    'Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue',
-                    'Start-Sleep -Seconds 3'
-                ].join("\r\n");
+        if (isWin) {
+            // WINDOWS DOWNLOADER (PowerShell)
+            var psScriptPath = scriptDir.fsName + "/install_ffmpeg.ps1";
+            var batScriptPath = scriptDir.fsName + "/install_ffmpeg.bat";
 
-                var f = new File(psScriptPath);
-                f.open("w"); f.write(psCode); f.close();
+            var psCode = [
+                '$ProgressPreference = "SilentlyContinue"',
+                // FIX: Force TLS 1.2 for modern HTTPS connections
+                '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12',
+                'Write-Host "Downloading FFmpeg (Please Wait)..." -ForegroundColor Cyan',
+                '$url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"',
+                '$zip = "' + scriptDir.fsName + '\\ffmpeg.zip"',
+                '$dest = "' + scriptDir.fsName + '\\ffmpeg_temp"',
+                '$final = "' + binDir.fsName + '\\ffmpeg.exe"',
+                'try {',
+                '    Invoke-WebRequest -Uri $url -OutFile $zip',
+                '    Write-Host "Extracting..." -ForegroundColor Yellow',
+                '    Expand-Archive -Path $zip -DestinationPath $dest -Force',
+                '    Write-Host "Installing..." -ForegroundColor Green',
+                '    $exe = Get-ChildItem -Path $dest -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1',
+                '    if ($exe) { Move-Item -Path $exe.FullName -Destination $final -Force }',
+                '    Write-Host "Done! You can close this window." -ForegroundColor Green',
+                '} catch {',
+                '    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red',
+                '    Read-Host "Press Enter to exit"',
+                '}',
+                'Remove-Item $zip -Force -ErrorAction SilentlyContinue',
+                'Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue',
+                'Start-Sleep -Seconds 3'
+            ].join("\r\n");
 
-                var batCode = '@echo off\r\nPowerShell -NoProfile -ExecutionPolicy Bypass -File "' + psScriptPath + '"';
-                var b = new File(batScriptPath);
-                b.open("w"); b.write(batCode); b.close();
+            var f = new File(psScriptPath);
+            f.open("w"); f.write(psCode); f.close();
 
-                system.callSystem('start "" "' + batScriptPath + '"');
+            var batCode = '@echo off\r\nPowerShell -NoProfile -ExecutionPolicy Bypass -File "' + psScriptPath + '"';
+            var b = new File(batScriptPath);
+            b.open("w"); b.write(batCode); b.close();
 
-                alert("Download started!\n\nPlease wait for the terminal window to close, then run this script again.");
-                return true;
+            system.callSystem('start "" "' + batScriptPath + '"');
 
-            } else {
-                // MACOS DOWNLOADER (Curl)
-                var shScriptPath = scriptDir.fsName + "/install_ffmpeg.sh";
-                var shCode = [
-                    '#!/bin/bash',
-                    'echo "Downloading FFmpeg (Mac)..."',
-                    'cd "' + scriptDir.fsName + '"',
-                    'curl -L -o ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-6.0.zip"', // Stable static build
-                    'echo "Extracting..."',
-                    'unzip -o ffmpeg.zip',
-                    'mv ffmpeg bin/ffmpeg',
-                    'chmod +x bin/ffmpeg',
-                    'rm ffmpeg.zip',
-                    'echo "Done! You can close this window."'
-                ].join("\n");
+            alert("Download started!\n\nPlease wait for the terminal window to close, then run this script again.");
+            return true;
 
-                var s = new File(shScriptPath);
-                s.open("w"); s.write(shCode); s.close();
-                system.callSystem("chmod +x \"" + shScriptPath + "\"");
+        } else {
+            // MACOS DOWNLOADER (Curl)
+            var shScriptPath = scriptDir.fsName + "/install_ffmpeg.sh";
+            var shCode = [
+                '#!/bin/bash',
+                'echo "Downloading FFmpeg (Mac)..."',
+                'cd "' + scriptDir.fsName + '"',
+                'curl -L -o ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-6.0.zip"', // Stable static build
+                'echo "Extracting..."',
+                'unzip -o ffmpeg.zip',
+                'mv ffmpeg bin/ffmpeg',
+                'chmod +x bin/ffmpeg',
+                // FIX: Remove Quarantine attribute to prevent "Unverified Developer" block
+                'xattr -d com.apple.quarantine bin/ffmpeg 2>/dev/null',
+                'rm ffmpeg.zip',
+                'echo "Done! You can close this window."'
+            ].join("\n");
 
-                var termCmd = 'open -a Terminal "' + shScriptPath + '"';
-                system.callSystem(termCmd);
+            var s = new File(shScriptPath);
+            s.open("w"); s.write(shCode); s.close();
+            system.callSystem("chmod +x \"" + shScriptPath + "\"");
 
-                alert("Download started!\n\nPlease wait for the terminal window to close, then run this script again.");
-                return true;
+            var termCmd = 'open -a Terminal "' + shScriptPath + '"';
+            system.callSystem(termCmd);
+
+            alert("Download started!\n\nPlease wait for the terminal window to close, then run this script again.");
+            return true;
+        }
+    }
+
+    function detectPNGSequence(folder) {
+        var files = folder.getFiles("*.png");
+        if (!files || files.length === 0) return null;
+        files.sort();
+
+        // Assume format like Name_00000.png or Name00000.png
+        var first = files[0].name;
+        var match = first.match(/^(.*?)(\d+)(\.png)$/i);
+        if (!match) return null;
+
+        var prefix = match[1];
+        var numStr = match[2];
+        var padding = numStr.length;
+        var startNum = parseInt(numStr, 10);
+
+        return {
+            prefix: prefix,
+            padding: padding,
+            start: startNum,
+            count: files.length,
+            fileObj: files[0]
+        };
+    }
+
+
+
+    function showPostRenderDialog(outFolder, seq, ffmpegRes, options, dims) {
+        // Simple confirmation dialog - NO progress bar, NO updates during conversion
+        var d = new Window("dialog", "Post-Render Conversion");
+        d.orientation = "column";
+        d.alignChildren = ["fill", "top"];
+        d.margins = 15;
+        d.spacing = 10;
+
+        // Info
+        d.add("statictext", undefined, "Source Folder:");
+        var srcLbl = d.add("statictext", undefined, seq.fileObj.parent.fsName);
+        setTextColor(srcLbl, [0.6, 0.6, 0.6]);
+
+        d.add("statictext", undefined, "");
+        d.add("statictext", undefined, "Sequence: " + seq.prefix + " [" + seq.count + " frames]");
+
+        // FFmpeg Status
+        var ffmpegColor = ffmpegRes ? [0, 0.7, 0] : [0.9, 0, 0];
+        var ffmpegText = ffmpegRes ? "✓ FFmpeg Found" : "✗ FFmpeg NOT FOUND";
+        var ffmpegLbl = d.add("statictext", undefined, ffmpegText);
+        setTextColor(ffmpegLbl, ffmpegColor);
+
+        // Conversion Options Summary
+        d.add("statictext", undefined, "");
+        var optList = [];
+        if (options.webm) optList.push("WebM");
+        if (options.mov) optList.push("MOV");
+        if (options.html) optList.push("HTML");
+        if (options.zip) optList.push("ZIP");
+        d.add("statictext", undefined, "Will create: " + optList.join(", "));
+
+        // Warning
+        d.add("statictext", undefined, "");
+        var warnLbl = d.add("statictext", undefined, "⚠ After Effects will FREEZE during conversion.");
+        setTextColor(warnLbl, [1, 0.6, 0]);
+        var warnLbl2 = d.add("statictext", undefined, "   This is normal. Please wait for completion.");
+        setTextColor(warnLbl2, [0.6, 0.6, 0.6]);
+
+        // Buttons
+        d.add("statictext", undefined, "");
+        var btnGrp = d.add("group");
+        btnGrp.alignment = ["center", "top"];
+        var startBtn = btnGrp.add("button", undefined, "Start Conversion");
+        startBtn.preferredSize = [140, 30];
+        var cancelBtn = btnGrp.add("button", undefined, "Cancel");
+        cancelBtn.preferredSize = [100, 30];
+
+        // Track user choice
+        var shouldStart = false;
+
+        startBtn.onClick = function () {
+            if (!ffmpegRes) {
+                alert("Cannot convert: FFmpeg not found.\n\nPlease set FFmpeg path in Settings > Post-Render tab.");
+                return;
             }
+            shouldStart = true;
+            d.close();  // CRITICAL: Close dialog BEFORE conversion starts
+        };
+
+        cancelBtn.onClick = function () {
+            shouldStart = false;
+            d.close();
+        };
+
+        d.center();
+        d.show();
+
+        // FIX: Run conversion AFTER dialog is fully closed
+        if (shouldStart) {
+            runConversionV2(outFolder, seq, options, dims);
+        }
+    }
+
+
+
+    // Main Function to trigger from UI
+    function processPostRender(ui) {
+        // 1. Determine Folder
+        var aeFile = (app.project.file) ? app.project.file : null;
+        if (!aeFile) { alert("Save project first."); return; }
+
+        // Try to guess Render folder
+        var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
+        var possibleRenderFolder = new Folder(aeFile.parent.fsName + "/Render_R" + projectRev);
+
+        var targetFolder = null;
+        if (possibleRenderFolder.exists) {
+            targetFolder = possibleRenderFolder;
+        } else {
+            // Check previous revision? Or just prompt
+            targetFolder = Folder.selectDialog("Select the Render_R# folder containing PNG sequence");
         }
 
-        function detectPNGSequence(folder) {
-            var files = folder.getFiles("*.png");
-            if (!files || files.length === 0) return null;
-            files.sort();
+        if (!targetFolder || !targetFolder.exists) return;
 
-            // Assume format like Name_00000.png or Name00000.png
-            var first = files[0].name;
-            var match = first.match(/^(.*?)(\d+)(\.png)$/i);
-            if (!match) return null;
+        // 2. Detect PNG
+        var seq = detectPNGSequence(targetFolder);
+        if (!seq) { alert("No valid PNG sequence (frame_xxxxx.png or similar) found in:\n" + targetFolder.fsName); return; }
 
-            var prefix = match[1];
-            var numStr = match[2];
-            var padding = numStr.length;
-            var startNum = parseInt(numStr, 10);
+        // 3. Get Options
+        var ffmpegOk = checkFFmpeg();
+        var opts = {
+            webm: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_WEBM, "true") === "true"),
+            mov: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_MOV, "true") === "true"),
+            html: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_HTML, "true") === "true"),
+            zip: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_ZIP, "true") === "true"),
+            targetMB: parseFloat(getSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, "2.5")) || 2.5,
+            title: app.project.file.name.replace(/\.aep/i, "")
+        };
 
-            return {
-                prefix: prefix,
-                padding: padding,
-                start: startNum,
-                count: files.length,
-                fileObj: files[0]
-            };
-        }
+        // 4. Dimensions/FPS
+        var mainComp = findMainComp(); // Helper existing in script
+        var dims = {
+            width: (mainComp) ? mainComp.width : 750,
+            height: (mainComp) ? mainComp.height : 300,
+            fps: (mainComp) ? mainComp.frameRate : 24
+        };
 
+        showPostRenderDialog(targetFolder, seq, ffmpegOk, opts, dims);
+    }
 
+    function buildUI(thisObj) {
+        writeLog("Starting BigHappyLauncher UI...", "INFO");
 
-        function showPostRenderDialog(outFolder, seq, ffmpegRes, options, dims) {
-            // Simple confirmation dialog - NO progress bar, NO updates during conversion
-            var d = new Window("dialog", "Post-Render Conversion");
-            d.orientation = "column";
-            d.alignChildren = ["fill", "top"];
-            d.margins = 15;
-            d.spacing = 10;
+        // Scope object to hold UI elements and data
+        var ui = {
+            // Data
+            templates: loadTemplates(),
+            templatesFolder: getTemplatesFolder(),
 
-            // Info
-            d.add("statictext", undefined, "Source Folder:");
-            var srcLbl = d.add("statictext", undefined, seq.fileObj.parent.fsName);
-            setTextColor(srcLbl, [0.6, 0.6, 0.6]);
+            // Layout Containers
+            w: null,      // Main Window/Panel
+            mainGrp: null,
 
-            d.add("statictext", undefined, "");
-            d.add("statictext", undefined, "Sequence: " + seq.prefix + " [" + seq.count + " frames]");
-
-            // FFmpeg Status
-            var ffmpegColor = ffmpegRes ? [0, 0.7, 0] : [0.9, 0, 0];
-            var ffmpegText = ffmpegRes ? "✓ FFmpeg Found" : "✗ FFmpeg NOT FOUND";
-            var ffmpegLbl = d.add("statictext", undefined, ffmpegText);
-            setTextColor(ffmpegLbl, ffmpegColor);
-
-            // Conversion Options Summary
-            d.add("statictext", undefined, "");
-            var optList = [];
-            if (options.webm) optList.push("WebM");
-            if (options.mov) optList.push("MOV");
-            if (options.html) optList.push("HTML");
-            if (options.zip) optList.push("ZIP");
-            d.add("statictext", undefined, "Will create: " + optList.join(", "));
-
-            // Warning
-            d.add("statictext", undefined, "");
-            var warnLbl = d.add("statictext", undefined, "⚠ After Effects will FREEZE during conversion.");
-            setTextColor(warnLbl, [1, 0.6, 0]);
-            var warnLbl2 = d.add("statictext", undefined, "   This is normal. Please wait for completion.");
-            setTextColor(warnLbl2, [0.6, 0.6, 0.6]);
-
-            // Buttons
-            d.add("statictext", undefined, "");
-            var btnGrp = d.add("group");
-            btnGrp.alignment = ["center", "top"];
-            var startBtn = btnGrp.add("button", undefined, "Start Conversion");
-            startBtn.preferredSize = [140, 30];
-            var cancelBtn = btnGrp.add("button", undefined, "Cancel");
-            cancelBtn.preferredSize = [100, 30];
-
-            // Track user choice
-            var shouldStart = false;
-
-            startBtn.onClick = function () {
-                if (!ffmpegRes) {
-                    alert("Cannot convert: FFmpeg not found.\n\nPlease set FFmpeg path in Settings > Post-Render tab.");
-                    return;
+            // Controls
+            inputs: {
+                brand: null,
+                campaign: null,
+                version: null,
+                revision: null
+            },
+            dropdowns: {
+                template: null,
+                quarter: null,
+                year: null
+            },
+            btns: {
+                create: null,
+                saveAs: null,
+                render: null,
+                quickDup: null,
+                ameCheckbox: null,
+                baseBrowse: null,
+                template: {
+                    add: null,
+                    edit: null,
+                    dup: null,
+                    del: null,
+                    up: null,
+                    down: null,
+                    regen: null,
+                    folder: null
                 }
-                shouldStart = true;
-                d.close();  // CRITICAL: Close dialog BEFORE conversion starts
-            };
-
-            cancelBtn.onClick = function () {
-                shouldStart = false;
-                d.close();
-            };
-
-            d.center();
-            d.show();
-
-            // FIX: Run conversion AFTER dialog is fully closed
-            if (shouldStart) {
-                runConversionV2(outFolder, seq, options, dims);
+            },
+            labels: {
+                pathPreview: null,
+                filenamePreview: null,
+                basePath: null,
+                status: null
             }
+        };
+
+        // Initialize Panel
+        if (thisObj instanceof Panel) {
+            ui.w = thisObj;
+        } else {
+            ui.w = new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
+        }
+        ui.w.orientation = "column";
+        ui.w.alignChildren = ["fill", "top"];
+        ui.w.spacing = 10;
+        ui.w.margins = 15;
+
+        // UI Helpers
+        function addRow(parent, label, defaultVal) {
+            var g = parent.add("group");
+            g.orientation = "row";
+            g.alignChildren = ["left", "center"];
+            var lbl = g.add("statictext", undefined, label);
+            lbl.preferredSize.width = 65;
+            var inp = g.add("edittext", undefined, defaultVal);
+            inp.alignment = ["fill", "center"];
+            return inp;
         }
 
-
-
-        // Main Function to trigger from UI
-        function processPostRender(ui) {
-            // 1. Determine Folder
-            var aeFile = (app.project.file) ? app.project.file : null;
-            if (!aeFile) { alert("Save project first."); return; }
-
-            // Try to guess Render folder
-            var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
-            var possibleRenderFolder = new Folder(aeFile.parent.fsName + "/Render_R" + projectRev);
-
-            var targetFolder = null;
-            if (possibleRenderFolder.exists) {
-                targetFolder = possibleRenderFolder;
-            } else {
-                // Check previous revision? Or just prompt
-                targetFolder = Folder.selectDialog("Select the Render_R# folder containing PNG sequence");
-            }
-
-            if (!targetFolder || !targetFolder.exists) return;
-
-            // 2. Detect PNG
-            var seq = detectPNGSequence(targetFolder);
-            if (!seq) { alert("No valid PNG sequence (frame_xxxxx.png or similar) found in:\n" + targetFolder.fsName); return; }
-
-            // 3. Get Options
-            var ffmpegOk = checkFFmpeg();
-            var opts = {
-                webm: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_WEBM, "true") === "true"),
-                mov: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_MOV, "true") === "true"),
-                html: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_HTML, "true") === "true"),
-                zip: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_ZIP, "true") === "true"),
-                targetMB: parseFloat(getSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, "2.5")) || 2.5,
-                title: app.project.file.name.replace(/\.aep/i, "")
-            };
-
-            // 4. Dimensions/FPS
-            var mainComp = findMainComp(); // Helper existing in script
-            var dims = {
-                width: (mainComp) ? mainComp.width : 750,
-                height: (mainComp) ? mainComp.height : 300,
-                fps: (mainComp) ? mainComp.frameRate : 24
-            };
-
-            showPostRenderDialog(targetFolder, seq, ffmpegOk, opts, dims);
-        }
-
-        function buildUI(thisObj) {
-            writeLog("Starting BigHappyLauncher UI...", "INFO");
-
-            // Scope object to hold UI elements and data
-            var ui = {
-                // Data
-                templates: loadTemplates(),
-                templatesFolder: getTemplatesFolder(),
-
-                // Layout Containers
-                w: null,      // Main Window/Panel
-                mainGrp: null,
-
-                // Controls
-                inputs: {
-                    brand: null,
-                    campaign: null,
-                    version: null,
-                    revision: null
-                },
-                dropdowns: {
-                    template: null,
-                    quarter: null,
-                    year: null
-                },
-                btns: {
-                    create: null,
-                    saveAs: null,
-                    render: null,
-                    quickDup: null,
-                    ameCheckbox: null,
-                    baseBrowse: null,
-                    template: {
-                        add: null,
-                        edit: null,
-                        dup: null,
-                        del: null,
-                        up: null,
-                        down: null,
-                        regen: null,
-                        folder: null
-                    }
-                },
-                labels: {
-                    pathPreview: null,
-                    filenamePreview: null,
-                    basePath: null,
-                    status: null
+        function setTextColor(element, color) {
+            try {
+                if (element.graphics) {
+                    var pen = element.graphics.newPen(element.graphics.PenType.SOLID_COLOR, color, 1);
+                    element.graphics.foregroundColor = pen;
                 }
-            };
+            } catch (e) { }
+        }
 
-            // Initialize Panel
-            if (thisObj instanceof Panel) {
-                ui.w = thisObj;
+        ui.btns.settings = null;
+
+        // --- SUB-BUILDER FUNCTIONS ---
+
+        function createHeader() {
+            var hdrGrp = ui.w.add("group");
+            hdrGrp.orientation = "row";
+            hdrGrp.alignment = ["fill", "top"];
+            hdrGrp.alignChildren = ["fill", "center"];
+
+            var titleGrp = hdrGrp.add("group");
+            titleGrp.orientation = "row";
+            titleGrp.alignChildren = ["left", "center"];
+
+            var title = titleGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
+            try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
+
+            // Version Label
+            var ver = titleGrp.add("statictext", undefined, "v" + CONFIG.VERSION);
+            try { ver.graphics.foregroundColor = ver.graphics.newPen(ver.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
+
+            // DEBUG TRIGGER: Alt+Click title to run unit tests
+            title.addEventListener("click", function (e) {
+                if (e.altKey) {
+                    runUnitTests();
+                }
+            });
+
+            // Spacer to push settings button to right
+            var spacer = hdrGrp.add("group");
+            spacer.alignment = ["fill", "fill"];
+
+            ui.btns.settings = hdrGrp.add("button", undefined, "⚙");
+            ui.btns.settings.preferredSize = [25, 25];
+            ui.btns.settings.helpTip = "Open Settings";
+        }
+
+
+
+        function createMainInputs() {
+            ui.mainGrp = ui.w.add("group");
+            ui.mainGrp.orientation = "column";
+            ui.mainGrp.alignChildren = ["fill", "top"];
+            ui.mainGrp.spacing = 5;
+
+            // Template Dropdown
+            var tmplGrp = ui.mainGrp.add("group");
+            tmplGrp.orientation = "row";
+            tmplGrp.alignChildren = ["left", "center"];
+            var tmplLbl = tmplGrp.add("statictext", undefined, "Template:");
+            tmplLbl.preferredSize.width = 65;
+            ui.dropdowns.template = tmplGrp.add("dropdownlist", undefined, []);
+            ui.dropdowns.template.alignment = ["fill", "center"];
+            ui.dropdowns.template.preferredSize.height = 25;
+            ui.dropdowns.template.helpTip = "Select a template";
+
+            // Brand & Campaign
+            ui.inputs.brand = addRow(ui.mainGrp, "Brand:", "");
+            ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
+
+            ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
+            ui.inputs.campaign.helpTip = "Enter the campaign or project name";
+
+            // Quarter & Year
+            var qyRow = ui.mainGrp.add("group");
+            qyRow.orientation = "row";
+            qyRow.alignChildren = ["left", "center"];
+            var qLbl = qyRow.add("statictext", undefined, "Quarter:");
+            qLbl.preferredSize.width = 65;
+            ui.dropdowns.quarter = qyRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+            ui.dropdowns.quarter.selection = getCurrentQuarter();
+            ui.dropdowns.quarter.preferredSize.width = 60;
+            ui.dropdowns.quarter.helpTip = "Select fiscal quarter";
+
+            var yLbl = qyRow.add("statictext", undefined, "Year:");
+            yLbl.preferredSize.width = 35;
+            var currentYear = getCurrentYear();
+            ui.dropdowns.year = qyRow.add("dropdownlist", undefined, [
+                String(currentYear - 1),
+                String(currentYear),
+                String(currentYear + 1),
+                String(currentYear + 2)
+            ]);
+            ui.dropdowns.year.selection = 1; // Current year
+            ui.dropdowns.year.preferredSize.width = 65;
+
+            // Version & Revision
+            var vrRow = ui.mainGrp.add("group");
+            vrRow.orientation = "row";
+            vrRow.alignChildren = ["left", "center"];
+            var verLbl = vrRow.add("statictext", undefined, "Version:");
+            verLbl.preferredSize.width = 65;
+            ui.inputs.version = vrRow.add("edittext", undefined, "1");
+            ui.inputs.version.preferredSize.width = 50;
+            var revLbl = vrRow.add("statictext", undefined, "Revision:");
+            revLbl.preferredSize.width = 60;
+            ui.inputs.revision = vrRow.add("edittext", undefined, "1");
+            ui.inputs.revision.preferredSize.width = 50;
+
+            // Base Folder (Label Only)
+            var baseGrp = ui.mainGrp.add("group");
+            baseGrp.orientation = "row";
+            baseGrp.alignChildren = ["left", "center"];
+            var baseLbl = baseGrp.add("statictext", undefined, "Base:");
+            baseLbl.preferredSize.width = 65;
+            ui.labels.basePath = baseGrp.add("statictext", undefined, getBaseWorkFolder());
+            ui.labels.basePath.alignment = ["fill", "center"];
+            setTextColor(ui.labels.basePath, [0.5, 0.5, 0.5]);
+            // Cleaned up: Browse button removed, moved to Settings
+        }
+
+        function createPreview() {
+            var div = ui.w.add("panel", [0, 0, 100, 1]);
+            div.alignment = ["fill", "top"];
+
+            ui.labels.pathPreview = ui.w.add("statictext", undefined, "Path: ...");
+            ui.labels.pathPreview.alignment = ["fill", "top"];
+            setTextColor(ui.labels.pathPreview, [0.4, 0.8, 0.4]);
+
+            ui.labels.filenamePreview = ui.w.add("statictext", undefined, "Filename: ...");
+            ui.labels.filenamePreview.alignment = ["center", "top"];
+            setTextColor(ui.labels.filenamePreview, [0.4, 0.7, 1]);
+        }
+
+        function createActionButtons() {
+            var btnGroup = ui.w.add("group");
+            btnGroup.orientation = "row";
+            btnGroup.alignChildren = ["fill", "top"];
+            btnGroup.spacing = 5;
+            btnGroup.alignment = ["fill", "top"];
+
+            ui.btns.create = btnGroup.add("button", undefined, "CREATE");
+            ui.btns.create.preferredSize.height = 35;
+            ui.btns.create.preferredSize.width = 100;
+            try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+
+            ui.btns.saveAs = btnGroup.add("button", undefined, "SAVE AS...");
+            ui.btns.saveAs.preferredSize.height = 35;
+            try { ui.btns.saveAs.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+
+            ui.btns.quickDup = btnGroup.add("button", undefined, "R+");
+            ui.btns.quickDup.preferredSize.height = 35;
+            ui.btns.quickDup.preferredSize.width = 40;
+            try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+        }
+
+        function createTemplateManagement() {
+            ui.labels.status = ui.w.add("statictext", undefined, "Ready");
+            ui.labels.status.alignment = ["center", "top"];
+            try { ui.labels.status.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
+            setTextColor(ui.labels.status, [0.5, 0.5, 0.5]);
+            // Template management buttons moved to Settings
+        }
+
+        function createRenderSection() {
+            ui.btns.render = ui.w.add("button", undefined, "ADD TO RENDER QUEUE");
+            ui.btns.render.preferredSize.height = 28;
+            ui.btns.render.alignment = ["fill", "top"];
+            try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
+
+            ui.btns.convert = ui.w.add("button", undefined, "CONVERT (WebM / MOV)");
+            ui.btns.convert.preferredSize.height = 25;
+            ui.btns.convert.alignment = ["fill", "top"];
+            ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
+        }
+
+        // --- LOGIC FUNCTIONS (Methods attached to UI object) ---
+
+        ui.refreshDropdown = function () {
+            var prevIdx = ui.dropdowns.template.selection ? ui.dropdowns.template.selection.index : 0;
+            ui.dropdowns.template.removeAll();
+            for (var i = 0; i < ui.templates.length; i++) {
+                ui.dropdowns.template.add("item", getTemplateLabel(ui.templates[i]));
+            }
+            if (ui.templates.length > 0) {
+                ui.dropdowns.template.selection = Math.min(prevIdx, ui.templates.length - 1);
+            }
+        };
+
+        ui.setStatus = function (text, color) {
+            ui.labels.status.text = text;
+            setTextColor(ui.labels.status, color);
+        };
+
+        ui.updateStatus = function () {
+            if (!ui.templates.length || !ui.dropdowns.template.selection) {
+                ui.setStatus("No templates", [0.6, 0.6, 0.6]);
+                return;
+            }
+            var t = ui.templates[ui.dropdowns.template.selection.index];
+            if (!t.path || !fileExists(t.path)) {
+                ui.setStatus("Template missing (Regenerate)", [0.9, 0.5, 0.2]);
             } else {
-                ui.w = new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
+                ui.setStatus("Ready: " + t.name, [0.5, 0.8, 0.5]);
             }
-            ui.w.orientation = "column";
-            ui.w.alignChildren = ["fill", "top"];
-            ui.w.spacing = 10;
-            ui.w.margins = 15;
+        };
 
-            // UI Helpers
-            function addRow(parent, label, defaultVal) {
-                var g = parent.add("group");
-                g.orientation = "row";
-                g.alignChildren = ["left", "center"];
-                var lbl = g.add("statictext", undefined, label);
-                lbl.preferredSize.width = 65;
-                var inp = g.add("edittext", undefined, defaultVal);
-                inp.alignment = ["fill", "center"];
-                return inp;
+        ui.buildFilename = function (brand, campaign, quarter, size, version, revision, isDOOH) {
+            if (isDOOH) {
+                return "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
+            } else {
+                var campaignName = (campaign && campaign.length > 0) ? campaign : "Campaign";
+                return brand + "_" + campaignName + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
             }
+        };
 
-            function setTextColor(element, color) {
-                try {
-                    if (element.graphics) {
-                        var pen = element.graphics.newPen(element.graphics.PenType.SOLID_COLOR, color, 1);
-                        element.graphics.foregroundColor = pen;
-                    }
-                } catch (e) { }
-            }
+        ui.updatePreview = function () {
+            if (!ui.dropdowns.template.selection) return;
+            var t = ui.templates[ui.dropdowns.template.selection.index];
+            var brand = sanitizeName(ui.inputs.brand.text) || "Brand";
+            var campaign = sanitizeName(ui.inputs.campaign.text) || "";
+            var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1";
+            var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
+            var size = t.width + "x" + t.height;
+            var version = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
+            var revision = "R" + (parseInt(ui.inputs.revision.text, 10) || 1);
 
-            ui.btns.settings = null;
+            // Validation Feedback
+            var brandVal = validateInput(ui.inputs.brand.text, "brand");
+            var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
 
-            // --- SUB-BUILDER FUNCTIONS ---
-
-            function createHeader() {
-                var hdrGrp = ui.w.add("group");
-                hdrGrp.orientation = "row";
-                hdrGrp.alignment = ["fill", "top"];
-                hdrGrp.alignChildren = ["fill", "center"];
-
-                var titleGrp = hdrGrp.add("group");
-                titleGrp.orientation = "row";
-                titleGrp.alignChildren = ["left", "center"];
-
-                var title = titleGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
-                try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
-
-                // Version Label
-                var ver = titleGrp.add("statictext", undefined, "v" + CONFIG.VERSION);
-                try { ver.graphics.foregroundColor = ver.graphics.newPen(ver.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
-
-                // DEBUG TRIGGER: Alt+Click title to run unit tests
-                title.addEventListener("click", function (e) {
-                    if (e.altKey) {
-                        runUnitTests();
-                    }
-                });
-
-                // Spacer to push settings button to right
-                var spacer = hdrGrp.add("group");
-                spacer.alignment = ["fill", "fill"];
-
-                ui.btns.settings = hdrGrp.add("button", undefined, "⚙");
-                ui.btns.settings.preferredSize = [25, 25];
-                ui.btns.settings.helpTip = "Open Settings";
-            }
-
-
-
-            function createMainInputs() {
-                ui.mainGrp = ui.w.add("group");
-                ui.mainGrp.orientation = "column";
-                ui.mainGrp.alignChildren = ["fill", "top"];
-                ui.mainGrp.spacing = 5;
-
-                // Template Dropdown
-                var tmplGrp = ui.mainGrp.add("group");
-                tmplGrp.orientation = "row";
-                tmplGrp.alignChildren = ["left", "center"];
-                var tmplLbl = tmplGrp.add("statictext", undefined, "Template:");
-                tmplLbl.preferredSize.width = 65;
-                ui.dropdowns.template = tmplGrp.add("dropdownlist", undefined, []);
-                ui.dropdowns.template.alignment = ["fill", "center"];
-                ui.dropdowns.template.preferredSize.height = 25;
-                ui.dropdowns.template.helpTip = "Select a template";
-
-                // Brand & Campaign
-                ui.inputs.brand = addRow(ui.mainGrp, "Brand:", "");
+            if (!brandVal.isValid && ui.inputs.brand.text.length > 0) {
+                ui.inputs.brand.helpTip = "Error: " + brandVal.msg;
+                ui.setStatus("Brand invalid: " + brandVal.msg, [1, 0, 0]);
+            } else if (!cmpVal.isValid && ui.inputs.campaign.text.length > 0) {
+                ui.inputs.campaign.helpTip = "Error: " + cmpVal.msg;
+                ui.setStatus("Campaign invalid: " + cmpVal.msg, [1, 0, 0]);
+            } else {
                 ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
-
-                ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
                 ui.inputs.campaign.helpTip = "Enter the campaign or project name";
-
-                // Quarter & Year
-                var qyRow = ui.mainGrp.add("group");
-                qyRow.orientation = "row";
-                qyRow.alignChildren = ["left", "center"];
-                var qLbl = qyRow.add("statictext", undefined, "Quarter:");
-                qLbl.preferredSize.width = 65;
-                ui.dropdowns.quarter = qyRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
-                ui.dropdowns.quarter.selection = getCurrentQuarter();
-                ui.dropdowns.quarter.preferredSize.width = 60;
-                ui.dropdowns.quarter.helpTip = "Select fiscal quarter";
-
-                var yLbl = qyRow.add("statictext", undefined, "Year:");
-                yLbl.preferredSize.width = 35;
-                var currentYear = getCurrentYear();
-                ui.dropdowns.year = qyRow.add("dropdownlist", undefined, [
-                    String(currentYear - 1),
-                    String(currentYear),
-                    String(currentYear + 1),
-                    String(currentYear + 2)
-                ]);
-                ui.dropdowns.year.selection = 1; // Current year
-                ui.dropdowns.year.preferredSize.width = 65;
-
-                // Version & Revision
-                var vrRow = ui.mainGrp.add("group");
-                vrRow.orientation = "row";
-                vrRow.alignChildren = ["left", "center"];
-                var verLbl = vrRow.add("statictext", undefined, "Version:");
-                verLbl.preferredSize.width = 65;
-                ui.inputs.version = vrRow.add("edittext", undefined, "1");
-                ui.inputs.version.preferredSize.width = 50;
-                var revLbl = vrRow.add("statictext", undefined, "Revision:");
-                revLbl.preferredSize.width = 60;
-                ui.inputs.revision = vrRow.add("edittext", undefined, "1");
-                ui.inputs.revision.preferredSize.width = 50;
-
-                // Base Folder (Label Only)
-                var baseGrp = ui.mainGrp.add("group");
-                baseGrp.orientation = "row";
-                baseGrp.alignChildren = ["left", "center"];
-                var baseLbl = baseGrp.add("statictext", undefined, "Base:");
-                baseLbl.preferredSize.width = 65;
-                ui.labels.basePath = baseGrp.add("statictext", undefined, getBaseWorkFolder());
-                ui.labels.basePath.alignment = ["fill", "center"];
-                setTextColor(ui.labels.basePath, [0.5, 0.5, 0.5]);
-                // Cleaned up: Browse button removed, moved to Settings
+                ui.updateStatus();
             }
 
-            function createPreview() {
-                var div = ui.w.add("panel", [0, 0, 100, 1]);
-                div.alignment = ["fill", "top"];
+            var filename = ui.buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
 
-                ui.labels.pathPreview = ui.w.add("statictext", undefined, "Path: ...");
-                ui.labels.pathPreview.alignment = ["fill", "top"];
-                setTextColor(ui.labels.pathPreview, [0.4, 0.8, 0.4]);
+            var templateFolderName = getTemplateFolderName(t.width, t.height);
+            var fullPath = getAeFolderPath(getBaseWorkFolder(), year, quarter, brand, campaign, templateFolderName, t.width, t.height, version);
 
-                ui.labels.filenamePreview = ui.w.add("statictext", undefined, "Filename: ...");
-                ui.labels.filenamePreview.alignment = ["center", "top"];
-                setTextColor(ui.labels.filenamePreview, [0.4, 0.7, 1]);
-            }
+            ui.labels.pathPreview.text = fullPath;
+            ui.labels.filenamePreview.text = filename;
+        };
 
-            function createActionButtons() {
-                var btnGroup = ui.w.add("group");
-                btnGroup.orientation = "row";
-                btnGroup.alignChildren = ["fill", "top"];
-                btnGroup.spacing = 5;
-                btnGroup.alignment = ["fill", "top"];
+        ui.checkRevision = function () {
+            if (!ui.dropdowns.template.selection) return;
+            var t = ui.templates[ui.dropdowns.template.selection.index];
+            var brand = sanitizeName(ui.inputs.brand.text) || "Brand";
+            var campaign = sanitizeName(ui.inputs.campaign.text) || "";
+            var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1";
+            var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
+            var size = t.width + "x" + t.height;
+            var versionStr = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
 
-                ui.btns.create = btnGroup.add("button", undefined, "CREATE");
-                ui.btns.create.preferredSize.height = 35;
-                ui.btns.create.preferredSize.width = 100;
-                try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+            var templateFolderName = getTemplateFolderName(t.width, t.height);
+            var aeFolder = getAeFolderPath(getBaseWorkFolder(), year, quarter, brand, campaign, templateFolderName, t.width, t.height, versionStr);
 
-                ui.btns.saveAs = btnGroup.add("button", undefined, "SAVE AS...");
-                ui.btns.saveAs.preferredSize.height = 35;
-                try { ui.btns.saveAs.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+            var isDOOH = isDOOHTemplate(t.name);
+            var maxR = 50;
+            var foundR = 1;
 
-                ui.btns.quickDup = btnGroup.add("button", undefined, "R+");
-                ui.btns.quickDup.preferredSize.height = 35;
-                ui.btns.quickDup.preferredSize.width = 40;
-                try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
-            }
-
-            function createTemplateManagement() {
-                ui.labels.status = ui.w.add("statictext", undefined, "Ready");
-                ui.labels.status.alignment = ["center", "top"];
-                try { ui.labels.status.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
-                setTextColor(ui.labels.status, [0.5, 0.5, 0.5]);
-                // Template management buttons moved to Settings
-            }
-
-            function createRenderSection() {
-                ui.btns.render = ui.w.add("button", undefined, "ADD TO RENDER QUEUE");
-                ui.btns.render.preferredSize.height = 28;
-                ui.btns.render.alignment = ["fill", "top"];
-                try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
-
-                ui.btns.convert = ui.w.add("button", undefined, "CONVERT (WebM / MOV)");
-                ui.btns.convert.preferredSize.height = 25;
-                ui.btns.convert.alignment = ["fill", "top"];
-                ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
-            }
-
-            // --- LOGIC FUNCTIONS (Methods attached to UI object) ---
-
-            ui.refreshDropdown = function () {
-                var prevIdx = ui.dropdowns.template.selection ? ui.dropdowns.template.selection.index : 0;
-                ui.dropdowns.template.removeAll();
-                for (var i = 0; i < ui.templates.length; i++) {
-                    ui.dropdowns.template.add("item", getTemplateLabel(ui.templates[i]));
-                }
-                if (ui.templates.length > 0) {
-                    ui.dropdowns.template.selection = Math.min(prevIdx, ui.templates.length - 1);
-                }
-            };
-
-            ui.setStatus = function (text, color) {
-                ui.labels.status.text = text;
-                setTextColor(ui.labels.status, color);
-            };
-
-            ui.updateStatus = function () {
-                if (!ui.templates.length || !ui.dropdowns.template.selection) {
-                    ui.setStatus("No templates", [0.6, 0.6, 0.6]);
-                    return;
-                }
-                var t = ui.templates[ui.dropdowns.template.selection.index];
-                if (!t.path || !fileExists(t.path)) {
-                    ui.setStatus("Template missing (Regenerate)", [0.9, 0.5, 0.2]);
+            for (var r = 1; r <= maxR; r++) {
+                var filename = ui.buildFilename(brand, campaign, quarter, size, versionStr, "R" + r, isDOOH);
+                if (fileExists(joinPath(aeFolder, filename))) {
+                    foundR = r + 1;
                 } else {
-                    ui.setStatus("Ready: " + t.name, [0.5, 0.8, 0.5]);
+                    break;
                 }
-            };
+            }
 
-            ui.buildFilename = function (brand, campaign, quarter, size, version, revision, isDOOH) {
-                if (isDOOH) {
-                    return "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
-                } else {
-                    var campaignName = (campaign && campaign.length > 0) ? campaign : "Campaign";
-                    return brand + "_" + campaignName + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
-                }
-            };
+            ui.inputs.revision.text = String(foundR);
+            ui.updatePreview();
 
-            ui.updatePreview = function () {
-                if (!ui.dropdowns.template.selection) return;
-                var t = ui.templates[ui.dropdowns.template.selection.index];
-                var brand = sanitizeName(ui.inputs.brand.text) || "Brand";
-                var campaign = sanitizeName(ui.inputs.campaign.text) || "";
-                var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1";
-                var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
-                var size = t.width + "x" + t.height;
-                var version = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
-                var revision = "R" + (parseInt(ui.inputs.revision.text, 10) || 1);
+            // SMART VERSIONING: Check if higher versions exist
+            // Navigate up from AE_File -> V# -> SizeFolder
+            // aeFolder is .../V#/AE_File
+            var folderObj = new Folder(aeFolder);
+            var sizeFolderObj = (folderObj.parent) ? folderObj.parent.parent : null;
 
-                // Validation Feedback
-                var brandVal = validateInput(ui.inputs.brand.text, "brand");
-                var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
-
-                if (!brandVal.isValid && ui.inputs.brand.text.length > 0) {
-                    ui.inputs.brand.helpTip = "Error: " + brandVal.msg;
-                    ui.setStatus("Brand invalid: " + brandVal.msg, [1, 0, 0]);
-                } else if (!cmpVal.isValid && ui.inputs.campaign.text.length > 0) {
-                    ui.inputs.campaign.helpTip = "Error: " + cmpVal.msg;
-                    ui.setStatus("Campaign invalid: " + cmpVal.msg, [1, 0, 0]);
-                } else {
-                    ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
-                    ui.inputs.campaign.helpTip = "Enter the campaign or project name";
-                    ui.updateStatus();
-                }
-
-                var filename = ui.buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
-
-                var templateFolderName = getTemplateFolderName(t.width, t.height);
-                var fullPath = getAeFolderPath(getBaseWorkFolder(), year, quarter, brand, campaign, templateFolderName, t.width, t.height, version);
-
-                ui.labels.pathPreview.text = fullPath;
-                ui.labels.filenamePreview.text = filename;
-            };
-
-            ui.checkRevision = function () {
-                if (!ui.dropdowns.template.selection) return;
-                var t = ui.templates[ui.dropdowns.template.selection.index];
-                var brand = sanitizeName(ui.inputs.brand.text) || "Brand";
-                var campaign = sanitizeName(ui.inputs.campaign.text) || "";
-                var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1";
-                var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
-                var size = t.width + "x" + t.height;
-                var versionStr = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
-
-                var templateFolderName = getTemplateFolderName(t.width, t.height);
-                var aeFolder = getAeFolderPath(getBaseWorkFolder(), year, quarter, brand, campaign, templateFolderName, t.width, t.height, versionStr);
-
-                var isDOOH = isDOOHTemplate(t.name);
-                var maxR = 50;
-                var foundR = 1;
-
-                for (var r = 1; r <= maxR; r++) {
-                    var filename = ui.buildFilename(brand, campaign, quarter, size, versionStr, "R" + r, isDOOH);
-                    if (fileExists(joinPath(aeFolder, filename))) {
-                        foundR = r + 1;
-                    } else {
+            if (sizeFolderObj && sizeFolderObj.exists) {
+                var currentV = parseInt(ui.inputs.version.text, 10);
+                for (var v = currentV + 1; v <= currentV + 10; v++) {
+                    var checkV = "V" + v;
+                    var vFolder = new Folder(joinPath(sizeFolderObj.fsName, checkV));
+                    if (vFolder.exists) {
+                        ui.setStatus("Note: Newer version " + checkV + " already exists", [1, 0.5, 0]);
                         break;
                     }
                 }
-
-                ui.inputs.revision.text = String(foundR);
-                ui.updatePreview();
-
-                // SMART VERSIONING: Check if higher versions exist
-                // Navigate up from AE_File -> V# -> SizeFolder
-                // aeFolder is .../V#/AE_File
-                var folderObj = new Folder(aeFolder);
-                var sizeFolderObj = (folderObj.parent) ? folderObj.parent.parent : null;
-
-                if (sizeFolderObj && sizeFolderObj.exists) {
-                    var currentV = parseInt(ui.inputs.version.text, 10);
-                    for (var v = currentV + 1; v <= currentV + 10; v++) {
-                        var checkV = "V" + v;
-                        var vFolder = new Folder(joinPath(sizeFolderObj.fsName, checkV));
-                        if (vFolder.exists) {
-                            ui.setStatus("Note: Newer version " + checkV + " already exists", [1, 0.5, 0]);
-                            break;
-                        }
-                    }
-                }
-            };
+            }
+        };
 
 
 
-            // --- EXECUTE BUILD ---
-            createHeader();
-            createMainInputs();
-            createPreview();
-            createActionButtons();
-            createTemplateManagement();
-            createRenderSection();
+        // --- EXECUTE BUILD ---
+        createHeader();
+        createMainInputs();
+        createPreview();
+        createActionButtons();
+        createTemplateManagement();
+        createRenderSection();
 
-            // Init
-            ui.refreshDropdown();
-            bindEvents(ui);
+        // Init
+        ui.refreshDropdown();
+        bindEvents(ui);
 
-            // Auto-detect project logic
-            if (app.project && app.project.file) {
-                try {
-                    var currentName = app.project.file.name.replace(/\.aep$/i, "");
-                    var parsed = parseProjectName(currentName);
-                    var mainComp = findMainComp();
+        // Auto-detect project logic
+        if (app.project && app.project.file) {
+            try {
+                var currentName = app.project.file.name.replace(/\.aep$/i, "");
+                var parsed = parseProjectName(currentName);
+                var mainComp = findMainComp();
 
-                    if (parsed && parsed.brand) {
-                        if (mainComp) {
-                            var type = getTemplateType(mainComp.width, mainComp.height);
-                            for (var i = 0; i < ui.templates.length; i++) {
-                                var t = ui.templates[i];
-                                if (type === "sunrise" && t.width === 750 && t.height === 300) { ui.dropdowns.template.selection = i; break; }
-                                if (type === "interscroller" && t.width === 880 && t.height === 1912) { ui.dropdowns.template.selection = i; break; }
-                                if (type.indexOf("dooh") !== -1 && t.width === 1920 && t.height === 1080 && mainComp.width === 1920) { ui.dropdowns.template.selection = i; break; }
-                                if (type.indexOf("dooh") !== -1 && t.width === 1080 && t.height === 1920 && mainComp.width === 1080) { ui.dropdowns.template.selection = i; break; }
-                            }
-                        }
-
-                        ui.inputs.brand.text = parsed.brand;
-                        if (parsed.campaign) ui.inputs.campaign.text = parsed.campaign;
-                        if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
-                        if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
-
-                        if (parsed.quarter) {
-                            for (var x = 0; x < ui.dropdowns.quarter.items.length; x++) {
-                                if (ui.dropdowns.quarter.items[x].text === parsed.quarter) {
-                                    ui.dropdowns.quarter.selection = x;
-                                    break;
-                                }
-                            }
-                        }
-                    } else if (parsed && parsed.isDOOH && mainComp) {
-                        // DOOH Auto-Detect Fix
+                if (parsed && parsed.brand) {
+                    if (mainComp) {
                         var type = getTemplateType(mainComp.width, mainComp.height);
                         for (var i = 0; i < ui.templates.length; i++) {
                             var t = ui.templates[i];
-                            if (type.indexOf("dooh") !== -1) {
-                                // Match dimensions specifically for DOOH
-                                if (mainComp.width === t.width && mainComp.height === t.height) {
-                                    ui.dropdowns.template.selection = i;
-                                    break;
-                                }
+                            if (type === "sunrise" && t.width === 750 && t.height === 300) { ui.dropdowns.template.selection = i; break; }
+                            if (type === "interscroller" && t.width === 880 && t.height === 1912) { ui.dropdowns.template.selection = i; break; }
+                            if (type.indexOf("dooh") !== -1 && t.width === 1920 && t.height === 1080 && mainComp.width === 1920) { ui.dropdowns.template.selection = i; break; }
+                            if (type.indexOf("dooh") !== -1 && t.width === 1080 && t.height === 1920 && mainComp.width === 1080) { ui.dropdowns.template.selection = i; break; }
+                        }
+                    }
+
+                    ui.inputs.brand.text = parsed.brand;
+                    if (parsed.campaign) ui.inputs.campaign.text = parsed.campaign;
+                    if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
+                    if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
+
+                    if (parsed.quarter) {
+                        for (var x = 0; x < ui.dropdowns.quarter.items.length; x++) {
+                            if (ui.dropdowns.quarter.items[x].text === parsed.quarter) {
+                                ui.dropdowns.quarter.selection = x;
+                                break;
                             }
                         }
-
-                        if (parsed.campaign) {
-                            ui.inputs.brand.text = "DOOH"; // Set brand generic
-                            ui.inputs.campaign.text = parsed.campaign; // Set campaign correctly
+                    }
+                } else if (parsed && parsed.isDOOH && mainComp) {
+                    // DOOH Auto-Detect Fix
+                    var type = getTemplateType(mainComp.width, mainComp.height);
+                    for (var i = 0; i < ui.templates.length; i++) {
+                        var t = ui.templates[i];
+                        if (type.indexOf("dooh") !== -1) {
+                            // Match dimensions specifically for DOOH
+                            if (mainComp.width === t.width && mainComp.height === t.height) {
+                                ui.dropdowns.template.selection = i;
+                                break;
+                            }
                         }
-                        if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
-                        if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
                     }
-                } catch (e) { }
-            }
-            ui.updateStatus();
-            ui.updatePreview();
 
-            ui.w.onResizing = ui.w.onResize = function () { this.layout.resize(); };
-            if (ui.w instanceof Window) {
-                ui.w.center();
-                ui.w.show();
-            } else {
-                ui.w.layout.layout(true);
-            }
+                    if (parsed.campaign) {
+                        ui.inputs.brand.text = "DOOH"; // Set brand generic
+                        ui.inputs.campaign.text = parsed.campaign; // Set campaign correctly
+                    }
+                    if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
+                    if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
+                }
+            } catch (e) { }
+        }
+        ui.updateStatus();
+        ui.updatePreview();
 
-            return ui.w;
+        ui.w.onResizing = ui.w.onResize = function () { this.layout.resize(); };
+        if (ui.w instanceof Window) {
+            ui.w.center();
+            ui.w.show();
+        } else {
+            ui.w.layout.layout(true);
         }
 
-        /**
-         * Run post-render conversion via external shell script
-         * This prevents crashes by using a single system.callSystem() call
-         */
-        function runConversionV2(outFolder, seq, options, dims) {
-            var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
-            var isWin = ($.os.indexOf("Windows") !== -1);
+        return ui.w;
+    }
 
-            // Build paths
-            // Build paths
-            var scriptPath, logPath, outWebM, outMov, outHtml, passLog, zipPath;
+    /**
+     * Run post-render conversion via external shell script
+     * This prevents crashes by using a single system.callSystem() call
+     */
+    function runConversionV2(outFolder, seq, options, dims) {
+        var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        var isWin = ($.os.indexOf("Windows") !== -1);
 
-            if (isWin) {
-                // Force Backslashes for Windows
-                scriptPath = outFolder.fsName + "\\convert.bat";
-                logPath = outFolder.fsName + "\\convert_log.txt";
-                outWebM = outFolder.fsName + "\\output.webm";
-                outMov = outFolder.fsName + "\\output.mov";
-                outHtml = outFolder.fsName + "\\output.html";
-                passLog = outFolder.fsName + "\\ffmpeg2pass";
-                zipPath = outFolder.fsName + "\\" + seq.prefix.replace(/_+$/, "") + "_Optimized.zip";
-            } else {
-                scriptPath = outFolder.fsName + "/convert.sh";
-                logPath = outFolder.fsName + "/convert_log.txt";
-                outWebM = outFolder.fsName + "/output.webm";
-                outMov = outFolder.fsName + "/output.mov";
-                outHtml = outFolder.fsName + "/output.html";
-                passLog = outFolder.fsName + "/ffmpeg2pass";
-                zipPath = outFolder.fsName + "/" + seq.prefix.replace(/_+$/, "") + "_Optimized.zip";
-            }
+        // Output paths
+        var scriptPath = outFolder.fsName + (isWin ? "\\convert.bat" : "/convert.sh");
+        var logPath = outFolder.fsName + (isWin ? "\\convert_log.txt" : "/convert_log.txt");
+        var outWebM = outFolder.fsName + (isWin ? "\\output.webm" : "/output.webm");
+        var outMov = outFolder.fsName + (isWin ? "\\output.mov" : "/output.mov");
+        var outHtml = outFolder.fsName + (isWin ? "\\index.html" : "/index.html");
+        var passLog = outFolder.fsName + (isWin ? "\\ffmpeg2pass" : "/ffmpeg2pass");
 
-            var scriptFile = new File(scriptPath);
-            var logFile = new File(logPath);
+        // =================================================================================
+        // 1. GENERATE HTML (Mediabunny External Link Version)
+        // =================================================================================
+        if (options.html) {
+            var htmlContent = '<!DOCTYPE html>\n' +
+                '<html>\n' +
+                '  <head>\n' +
+                '    <meta charset="UTF-8" />\n' +
+                '    <title>' + (options.title || "Animation") + ' - Big Happy</title>\n' +
+                '    <script src="https://cdn.bighappy.co/libs/mediabunny/v1.25.0/mediabunny.min.cjs"></script>\n' +
+                '    <style>\n' +
+                '      html, body { margin: 0; padding: 0; }\n' +
+                '    </style>\n' +
+                '  </head>\n' +
+                '  <body>\n' +
+                '    <div id="animation_container">\n' +
+                '      <canvas id="webmCanvas" width="' + dims.width + '" height="' + dims.height + '"></canvas>\n' +
+                '    </div>\n' +
+                '    <script>\n' +
+                '      const { Input, BlobSource, WEBM, VideoSampleSink } = Mediabunny;\n' +
+                '      const videoUrl = "./output.webm";\n' +
+                '      \n' +
+                '      (async function playWithMediabunny(url) {\n' +
+                '        const canvas = document.getElementById("webmCanvas");\n' +
+                '        if (!canvas) return;\n' +
+                '        if (!url) return;\n' +
+                '\n' +
+                '        const ctx = canvas.getContext("2d", { alpha: true });\n' +
+                '        if (!ctx) return;\n' +
+                '\n' +
+                '        try {\n' +
+                '          const resp = await fetch(url);\n' +
+                '          if (!resp.ok) throw new Error("File not found or blocked: " + resp.statusText);\n' +
+                '          const blob = await resp.blob();\n' +
+                '\n' +
+                '          const input = new Input({\n' +
+                '            source: new BlobSource(blob),\n' +
+                '            formats: [WEBM],\n' +
+                '          });\n' +
+                '\n' +
+                '          const videoTrack = await input.getPrimaryVideoTrack();\n' +
+                '          if (!videoTrack) return;\n' +
+                '\n' +
+                '          const decodable = await videoTrack.canDecode();\n' +
+                '          if (!decodable) return;\n' +
+                '\n' +
+                '          const sink = new VideoSampleSink(videoTrack);\n' +
+                '          let firstTimestamp = null;\n' +
+                '          let startWallClock = null;\n' +
+                '\n' +
+                '          for await (const sample of sink.samples()) {\n' +
+                '            try {\n' +
+                '              if (firstTimestamp === null) {\n' +
+                '                firstTimestamp = sample.timestamp;\n' +
+                '                startWallClock = performance.now();\n' +
+                '              }\n' +
+                '              const targetTime = startWallClock + (sample.timestamp - firstTimestamp) * 1000;\n' +
+                '              const delay = targetTime - performance.now();\n' +
+                '              if (delay > 0) await new Promise((r) => setTimeout(r, delay));\n' +
+                '\n' +
+                '              ctx.clearRect(0, 0, canvas.width, canvas.height);\n' +
+                '              sample.drawWithFit(ctx, { fit: "cover" });\n' +
+                '            } finally {\n' +
+                '              sample.close();\n' +
+                '            }\n' +
+                '          }\n' +
+                '        } catch (e) {\n' +
+                '          console.error(e);\n' +
+                '          if (e.name === "TypeError" && window.location.protocol === "file:") {\n' +
+                '            alert("SECURITY ERROR:\\n\\nBrowsers block loading external video files (output.webm) when opening HTML directly from your hard drive.\\n\\nSOLUTION:\\n1. Upload to a server\\n2. Or use a local server (VS Code Live Server)\\n3. Or use Firefox (it is less strict)");\n' +
+                '          } else {\n' +
+                '             alert("Playback Error: " + e.message);\n' +
+                '          }\n' +
+                '        }\n' +
+                '      })(videoUrl);\n' +
+                '    </script>\n' +
+                '  </body>\n' +
+                '</html>';
 
-            // Delete old log if exists
-            if (logFile.exists) logFile.remove();
-
-            // Build script content
-            var script = "";
-            var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
-
-            // Pattern needs careful handling
-            var pattern;
-            if (isWin) {
-                // FIX: Double % for Batch file escaping (e.g. %%05d)
-                pattern = seq.fileObj.parent.fsName + "\\" + seq.prefix + "%%0" + seq.padding + "d.png";
-            } else {
-                pattern = seq.fileObj.parent.fsName + "/" + seq.prefix + "%0" + seq.padding + "d.png";
-            }
-
-            var fps = dims.fps;
-
-            // Calculate bitrates
-            // FIX: Lower multiplier from 0.72 to 0.65 to ensure HTML Base64 overhead stays under limit
-            var webmTarget = options.html ? (options.targetMB * 0.65) : options.targetMB;
-            var webmBitrate = Math.floor((webmTarget * 0.92 * 8 * 1024 * 1024) / (seq.count / fps) / 1000);
-            var movBitrate = Math.floor((options.targetMB * 1.2 * 0.92 * 8 * 1024 * 1024) / (seq.count / fps) / 1000);
-
-            var baseName = seq.prefix.replace(/_+$/, "");
-
-            if (isWin) {
-                // ===================== WINDOWS BATCH SCRIPT =====================
-                script += "@echo off\r\n";
-                script += "echo Starting conversion... > \"" + logPath + "\"\r\n";
-                script += "echo Executable: " + exe + " >> \"" + logPath + "\"\r\n";
-                script += "echo Pattern: " + pattern + " >> \"" + logPath + "\"\r\n";
-                script += "echo. >> \"" + logPath + "\"\r\n";
-
-                // WebM
-                if (options.webm) {
-                    script += "echo [1/4] Converting to WebM... >> \"" + logPath + "\"\r\n";
-                    // Debug the command to log
-                    script += "echo CMD_WEBM_PASS1: " + exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" ... >> \"" + logPath + "\"\r\n";
-
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" ";
-                    script += "-c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + webmBitrate + "k -speed 0 -quality best -row-mt 1 ";
-                    script += "-pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
-
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" ";
-                    script += "-c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + webmBitrate + "k -speed 0 -quality best -row-mt 1 ";
-                    script += "-pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
-
-                    script += "if exist \"" + outWebM + "\" (echo WebM: SUCCESS >> \"" + logPath + "\") else (echo WebM: FAILED >> \"" + logPath + "\")\r\n";
-                    script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
-                }
-
-                // MOV (Smart Fallback: HEVC/Alpha -> H.264/Opaque)
-                if (options.mov) {
-                    script += "echo [2/4] Converting to MOV... >> \"" + logPath + "\"\r\n";
-
-                    // Command 1: HEVC (Ideal - Small + Transparent)
-                    var cmdHevc = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" " +
-                        "-c:v libx265 -pix_fmt yuva444p10le -x265-params alpha=1 -b:v " + movBitrate + "k -preset medium \"" + outMov + "\" 2>> \"" + logPath + "\"";
-
-                    // Command 2: H.264 (Fallback - Small + Opaque)
-                    var cmdH264 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" " +
-                        "-c:v libx264 -pix_fmt yuv420p -b:v " + movBitrate + "k -preset slow \"" + outMov + "\" 2>> \"" + logPath + "\"";
-
-                    // Combine with OR operator (||) for automatic fallback
-                    script += "(" + cmdHevc + ") || (echo HEVC_FAILED_TRYING_H264 >> \"" + logPath + "\" && " + cmdH264 + ")\r\n";
-
-                    script += "if exist \"" + outMov + "\" (echo MOV: SUCCESS >> \"" + logPath + "\") else (echo MOV: FAILED >> \"" + logPath + "\")\r\n";
-                }
-
-                // HTML
-                if (options.html) {
-                    script += "echo [3/4] Generating HTML... >> \"" + logPath + "\"\r\n";
-                    // Fix: Removed ^^ before !DOCTYPE which was printing <^!DOCTYPE
-                    script += "echo ^<!DOCTYPE html^>^<html^>^<head^>^<meta charset=\"UTF-8\"/^>^<title^>" + (options.title || "Animation") + "^</title^>^<script src=\"https://cdn.bighappy.co/libs/mediabunny/v1.25.0/mediabunny.min.cjs\"^>^</script^>^<style^>html,body{margin:0;padding:0}^</style^>^</head^>^<body^>^<div id=\"animation_container\"^>^<canvas id=\"webmCanvas\" width=\"" + dims.width + "\" height=\"" + dims.height + "\"^>^</canvas^>^</div^>^<div id=\"b64data\" style=\"display:none\"^> > \"" + outHtml + "\"\r\n";
-                    // FIX: Use AppendAllText with explicit ASCII encoding to match generated file, full namespace for safety
-                    script += "powershell -ExecutionPolicy Bypass -Command \"[System.IO.File]::AppendAllText('" + outHtml + "', [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes('" + outWebM + "')), [System.Text.Encoding]::ASCII)\"\r\n";
-                    // Note: The rest of the HTML closing tags
-                    script += "echo ^</div^>^<script^>const{Input,BlobSource,WEBM,VideoSampleSink}=Mediabunny;var rawB64=document.getElementById('b64data').textContent.replace(/\\s/g,'');const videoBase64='data:video/webm;base64,'+rawB64;(async function(url){const canvas=document.getElementById('webmCanvas');if(!canvas)return;const ctx=canvas.getContext('2d',{alpha:true});const resp=await fetch(url);const blob=await resp.blob();const input=new Input({source:new BlobSource(blob),formats:[WEBM]});const videoTrack=await input.getPrimaryVideoTrack();if(!videoTrack)return;if(!await videoTrack.canDecode())return;const sink=new VideoSampleSink(videoTrack);let firstTimestamp=null,startWallClock=null;for await(const sample of sink.samples()){try{if(firstTimestamp===null){firstTimestamp=sample.timestamp;startWallClock=performance.now()}const targetTime=startWallClock+(sample.timestamp-firstTimestamp)*1000;const delay=targetTime-performance.now();if(delay^>0)await new Promise(r=^>setTimeout(r,delay));ctx.clearRect(0,0,canvas.width,canvas.height);sample.drawWithFit(ctx,{fit:'cover'})}finally{sample.close()}}})(videoBase64);^</script^>^</body^>^</html^> >> \"" + outHtml + "\"\r\n";
-                    script += "if exist \"" + outHtml + "\" (echo HTML: SUCCESS >> \"" + logPath + "\") else (echo HTML: FAILED >> \"" + logPath + "\")\r\n";
-                }
-
-                // ZIP
-                if (options.zip) {
-                    script += "echo [4/4] Creating ZIP... >> \"" + logPath + "\"\r\n";
-                    var zipFiles = [];
-                    if (options.html) zipFiles.push("'" + outHtml + "'");
-                    if (options.webm) zipFiles.push("'" + outWebM + "'");
-                    if (options.mov) zipFiles.push("'" + outMov + "'");
-                    if (zipFiles.length > 0) {
-                        script += "powershell -Command \"Compress-Archive -Path " + zipFiles.join(",") + " -DestinationPath '" + zipPath + "' -Force\" 2>> \"" + logPath + "\"\r\n";
-                        script += "if exist \"" + zipPath + "\" (echo ZIP: SUCCESS >> \"" + logPath + "\") else (echo ZIP: FAILED >> \"" + logPath + "\")\r\n";
-                    }
-                }
-
-                script += "echo. >> \"" + logPath + "\"\r\n";
-                script += "echo CONVERSION_COMPLETE >> \"" + logPath + "\"\r\n";
-
-            } else {
-                // ===================== MACOS SHELL SCRIPT =====================
-                script += "#!/bin/bash\n";
-                script += "echo 'Starting conversion...' > \"" + logPath + "\"\n";
-                script += "echo '' >> \"" + logPath + "\"\n";
-
-                // WebM
-                if (options.webm) {
-                    script += "echo '[1/4] Converting to WebM...' >> \"" + logPath + "\"\n";
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" ";
-                    script += "-c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + webmBitrate + "k -speed 0 -quality best -row-mt 1 ";
-                    script += "-pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
-
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" ";
-                    script += "-c:v libvpx-vp9 -pix_fmt yuva420p -b:v " + webmBitrate + "k -speed 0 -quality best -row-mt 1 ";
-                    script += "-pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
-
-                    script += "[ -f \"" + outWebM + "\" ] && echo 'WebM: SUCCESS' >> \"" + logPath + "\" || echo 'WebM: FAILED' >> \"" + logPath + "\"\n";
-                    script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
-                }
-
-                // MOV (HEVC on Mac)
-                if (options.mov) {
-                    script += "echo '[2/4] Converting to MOV...' >> \"" + logPath + "\"\n";
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" ";
-                    script += "-c:v hevc_videotoolbox -allow_sw 1 -alpha_quality 1 -b:v " + movBitrate + "k -tag:v hvc1 \"" + outMov + "\" 2>> \"" + logPath + "\"\n";
-                    script += "[ -f \"" + outMov + "\" ] && echo 'MOV: SUCCESS' >> \"" + logPath + "\" || echo 'MOV: FAILED' >> \"" + logPath + "\"\n";
-                }
-
-                // HTML
-                if (options.html) {
-                    script += "echo '[3/4] Generating HTML...' >> \"" + logPath + "\"\n";
-                    script += "cat > \"" + outHtml + "\" << 'HTMLEOF'\n";
-                    script += "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"/><title>" + (options.title || "Animation") + "</title>";
-                    script += "<script src=\"https://cdn.bighappy.co/libs/mediabunny/v1.25.0/mediabunny.min.cjs\"></script>";
-                    script += "<style>html,body{margin:0;padding:0}</style></head><body>";
-                    script += "<div id=\"animation_container\"><canvas id=\"webmCanvas\" width=\"" + dims.width + "\" height=\"" + dims.height + "\"></canvas></div>";
-                    script += "<div id=\"b64data\" style=\"display:none\">\n";
-                    script += "HTMLEOF\n";
-                    script += "base64 -i \"" + outWebM + "\" >> \"" + outHtml + "\"\n";
-                    script += "cat >> \"" + outHtml + "\" << 'HTMLEOF2'\n";
-                    script += "</div><script>const{Input,BlobSource,WEBM,VideoSampleSink}=Mediabunny;var rawB64=document.getElementById('b64data').textContent.replace(/\\s/g,'');const videoBase64='data:video/webm;base64,'+rawB64;(async function(url){const canvas=document.getElementById('webmCanvas');if(!canvas)return;const ctx=canvas.getContext('2d',{alpha:true});const resp=await fetch(url);const blob=await resp.blob();const input=new Input({source:new BlobSource(blob),formats:[WEBM]});const videoTrack=await input.getPrimaryVideoTrack();if(!videoTrack)return;if(!await videoTrack.canDecode())return;const sink=new VideoSampleSink(videoTrack);let firstTimestamp=null,startWallClock=null;for await(const sample of sink.samples()){try{if(firstTimestamp===null){firstTimestamp=sample.timestamp;startWallClock=performance.now()}const targetTime=startWallClock+(sample.timestamp-firstTimestamp)*1000;const delay=targetTime-performance.now();if(delay>0)await new Promise(r=>setTimeout(r,delay));ctx.clearRect(0,0,canvas.width,canvas.height);sample.drawWithFit(ctx,{fit:'cover'})}finally{sample.close()}}})(videoBase64);</script></body></html>\n";
-                    script += "HTMLEOF2\n";
-                    script += "[ -f \"" + outHtml + "\" ] && echo 'HTML: SUCCESS' >> \"" + logPath + "\" || echo 'HTML: FAILED' >> \"" + logPath + "\"\n";
-                }
-
-                // ZIP
-                if (options.zip) {
-                    script += "echo '[4/4] Creating ZIP...' >> \"" + logPath + "\"\n";
-                    var zipFiles = [];
-                    if (options.html) zipFiles.push("\"" + outHtml + "\"");
-                    if (options.webm) zipFiles.push("\"" + outWebM + "\"");
-                    if (options.mov) zipFiles.push("\"" + outMov + "\"");
-                    if (zipFiles.length > 0) {
-                        script += "zip -j \"" + zipPath + "\" " + zipFiles.join(" ") + " 2>> \"" + logPath + "\"\n";
-                        script += "[ -f \"" + zipPath + "\" ] && echo 'ZIP: SUCCESS' >> \"" + logPath + "\" || echo 'ZIP: FAILED' >> \"" + logPath + "\"\n";
-                    }
-                }
-
-                script += "echo '' >> \"" + logPath + "\"\n";
-                script += "echo 'CONVERSION_COMPLETE' >> \"" + logPath + "\"\n";
-            }
-
-            // Write script file
-            scriptFile.encoding = "UTF-8";
-            scriptFile.lineFeed = isWin ? "Windows" : "Unix"; // FIX: Proper line endings
-            scriptFile.open("w");
-            scriptFile.write(script);
-            scriptFile.close();
-
-            // Make executable on Mac
-            if (!isWin) {
-                system.callSystem("chmod +x \"" + scriptPath + "\"");
-            }
-
-            writeLog("Running conversion script: " + scriptPath, "INFO");
-
-            // Execute script (SINGLE blocking call)
-            var execCmd = "";
-
-            if (isWin) {
-                execCmd = "cmd /c \"" + scriptPath + "\"";
-                system.callSystem(execCmd);
-            } else {
-                // macOS FINAL STRATEGY: AppleScript 'do shell script'
-                // This is the "Nuclear Option" for handling spaces in paths.
-                // It completely bypasses ExtendScript's confusing shell escaping.
-
-                // Construct the path with escaped double quotes
-                var safePath = scriptPath.replace(/"/g, '\\"');
-
-                // Usage: osascript -e 'do shell script "/bin/bash \"/path/to/script.sh\""'
-                execCmd = 'osascript -e \'do shell script "/bin/bash \\"' + safePath + '\\""\'';
-
-                system.callSystem(execCmd);
-            }
-
-            // Small delay to ensure log file is written
-            $.sleep(2000); // Give it a good moment
-
-            // Verify Execution
-            logFile = new File(logPath); // Re-init file obj to be sure
-            if (!logFile.exists) {
-                alert("Script Execution Failed!\n\nCould not run the conversion script.\n\nCommand attempted:\n" + execCmd);
-                return;
-            }
-
-            // Small delay to ensure log file is written
-            $.sleep(500);
-
-            // Read results from log file
-            var successCount = 0;
-            var failedItems = [];
-
-            if (logFile.exists) {
-                logFile.open("r");
-                var logContent = logFile.read();
-                logFile.close();
-
-                if (logContent.indexOf("WebM: SUCCESS") !== -1) successCount++;
-                else if (options.webm) failedItems.push("WebM");
-
-                if (logContent.indexOf("MOV: SUCCESS") !== -1) successCount++;
-                else if (options.mov) failedItems.push("MOV");
-
-                if (logContent.indexOf("HTML: SUCCESS") !== -1) successCount++;
-                else if (options.html) failedItems.push("HTML");
-
-                if (logContent.indexOf("ZIP: SUCCESS") !== -1) successCount++;
-                else if (options.zip) failedItems.push("ZIP");
-            }
-
-            // Build result message
-            var resultMsg = "═══════════════════════════════\n";
-            resultMsg += "   POST-RENDER COMPLETE\n";
-            resultMsg += "═══════════════════════════════\n\n";
-
-            if (successCount > 0) {
-                resultMsg += "✓ " + successCount + " conversion(s) successful\n";
-            }
-            if (failedItems.length > 0) {
-                resultMsg += "✗ Failed: " + failedItems.join(", ") + "\n";
-
-                // Append Error Log for Debugging
-                if (logFile.exists) {
-                    logFile.open("r");
-                    var fullLog = logFile.read();
-                    logFile.close();
-                    // Get last 500 characters or split lines
-                    var lines = fullLog.split(/\r\n|\r|\n/);
-                    var lastLines = lines.slice(Math.max(lines.length - 12, 0)).join("\n");
-                    resultMsg += "\n--- ERROR LOG (Last 10 lines) ---\n" + lastLines + "\n";
-                }
-            }
-
-            // List output files with sizes
-            resultMsg += "\nOutput Files:\n";
-
-            var fWebM = new File(outWebM);
-            var fMov = new File(outMov);
-            var fHtml = new File(outHtml);
-            var fZip = new File(zipPath);
-
-            if (fWebM.exists) resultMsg += "  • output.webm (" + Math.round(fWebM.length / 1024) + " KB)\n";
-            if (fMov.exists) resultMsg += "  • output.mov (" + Math.round(fMov.length / 1024) + " KB)\n";
-            if (fHtml.exists) resultMsg += "  • output.html (" + Math.round(fHtml.length / 1024) + " KB)\n";
-            if (fZip.exists) resultMsg += "  • " + baseName + "_Optimized.zip (" + Math.round(fZip.length / 1024) + " KB)\n";
-
-            resultMsg += "\nFolder: " + outFolder.fsName;
-
-            // Cleanup script file (keep log for debugging)
-            try { scriptFile.remove(); } catch (e) { }
-
-            writeLog("Conversion complete: " + successCount + " successful, " + failedItems.length + " failed", "INFO");
-
-            // Show results
-            alert(resultMsg);
-
+            var htmlFile = new File(outHtml);
+            htmlFile.encoding = "UTF-8";
+            htmlFile.open("w");
+            htmlFile.write(htmlContent);
+            htmlFile.close();
         }
 
-        buildUI(thisObj);
+        var scriptFile = new File(scriptPath);
+        var logFile = new File(logPath);
+        if (logFile.exists) logFile.remove();
 
-    }) (this);
+        var script = "";
+        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
+        var pattern = seq.fileObj.parent.fsName + (isWin ? "\\" : "/") + seq.prefix + (isWin ? "%%0" : "%0") + seq.padding + "d.png";
+        var fps = dims.fps;
+
+        // Zip Path
+        var zipPath = outFolder.fsName + (isWin ? "\\" : "/") + seq.prefix.replace(/_+$/, "") + "_Optimized.zip";
+
+        // =================================================================================
+        // 2. CONVERSION COMMANDS (Improved CRF)
+        // =================================================================================
+        if (isWin) {
+            script += "@echo off\r\n";
+            script += "chcp 65001 >NUL\r\n";
+            script += "echo Starting conversion... > \"" + logPath + "\"\r\n";
+
+            if (options.webm) {
+                script += "echo [1/3] Converting to WebM (High Quality)... >> \"" + logPath + "\"\r\n";
+                // CRF 24 = Better Quality
+                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
+                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
+                script += "if exist \"" + outWebM + "\" (echo WebM: SUCCESS >> \"" + logPath + "\") else (echo WebM: FAILED >> \"" + logPath + "\")\r\n";
+                script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
+            }
+
+            if (options.mov) {
+                script += "echo [2/3] Converting to MOV (High Quality)... >> \"" + logPath + "\"\r\n";
+                // CRF 24 = Better Quality
+                var cmdHevc = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx265 -pix_fmt yuva444p10le -x265-params alpha=1 -crf 24 -preset slow -tag:v hvc1 \"" + outMov + "\" 2>> \"" + logPath + "\"";
+                var cmdH264 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx264 -pix_fmt yuv420p -crf 18 -preset slow \"" + outMov + "\" 2>> \"" + logPath + "\"";
+                script += "(" + cmdHevc + ") || (echo HEVC_FAILED_TRYING_H264 >> \"" + logPath + "\" && " + cmdH264 + ")\r\n";
+                script += "if exist \"" + outMov + "\" (echo MOV: SUCCESS >> \"" + logPath + "\") else (echo MOV: FAILED >> \"" + logPath + "\")\r\n";
+            }
+
+            // HTML is already written, no embedding step needed
+
+            if (options.zip) {
+                script += "echo [4/4] Creating ZIP... >> \"" + logPath + "\"\r\n";
+                var files = [];
+                if (options.html) files.push("'" + outHtml + "'");
+                if (options.webm) files.push("'" + outWebM + "'");
+                if (options.mov) files.push("'" + outMov + "'");
+
+                if (files.length > 0) {
+                    script += "powershell -Command \"Compress-Archive -Path " + files.join(",") + " -DestinationPath '" + zipPath + "' -Force\" 2>> \"" + logPath + "\"\r\n";
+                    script += "if exist \"" + zipPath + "\" (echo ZIP: SUCCESS >> \"" + logPath + "\") else (echo ZIP: FAILED >> \"" + logPath + "\")\r\n";
+                }
+            }
+            script += "echo CONVERSION_COMPLETE >> \"" + logPath + "\"\r\n";
+
+        } else {
+            // MACOS
+            script += "#!/bin/bash\n";
+            script += "echo 'Starting conversion...' > \"" + logPath + "\"\n";
+
+            if (options.webm) {
+                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
+                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
+                script += "[ -f \"" + outWebM + "\" ] && echo 'WebM: SUCCESS' >> \"" + logPath + "\" || echo 'WebM: FAILED' >> \"" + logPath + "\"\n";
+                script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
+            }
+
+            if (options.mov) {
+                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx265 -pix_fmt yuva444p10le -x265-params alpha=1 -crf 24 -preset slow -tag:v hvc1 \"" + outMov + "\" 2>> \"" + logPath + "\"\n";
+                script += "[ -f \"" + outMov + "\" ] && echo 'MOV: SUCCESS' >> \"" + logPath + "\" || echo 'MOV: FAILED' >> \"" + logPath + "\"\n";
+            }
+
+            // HTML is already written
+
+            if (options.zip) {
+                script += "echo '[4/4] Zip...' >> \"" + logPath + "\"\n";
+                var zipFiles = [];
+                if (options.html) zipFiles.push("\"" + outHtml + "\"");
+                if (options.webm) zipFiles.push("\"" + outWebM + "\"");
+                if (options.mov) zipFiles.push("\"" + outMov + "\"");
+                if (zipFiles.length > 0) {
+                    script += "zip -j \"" + zipPath + "\" " + zipFiles.join(" ") + " 2>> \"" + logPath + "\"\n";
+                    script += "[ -f \"" + zipPath + "\" ] && echo 'ZIP: SUCCESS' >> \"" + logPath + "\" || echo 'ZIP: FAILED' >> \"" + logPath + "\"\n";
+                }
+            }
+            script += "echo 'CONVERSION_COMPLETE' >> \"" + logPath + "\"\n";
+        }
+
+        // Write Script File
+        scriptFile.encoding = "UTF-8";
+        scriptFile.lineFeed = isWin ? "Windows" : "Unix";
+        scriptFile.open("w");
+        scriptFile.write(script);
+        scriptFile.close();
+
+        // Execute
+        if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
+        writeLog("Running conversion script: " + scriptPath, "INFO");
+
+        var execCmd = isWin ? "cmd /c \"" + scriptPath + "\"" : "bash \"" + scriptPath + "\"";
+        if (!isWin) {
+            var safePath = scriptPath.replace(/"/g, '\\"');
+            execCmd = 'osascript -e \'do shell script "/bin/bash \\"' + safePath + '\\""\'';
+        }
+
+        system.callSystem(execCmd);
+        $.sleep(2000); // 2 seconds delay
+
+        // Check Success
+        var successCount = 0;
+        var failedItems = [];
+        if (logFile.exists) {
+            logFile.open("r");
+            var logContent = logFile.read();
+            logFile.close();
+            if (logContent.indexOf("WebM: SUCCESS") !== -1) successCount++;
+            if (logContent.indexOf("MOV: SUCCESS") !== -1) successCount++;
+            if (options.html && new File(outHtml).exists) successCount++;
+            if (logContent.indexOf("ZIP: SUCCESS") !== -1) successCount++;
+        }
+
+        var resultMsg = "═══════════════════════════════\n   POST-RENDER COMPLETE\n═══════════════════════════════\n\n";
+        resultMsg += (successCount > 0 ? "✓ " + successCount + " successful\n" : "") + (failedItems.length > 0 ? "✗ Failed: " + failedItems.join(", ") : "");
+
+        // Detailed file listing
+        resultMsg += "\nOutput Files:\n";
+        var fWebM = new File(outWebM);
+        var fMov = new File(outMov);
+        var fHtml = new File(outHtml);
+        var fZip = new File(zipPath);
+
+        if (fWebM.exists) resultMsg += " • output.webm (" + Math.round(fWebM.length / 1024) + " KB)\n";
+        if (fMov.exists) resultMsg += " • output.mov (" + Math.round(fMov.length / 1024) + " KB)\n";
+        if (fHtml.exists) resultMsg += " • index.html (" + Math.round(fHtml.length / 1024) + " KB)\n";
+        if (fZip.exists) resultMsg += " • " + new File(zipPath).name + " (" + Math.round(fZip.length / 1024) + " KB)\n";
+
+        resultMsg += "\nLocation: " + outFolder.fsName;
+
+        try { scriptFile.remove(); } catch (e) { }
+        alert(resultMsg);
+
+    }
+
+    buildUI(thisObj);
+
+})(this);
 
 /*
 ================================================================================
