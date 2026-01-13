@@ -2401,6 +2401,10 @@
             ui.btns.saveAs.preferredSize.height = 35;
             try { ui.btns.saveAs.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
 
+            ui.btns.importBtn = btnGroup.add("button", undefined, "IMPORT");
+            ui.btns.importBtn.preferredSize.height = 35;
+            ui.btns.importBtn.helpTip = "Import and standardize an existing .aep file";
+
             ui.btns.quickDup = btnGroup.add("button", undefined, "R+");
             ui.btns.quickDup.preferredSize.height = 35;
             ui.btns.quickDup.preferredSize.width = 40;
@@ -2412,7 +2416,6 @@
             ui.labels.status.alignment = ["center", "top"];
             try { ui.labels.status.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
             setTextColor(ui.labels.status, [0.5, 0.5, 0.5]);
-            // Template management buttons moved to Settings
         }
 
         function createRenderSection() {
@@ -2532,9 +2535,7 @@
             ui.inputs.revision.text = String(foundR);
             ui.updatePreview();
 
-            // SMART VERSIONING: Check if higher versions exist
-            // Navigate up from AE_File -> V# -> SizeFolder
-            // aeFolder is .../V#/AE_File
+            // SMART VERSIONING
             var folderObj = new Folder(aeFolder);
             var sizeFolderObj = (folderObj.parent) ? folderObj.parent.parent : null;
 
@@ -2551,7 +2552,196 @@
             }
         };
 
+        // --- NEW: IMPORT WORKFLOW ---
 
+        function collectAssets(targetFolder) {
+            try {
+                var footageFolder = new Folder(joinPath(targetFolder.fsName, "(Footage)"));
+                if (!footageFolder.exists) footageFolder.create();
+
+                var items = app.project.items;
+                var count = 0;
+
+                for (var i = 1; i <= items.length; i++) {
+                    var item = items[i];
+                    if (item instanceof FootageItem && item.file && item.mainSource && !(item.mainSource instanceof SolidSource)) {
+                        var sourceFile = item.file;
+                        if (sourceFile.exists) {
+                            var destName = sanitizeName(sourceFile.name);
+                            var destPath = joinPath(footageFolder.fsName, destName);
+                            var destFile = new File(destPath);
+
+                            // Prevent overwriting if multiple files have same name (append index)
+                            var dupIdx = 1;
+                            while (destFile.exists && destFile.length !== sourceFile.length) { // Simple overlap check
+                                var parts = destName.split(".");
+                                var ext = parts.pop();
+                                var base = parts.join(".");
+                                destFile = new File(joinPath(footageFolder.fsName, base + "_" + dupIdx + "." + ext));
+                                dupIdx++;
+                            }
+
+                            if (!destFile.exists) {
+                                sourceFile.copy(destFile);
+                            }
+
+                            // Relink
+                            item.replace(destFile);
+                            count++;
+                        }
+                    }
+                }
+                return count;
+            } catch (e) {
+                writeLog("Asset collection failed: " + e.toString(), "ERROR");
+                return 0;
+            }
+        }
+
+        function showMetadataDialog(dims) {
+            var dlg = new Window("dialog", "Standardize Project Details");
+            dlg.orientation = "column";
+            dlg.alignChildren = ["fill", "top"];
+            dlg.spacing = 10;
+            dlg.margins = 20;
+
+            var info = dlg.add("statictext", undefined, "File dimensions: " + dims.width + "x" + dims.height);
+            info.alignment = ["center", "top"];
+
+            // Inputs
+            var grp = dlg.add("group"); grp.orientation = "column"; grp.alignChildren = ["fill", "top"];
+            var bRow = grp.add("group"); bRow.add("statictext", undefined, "Brand (Req):").preferredSize.width = 90;
+            var dBrand = bRow.add("edittext", undefined, ""); dBrand.preferredSize.width = 200;
+
+            var cRow = grp.add("group"); cRow.add("statictext", undefined, "Campaign:").preferredSize.width = 90;
+            var dCamp = cRow.add("edittext", undefined, ""); dCamp.preferredSize.width = 200;
+
+            var qRow = grp.add("group"); qRow.add("statictext", undefined, "Quarter:").preferredSize.width = 90;
+            var dQuart = qRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+            dQuart.selection = getCurrentQuarter();
+
+            var yRow = grp.add("group"); yRow.add("statictext", undefined, "Year:").preferredSize.width = 90;
+            var curY = getCurrentYear();
+            var dYear = yRow.add("dropdownlist", undefined, [String(curY - 1), String(curY), String(curY + 1)]);
+            dYear.selection = 1;
+
+            var vRow = grp.add("group"); vRow.add("statictext", undefined, "Version:").preferredSize.width = 90;
+            var dVer = vRow.add("edittext", undefined, "1"); dVer.preferredSize.width = 50;
+
+            // Buttons
+            var btnRow = dlg.add("group"); btnRow.alignment = ["center", "bottom"];
+            var okBtn = btnRow.add("button", undefined, "OK", { name: "ok" });
+            var cancelBtn = btnRow.add("button", undefined, "Cancel", { name: "cancel" });
+
+            okBtn.onClick = function () {
+                if (!dBrand.text || dBrand.text.length < 2) {
+                    alert("Brand name is required.");
+                    return;
+                }
+                dlg.close(1);
+            };
+            cancelBtn.onClick = function () { dlg.close(0); };
+
+            if (dlg.show() === 1) {
+                return {
+                    brand: sanitizeName(dBrand.text),
+                    campaign: sanitizeName(dCamp.text),
+                    quarter: dQuart.selection.text,
+                    year: dYear.selection.text,
+                    version: "V" + (parseInt(dVer.text) || 1),
+                    revision: "R1"
+                };
+            }
+            return null;
+        }
+
+        ui.importProject = function () {
+            var file = File.openDialog("Select .aep file to import", "*.aep");
+            if (!file) return;
+
+            // 1. Open
+            if (app.project && app.project.numItems > 0 && !app.project.saved) {
+                // If dirty, just let user decide via app (or simpler: assume they want to proceed)
+                // For safety, force close warning if needed, but app.open usually prompts
+            }
+            app.open(file);
+
+            // 2. Detect
+            var mainComp = findMainComp();
+            if (!mainComp) {
+                showError("BH-3001");
+                return;
+            }
+
+            var width = mainComp.width;
+            var height = mainComp.height;
+            var templateType = getTemplateType(width, height);
+            var templateFolderName = getTemplateFolderName(width, height);
+            var sizeStr = templateFolderName + "_" + width + "x" + height;
+            var sizeForFilename = width + "x" + height;
+
+            // 3. Parse Metadata
+            var oldName = file.name.replace(/\.aep$/i, "");
+            var parsed = parseProjectName(oldName);
+            var meta = null;
+
+            if (parsed && parsed.brand) {
+                meta = {
+                    brand: parsed.isDOOH ? "DOOH" : parsed.brand,
+                    campaign: parsed.campaign || "",
+                    quarter: parsed.quarter || "Q" + (getCurrentQuarter() + 1), // Default if missing
+                    year: String(getCurrentYear()), // Filename doesn't usually track year, assume current
+                    version: parsed.version || "V1",
+                    revision: parsed.revision || "R1"
+                };
+            } else {
+                // Dialog
+                meta = showMetadataDialog({ width: width, height: height });
+            }
+
+            if (!meta) return; // Cancelled
+
+            // 4. Structure & Save
+            var basePath = getBaseWorkFolder();
+            var projectName = buildProjectFolderName(meta.brand, meta.campaign);
+            var folders = createProjectStructure(basePath, meta.year, meta.quarter, projectName, sizeStr, meta.revision, templateType, meta.version);
+
+            if (!folders) return;
+
+            // 5. Smart Collect Assets
+            // We want assets next to the AE file in a (Footage) folder
+            // folders.aeFolder is the folder where the .aep will live
+            var collectedCount = collectAssets(new Folder(folders.aeFolder));
+
+            var isDOOH = (templateType.indexOf("dooh") !== -1 || meta.brand === "DOOH");
+
+            // Auto-Bump Revision Check
+            var finalVer = meta.version;
+            var finalRev = meta.revision;
+            var stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
+            var savePath = joinPath(folders.aeFolder, stdName);
+
+            // If exists, bump R until safe
+            var safeR = parseInt(finalRev.replace(/^R/, "")) || 1;
+            while (fileExists(savePath) && safeR < 50) {
+                safeR++;
+                finalRev = "R" + safeR;
+                stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
+                savePath = joinPath(folders.aeFolder, stdName);
+            }
+
+            app.project.save(new File(savePath));
+            addToRecentFiles(savePath);
+
+            // Update UI to reflect new file
+            ui.inputs.brand.text = meta.brand;
+            ui.inputs.campaign.text = meta.campaign;
+            // Trigger UI update
+            ui.checkRevision();
+
+            writeLog("Imported & Standardized: " + file.fsName + " -> " + savePath + " (Assets: " + collectedCount + ")", "INFO");
+            alert("Import Successful!\n\nStandardized: " + stdName + "\nAssets Collected: " + collectedCount + "\n\nLocation:\n" + savePath);
+        };
 
         // --- EXECUTE BUILD ---
         createHeader();
@@ -2564,6 +2754,11 @@
         // Init
         ui.refreshDropdown();
         bindEvents(ui);
+
+        // Bind Import
+        if (ui.btns.importBtn) {
+            ui.btns.importBtn.onClick = ui.importProject;
+        }
 
         // Auto-detect project logic
         if (app.project && app.project.file) {
