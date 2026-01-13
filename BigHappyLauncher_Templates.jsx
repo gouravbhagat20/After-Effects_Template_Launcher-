@@ -2133,7 +2133,7 @@
 
         // FIX: Run conversion AFTER dialog is fully closed
         if (shouldStart) {
-            runConversionV2(outFolder, seq, options, dims);
+            runConversion(outFolder, seq, options, dims);
         }
     }
 
@@ -2560,9 +2560,26 @@
                 if (!footageFolder.exists) footageFolder.create();
 
                 var items = app.project.items;
+                var totalItems = items.length;
                 var count = 0;
 
+                // Simple Progress UI
+                var w = new Window("palette", "Importing Project...", undefined, { closeButton: false });
+                w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.margins = 15; w.spacing = 10;
+                w.add("statictext", undefined, "Collecting and unifying assets...");
+                var pb = w.add("progressbar", [0, 0, 300, 15], 0, totalItems);
+                var lbl = w.add("statictext", undefined, "Scanning...");
+                lbl.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10);
+                w.center(); w.show(); w.update();
+
                 for (var i = 1; i <= items.length; i++) {
+                    // Update Progress
+                    if (i % 5 === 0) { // Throttle updates
+                        pb.value = i;
+                        lbl.text = "Item " + i + " of " + totalItems;
+                        w.update();
+                    }
+
                     var item = items[i];
                     if (item instanceof FootageItem && item.file && item.mainSource && !(item.mainSource instanceof SolidSource)) {
                         var sourceFile = item.file;
@@ -2591,8 +2608,10 @@
                         }
                     }
                 }
+                w.close();
                 return count;
             } catch (e) {
+                if (w) w.close();
                 writeLog("Asset collection failed: " + e.toString(), "ERROR");
                 return 0;
             }
@@ -2853,7 +2872,11 @@
      * Run post-render conversion via external shell script
      * This prevents crashes by using a single system.callSystem() call
      */
-    function runConversionV2(outFolder, seq, options, dims) {
+    /**
+     * Run post-render conversion via external shell script
+     * This prevents crashes by using a single system.callSystem() call
+     */
+    function runConversion(outFolder, seq, options, dims) {
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var isWin = ($.os.indexOf("Windows") !== -1);
 
