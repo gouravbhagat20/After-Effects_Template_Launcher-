@@ -412,8 +412,27 @@
 
         if (!text || text.length === 0) return { isValid: false, msg: "Required" };
 
-        if (text.length > CONFIG.LIMITS.BRAND_MAX && type === "brand") return { isValid: false, msg: "Too long (>" + CONFIG.LIMITS.BRAND_MAX + ")" };
-        if (text.length > CONFIG.LIMITS.CAMPAIGN_MAX && type === "campaign") return { isValid: false, msg: "Too long (>" + CONFIG.LIMITS.CAMPAIGN_MAX + ")" };
+        if (type === "brand") {
+            if (text.length < CONFIG.LIMITS.BRAND_MIN) return { isValid: false, msg: "Too short (<" + CONFIG.LIMITS.BRAND_MIN + ")" };
+            if (text.length > CONFIG.LIMITS.BRAND_MAX) return { isValid: false, msg: "Too long (>" + CONFIG.LIMITS.BRAND_MAX + ")" };
+        }
+
+        if (type === "campaign") {
+            if (text.length > CONFIG.LIMITS.CAMPAIGN_MAX) return { isValid: false, msg: "Too long (>" + CONFIG.LIMITS.CAMPAIGN_MAX + ")" };
+        }
+
+        // Fix: Add Numeric Validations
+        if (type === "width" || type === "height" || type === "fps") {
+            var num = parseFloat(text);
+            if (isNaN(num)) return { isValid: false, msg: "Not a number" };
+            if (num <= 0) return { isValid: false, msg: "Must be positive" };
+
+            if (type === "width" && (num < CONFIG.LIMITS.WIDTH_MIN || num > CONFIG.LIMITS.WIDTH_MAX)) return { isValid: false, msg: "Width out of range" };
+            if (type === "height" && (num < CONFIG.LIMITS.HEIGHT_MIN || num > CONFIG.LIMITS.HEIGHT_MAX)) return { isValid: false, msg: "Height out of range" };
+            if (type === "fps" && (num < CONFIG.LIMITS.FPS_MIN || num > CONFIG.LIMITS.FPS_MAX)) return { isValid: false, msg: "FPS out of range" };
+
+            return { isValid: true, msg: "OK" };
+        }
 
         var illegal = text.match(/[^a-zA-Z0-9_\-\s]/);
         if (illegal) return { isValid: false, msg: "Illegal char: '" + illegal[0] + "'" };
@@ -618,7 +637,9 @@
     function parseProjectName(projectName) {
         if (!projectName) return null;
 
-        var result = {};
+        var result = {
+            quarter: null // Initialize to null to match tests/expectations
+        };
         var remaining = projectName;
 
         // Step 1: Extract optional V# and required R# from end
@@ -698,7 +719,7 @@
 
         var passed = 0;
         var failed = 0;
-        var log = "Running Unit Tests...\n\n";
+        var log = "Running Unit Tests (v2.1)...\n\n";
 
         for (var i = 0; i < tests.length; i++) {
             var t = tests[i];
@@ -728,6 +749,82 @@
         }
 
         alert(log + "\nTotal: " + tests.length + " | Passed: " + passed + " | Failed: " + failed);
+    }
+
+    // ===================================
+    // TEST 2: COMPREHENSIVE SYSTEM CHECK
+    // ===================================
+    function runStressTests() {
+        var log = "Running Comprehensive System Check...\n";
+        var passed = 0;
+        var failed = 0;
+
+        function runTest(name, result) {
+            if (result) {
+                passed++;
+            } else {
+                failed++;
+                log += "[FAIL] " + name + "\n";
+            }
+        }
+
+        // --- 1. Sanitization Logic ---
+        runTest("Sanitize: Basic", sanitizeName("Hello World") === "Hello_World");
+        runTest("Sanitize: Illegal Chars", sanitizeName("A/B\\C:D*E?F\"G<H>I|J") === "ABCDEFGHIJ");
+        runTest("Sanitize: Reserved Windows", sanitizeName("CON") === "CON_");
+        runTest("Sanitize: Reserved (Lower)", sanitizeName("prn") === "prn_");
+        runTest("Sanitize: Trim & Collapse", sanitizeName("   A   B   ") === "A_B");
+        runTest("Sanitize: Empty", sanitizeName("") === "");
+        runTest("Sanitize: Null", sanitizeName(null) === "");
+
+        // --- 2. Validation Logic ---
+        runTest("Valid: Brand OK", validateInput("Nike", "brand").isValid === true);
+        runTest("Valid: Brand Short", validateInput("A", "brand").isValid === false);
+        runTest("Valid: Brand Long", validateInput(new Array(52).join("A"), "brand").isValid === false);
+        runTest("Valid: Width OK", validateInput("1920", "width").isValid === true);
+        runTest("Valid: Width Text", validateInput("abc", "width").isValid === false);
+        runTest("Valid: Width Neg", validateInput("-100", "width").isValid === false);
+        runTest("Valid: FPS OK", validateInput("24", "fps").isValid === true);
+        runTest("Valid: FPS Huge", validateInput("999", "fps").isValid === false);
+
+        // --- 3. Path Logic ---
+        var s = SEP;
+        runTest("Path: Join Basic", joinPath("Video", "File.mov") === "Video" + s + "File.mov");
+        runTest("Path: Join Empty A", joinPath("", "File.mov") === "File.mov");
+        runTest("Path: Join Empty B", joinPath("Folder", "") === "Folder");
+        runTest("Path: Join Slash Fix", joinPath("A/", "/B").replace(/\\/g, "/") === "A/B"); // Normalize for test
+
+        // --- 4. Project Parsing (Edge Cases) ---
+        var p1 = parseProjectName("Brand_Camp_100x100_V1_R1");
+        runTest("Parse: Standard", p1 && p1.brand === "Brand" && p1.size === "100x100");
+
+        var p2 = parseProjectName("JustBrand_1920x1080_V2_R5");
+        runTest("Parse: No Campaign", p2 && p2.brand === "JustBrand" && p2.campaign === "");
+
+        var p3 = parseProjectName("DOOH_Huge_Campaign_1080x1920_R99");
+        runTest("Parse: DOOH (No Q)", p3 && p3.isDOOH === true && p3.version === "V1");
+
+        var p4 = parseProjectName("Bad_Format_File");
+        runTest("Parse: Invalid", p4 === null);
+
+        // --- 5. JSON Safety ---
+        runTest("JSON: Valid", jsonParse('{"a":1}', null).a === 1);
+        runTest("JSON: Malformed", jsonParse('{a:1', "fail") === "fail");
+        runTest("JSON: Injection", jsonParse('(function(){return 1})()', "safe") === "safe");
+
+        var total = passed + failed;
+        var resultMsg = "COMPREHENSIVE CHECK COMPLETED\n\n";
+        resultMsg += "Total Tests: " + total + "\n";
+        resultMsg += "PASSED: " + passed + "\n";
+        resultMsg += "FAILED: " + failed + "\n\n";
+
+        if (failed > 0) {
+            resultMsg += "Failures Details:\n" + log;
+        } else {
+            resultMsg += "ALL SYSTEMS GO. Logic is robust.";
+        }
+
+        alert(resultMsg);
     }
 
     // =========================================================================
@@ -2306,10 +2403,16 @@
             var ver = titleGrp.add("statictext", undefined, "v" + CONFIG.VERSION);
             try { ver.graphics.foregroundColor = ver.graphics.newPen(ver.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
 
-            // DEBUG TRIGGER: Alt+Click title to run unit tests
-            title.addEventListener("click", function (e) {
-                if (e.altKey) {
+            // Hidden Unit Tests trigger (Alt+Click / Shift+Click on Title)
+            title.addEventListener("click", function (k) {
+                // Check modifier keys using event object if available, or environment fallback
+                var isAlt = (k.altKey) || (ScriptUI.environment.keyboardState.altKey);
+                var isShift = (k.shiftKey) || (ScriptUI.environment.keyboardState.shiftKey);
+
+                if (isAlt) {
                     runUnitTests();
+                } else if (isShift) {
+                    runStressTests();
                 }
             });
 
@@ -2846,13 +2949,23 @@
 
                 if (parsed && parsed.brand) {
                     if (mainComp) {
-                        var type = getTemplateType(mainComp.width, mainComp.height);
+                        var found = false;
+                        // FIX: Dynamic Auto-Detect - Match ANY template by dimensions
                         for (var i = 0; i < ui.templates.length; i++) {
                             var t = ui.templates[i];
-                            if (type === "sunrise" && t.width === 750 && t.height === 300) { ui.dropdowns.template.selection = i; break; }
-                            if (type === "interscroller" && t.width === 880 && t.height === 1912) { ui.dropdowns.template.selection = i; break; }
-                            if (type.indexOf("dooh") !== -1 && t.width === 1920 && t.height === 1080 && mainComp.width === 1920) { ui.dropdowns.template.selection = i; break; }
-                            if (type.indexOf("dooh") !== -1 && t.width === 1080 && t.height === 1920 && mainComp.width === 1080) { ui.dropdowns.template.selection = i; break; }
+                            if (t.width === mainComp.width && t.height === mainComp.height) {
+                                ui.dropdowns.template.selection = i;
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        // Fallback for DOOH if exact match failed (e.g. if template list is empty or mismatch)
+                        if (!found) {
+                            var type = getTemplateType(mainComp.width, mainComp.height);
+                            if (type.indexOf("dooh") !== -1) {
+                                // Try to find a generic DOOH template or just leave selection alone
+                            }
                         }
                     }
 
