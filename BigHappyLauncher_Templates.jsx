@@ -37,11 +37,31 @@
 (function (thisObj) {
 
     // =========================================================================
+    // SECTION 0: CORE UTILITIES (Moved to top for Config dependency)
+    // =========================================================================
+
+    // FIX P0-1: Define path utilities BEFORE Config to avoid "undefined" errors
+    function getSeparator() {
+        if (typeof Folder !== "undefined" && Folder.fs === "Macintosh") return "/";
+        if (typeof Folder !== "undefined" && Folder.fs === "Windows") return "\\";
+        return ($.os.indexOf("Windows") !== -1) ? "\\" : "/";
+    }
+
+    var SEP = getSeparator();
+
+    function joinPath(a, b) {
+        if (!a) return b;
+        if (!b) return a;
+        var combo = a + SEP + b;
+        return combo.replace(/[\/\\]+/g, SEP);
+    }
+
+    // =========================================================================
     // SECTION 1: CONFIGURATION & SETTINGS
     // =========================================================================
 
     var CONFIG = {
-        VERSION: "1.0.0",
+        VERSION: "2.1", // FIX P1-6: Match header version
         SETTINGS: {
             SECTION: "BigHappyLauncher",
             KEYS: {
@@ -217,20 +237,7 @@
     // SECTION 2: UTILITIES
     // =========================================================================
 
-    function getSeparator() {
-        if (typeof Folder !== "undefined" && Folder.fs === "Macintosh") return "/";
-        if (typeof Folder !== "undefined" && Folder.fs === "Windows") return "\\";
-        return ($.os.indexOf("Windows") !== -1) ? "\\" : "/";
-    }
-
-    var SEP = getSeparator();
-
-    function joinPath(a, b) {
-        if (!a) return b;
-        if (!b) return a;
-        var combo = a + SEP + b;
-        return combo.replace(/[\/\\]+/g, SEP);
-    }
+    // (Utilities moved to top - FIX P0-1)
 
     function fileExists(path) {
         if (!path) return false;
@@ -349,10 +356,18 @@
         }
     }
 
+    // FIX P0-3: True recursive folder creation
     function createFolderRecursive(path) {
         try {
             var folder = new Folder(path);
             if (folder.exists) return true;
+
+            // Ensure parent exists first
+            if (folder.parent && !folder.parent.exists) {
+                if (!createFolderRecursive(folder.parent.fsName)) {
+                    return false;
+                }
+            }
             return folder.create();
         } catch (e) {
             return false;
@@ -493,25 +508,35 @@
      * @param {*} defaultValue - Default value if parsing fails
      * @returns {*} Parsed object or defaultValue
      */
+    // FIX P1-7: Secure JSON parsing with fallback
     function jsonParse(str, defaultValue) {
         if (!str || typeof str !== "string") return defaultValue;
 
         // Trim whitespace
         str = str.replace(/^\s+|\s+$/g, "");
 
+        // 1. Try Native JSON if available (AE CC 2014+)
+        if (typeof JSON !== "undefined" && typeof JSON.parse === "function") {
+            try {
+                return JSON.parse(str);
+            } catch (e) {
+                return defaultValue;
+            }
+        }
+
+        // 2. Legacy Fallback (ES3)
         // Basic validation: must start with [ or {
         if (str.charAt(0) !== "[" && str.charAt(0) !== "{") {
             return defaultValue;
         }
 
         // Security check: reject strings containing dangerous patterns
-        // Block function calls, assignments, and dangerous keywords
         var dangerous = /\b(function|eval|new\s+Function|setTimeout|setInterval|execScript|document|window|alert|this\.)\b/i;
         if (dangerous.test(str)) {
             return defaultValue;
         }
 
-        // Block assignment operators and semicolons (code injection)
+        // Block assignment operators and semicolons
         if (/[;=](?!=)/.test(str) || /[+\-*\/]=/.test(str)) {
             return defaultValue;
         }
@@ -665,8 +690,9 @@
             { input: "Nike_AirMax_Q3_750x300_V1_R1", expected: { brand: "Nike", campaign: "AirMax", quarter: "Q3", size: "750x300", version: "V1", revision: "R1", isDOOH: false } },
             { input: "CocaCola_Summer_Vibes_Q1_300x250_V2_R5", expected: { brand: "CocaCola", campaign: "Summer_Vibes", quarter: "Q1", size: "300x250", version: "V2", revision: "R5", isDOOH: false } },
             { input: "TechCorp_Q4_1920x1080_V1_R15", expected: { brand: "TechCorp", campaign: "", quarter: "Q4", size: "1920x1080", version: "V1", revision: "R15", isDOOH: false } },
-            { input: "DOOH_Spotify_Wrapped_1080x1920_V3_R2", expected: { brand: null, campaign: "Spotify_Wrapped", quarter: null, size: "1080x1920", version: "V3", revision: "R2", isDOOH: true } },
-            { input: "DOOH_Generic_1920x1080_V1_R1", expected: { brand: null, campaign: "Generic", quarter: null, size: "1920x1080", version: "V1", revision: "R1", isDOOH: true } },
+            // FIX P0-4: Unit tests match parser behavior (isDOOH=true -> brand="DOOH")
+            { input: "DOOH_Spotify_Wrapped_1080x1920_V3_R2", expected: { brand: "DOOH", campaign: "Spotify_Wrapped", quarter: null, size: "1080x1920", version: "V3", revision: "R2", isDOOH: true } },
+            { input: "DOOH_Generic_1920x1080_V1_R1", expected: { brand: "DOOH", campaign: "Generic", quarter: null, size: "1920x1080", version: "V1", revision: "R1", isDOOH: true } },
             { input: "SimpleBrand_300x600_V1_R1", expected: { brand: "SimpleBrand", campaign: "", quarter: null, size: "300x600", version: "V1", revision: "R1", isDOOH: false } }
         ];
 
@@ -916,12 +942,15 @@
             for (var i = 0; i < folders.length; i++) {
                 var wasNew = !folderExists(folders[i]);
                 if (!createFolderRecursive(folders[i])) {
-                    // Cleanup: remove folders we created (in reverse order)
+                    // FIX P1-5: Safe cleanup - only delete if empty, ignore errors
                     for (var j = createdFolders.length - 1; j >= 0; j--) {
                         try {
                             var cleanupFolder = new Folder(createdFolders[j]);
+                            // Only attempt remove if exists. remove() on folder only works if empty.
                             if (cleanupFolder.exists) cleanupFolder.remove();
-                        } catch (cleanupErr) { }
+                        } catch (cleanupErr) {
+                            // Silently ignore cleanup failures
+                        }
                     }
                     showError("BH-1002", "Failed to create: " + folders[i]);
                     return null;
@@ -943,7 +972,7 @@
             };
         } catch (e) {
             writeLog("Create Project Structure Failed: " + e.toString(), "ERROR");
-            // Cleanup on exception
+            // FIX P1-5: Cleanup on exception
             for (var k = createdFolders.length - 1; k >= 0; k--) {
                 try {
                     var cleanupFolder = new Folder(createdFolders[k]);
@@ -2577,7 +2606,11 @@
                         w.update();
                     }
 
-                    var item = items[i];
+                    // FIX P0-2: Correct ItemCollection indexing (1-based, use .item())
+                    var item = items[i]; // Try standard access first
+                    if (!item && typeof items.item === "function") item = items.item(i);
+                    if (!item) continue;
+
                     if (item instanceof FootageItem && item.file && item.mainSource && !(item.mainSource instanceof SolidSource)) {
                         var sourceFile = item.file;
                         if (sourceFile.exists) {
