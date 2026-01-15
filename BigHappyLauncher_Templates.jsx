@@ -1344,59 +1344,43 @@
 
             if (templateType === "sunrise") {
                 try {
-                    // Force PNG Sequence + Alpha with fallbacks for "Color" string format
-                    var baseSettings = {
+                    // Force PNG Sequence + Alpha for Sunrise
+                    var pngSettings = {
                         "Format": "PNG Sequence",
                         "Video Output": {
                             "Channels": "RGB + Alpha",
-                            "Depth": "Millions of Colors+"
+                            "Depth": "Millions of Colors+",
+                            "Color": "Straight (Unmatted)"
                         }
                     };
 
-                    try {
-                        // Try exact match from screenshot
-                        var fullSettings = {
-                            "Format": "PNG Sequence",
-                            "Video Output": {
-                                "Channels": "RGB + Alpha",
-                                "Depth": "Millions of Colors+",
-                                "Color": "Straight (Unmatted)"
-                            }
-                        };
-                        om.setSettings(fullSettings);
-                    } catch (e1) {
-                        try {
-                            // Try simpler "Straight"
-                            var straightSettings = {
-                                "Format": "PNG Sequence",
-                                "Video Output": {
-                                    "Channels": "RGB + Alpha",
-                                    "Depth": "Millions of Colors+",
-                                    "Color": "Straight"
-                                }
-                            };
-                            om.setSettings(straightSettings);
-                        } catch (e2) {
-                            // Fallback to minimal settings (Just Format/Channels/Depth)
-                            try {
-                                om.setSettings(baseSettings);
-                            } catch (e3) {
-                                writeLog("Failed to auto-set Sunrise PNG settings: " + e3.toString(), "WARN");
-                            }
-                        }
+                    // Fallback for older AE versions that might use different key names
+                    try { om.setSettings(pngSettings); }
+                    catch (e1) {
+                        // Try simpler "Straight"
+                        pngSettings["Video Output"]["Color"] = "Straight";
+                        om.setSettings(pngSettings);
                     }
+
                 } catch (e) {
                     writeLog("Failed to auto-set Sunrise PNG settings: " + e.toString(), "WARN");
                 }
-            } else if (templateType === "dooh" || templateType === "interscroller" || templateType.indexOf("dooh") !== -1) {
+            } else if (templateType === "dooh" || templateType === "interscroller" || templateType.indexOf("dooh") !== -1 || templateType.indexOf("dooh_horizontal") !== -1 || templateType.indexOf("dooh_vertical") !== -1) {
                 try {
-                    // Force H.264
+                    // Force H.264 (MP4)
                     var mp4Settings = {
-                        "Format": "H.264"
+                        "Format": "H.264",
+                        "Video Output": {
+                            "Format Options": {
+                                "Profile": "High",
+                                "Level": "5.1",
+                                "Target Bitrate (Mbps)": 15
+                            }
+                        }
                     };
                     om.setSettings(mp4Settings);
                 } catch (e) {
-                    // Fallback to QuickTime if H.264 is unavailable as a direct Format
+                    // Fallback to QuickTime if H.264 is unavailable as a direct Format (older AE)
                     try {
                         om.setSettings({ "Format": "QuickTime" });
                     } catch (err2) { }
@@ -2310,10 +2294,21 @@
         writeLog("Starting BigHappyLauncher UI...", "INFO");
 
         // Scope object to hold UI elements and data
+        var tData = loadTemplates();
+        var tFolder = getTemplatesFolder();
+
+        // [FIX P0] Ensure physical template files exist for defaults
+        if (!folderExists(tFolder)) new Folder(tFolder).create();
+        var check = ensureTemplatesExist(tData, tFolder, false);
+        if (check.generated.length > 0) {
+            tData = check.templates; // Reload with new paths
+            saveTemplates(tData);
+        }
+
         var ui = {
             // Data
-            templates: loadTemplates(),
-            templatesFolder: getTemplatesFolder(),
+            templates: tData,
+            templatesFolder: tFolder,
 
             // Layout Containers
             w: null,      // Main Window/Panel
