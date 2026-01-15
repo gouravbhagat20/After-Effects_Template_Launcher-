@@ -1749,6 +1749,12 @@
 
 
         // Main Actions
+        if (ui.btns.open) {
+            ui.btns.open.onClick = function () {
+                ui.openProject();
+            };
+        }
+
         ui.btns.create.onClick = function () {
             if (!ui.templates.length) { showError("BH-1004"); return; }
             if (!ui.dropdowns.template.selection) return;
@@ -1969,7 +1975,29 @@
             var rqItem = addToRenderQueue(mainComp, outputPath, type);
             if (!rqItem) return;
 
-            alert("Added to Render Queue!");
+            writeLog("Queued render: " + renderName + " [" + type + "] -> " + outputPath, "INFO");
+
+            var useAME = (getSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED, "false") === "true");
+            var notified = false;
+
+            if (useAME) {
+                if (canQueueInAME()) {
+                    if (queueToAME()) {
+                        alert("Sent to Adobe Media Encoder.\nRender started in AME.");
+                        notified = true;
+                    } else {
+                        showWarning("BH-3004");
+                        notified = true;
+                    }
+                } else {
+                    showWarning("BH-3003");
+                    notified = true;
+                }
+            }
+
+            if (!notified) {
+                alert("Added to Render Queue!");
+            }
         };
 
         ui.btns.convert.onClick = function () {
@@ -2339,6 +2367,7 @@
             },
             btns: {
                 create: null,
+                open: null,
                 saveAs: null,
                 render: null,
                 quickDup: null,
@@ -2529,6 +2558,10 @@
             ui.btns.create.preferredSize.height = 35;
             ui.btns.create.preferredSize.width = 100;
             try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+
+            ui.btns.open = btnGroup.add("button", undefined, "OPEN...");
+            ui.btns.open.preferredSize.height = 35;
+            ui.btns.open.helpTip = "Open an existing .aep project";
 
             ui.btns.saveAs = btnGroup.add("button", undefined, "SAVE AS...");
             ui.btns.saveAs.preferredSize.height = 35;
@@ -2853,6 +2886,86 @@
             return null;
         }
 
+        function syncUIFromProject(ui) {
+            try {
+                if (!app.project || !app.project.file) return false;
+
+                var currentName = app.project.file.name.replace(/\.aep$/i, "");
+                var parsed = parseProjectName(currentName);
+                var mainComp = findMainComp();
+
+                if (parsed && parsed.brand) {
+                    if (mainComp && ui.templates && ui.templates.length) {
+                        for (var i = 0; i < ui.templates.length; i++) {
+                            var t = ui.templates[i];
+                            if (t.width === mainComp.width && t.height === mainComp.height) {
+                                ui.dropdowns.template.selection = i;
+                                break;
+                            }
+                        }
+                    }
+
+                    ui.inputs.brand.text = parsed.brand;
+                    if (parsed.campaign) ui.inputs.campaign.text = parsed.campaign;
+                    if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
+                    if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
+
+                    if (parsed.quarter) {
+                        for (var q = 0; q < ui.dropdowns.quarter.items.length; q++) {
+                            if (ui.dropdowns.quarter.items[q].text === parsed.quarter) {
+                                ui.dropdowns.quarter.selection = q;
+                                break;
+                            }
+                        }
+                    }
+                    return true;
+                } else if (parsed && parsed.isDOOH && mainComp) {
+                    var type = getTemplateType(mainComp.width, mainComp.height);
+                    for (var j = 0; j < ui.templates.length; j++) {
+                        var t2 = ui.templates[j];
+                        if (type.indexOf("dooh") !== -1 && mainComp.width === t2.width && mainComp.height === t2.height) {
+                            ui.dropdowns.template.selection = j;
+                            break;
+                        }
+                    }
+
+                    if (parsed.campaign) {
+                        ui.inputs.brand.text = "DOOH";
+                        ui.inputs.campaign.text = parsed.campaign;
+                    }
+                    if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
+                    if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
+                    return true;
+                } else if (mainComp && ui.templates && ui.templates.length) {
+                    for (var k = 0; k < ui.templates.length; k++) {
+                        var t3 = ui.templates[k];
+                        if (t3.width === mainComp.width && t3.height === mainComp.height) {
+                            ui.dropdowns.template.selection = k;
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                writeLog("Auto-detect failed: " + e.toString(), "WARN");
+            }
+            return false;
+        }
+
+        ui.openProject = function () {
+            var file = File.openDialog("Open After Effects Project", "*.aep");
+            if (!file) return;
+
+            try {
+                app.open(file);
+                addToRecentFiles(file.fsName);
+                syncUIFromProject(ui);
+                ui.updateStatus();
+                ui.updatePreview();
+            } catch (e) {
+                showError("BH-2004", e.toString());
+            }
+        };
+
         ui.importProject = function () {
             var file = File.openDialog("Select .aep file to import", "*.aep");
             if (!file) return;
@@ -2961,68 +3074,7 @@
 
         // Auto-detect project logic
         if (app.project && app.project.file) {
-            try {
-                var currentName = app.project.file.name.replace(/\.aep$/i, "");
-                var parsed = parseProjectName(currentName);
-                var mainComp = findMainComp();
-
-                if (parsed && parsed.brand) {
-                    if (mainComp) {
-                        var found = false;
-                        // FIX: Dynamic Auto-Detect - Match ANY template by dimensions
-                        for (var i = 0; i < ui.templates.length; i++) {
-                            var t = ui.templates[i];
-                            if (t.width === mainComp.width && t.height === mainComp.height) {
-                                ui.dropdowns.template.selection = i;
-                                found = true;
-                                break;
-                            }
-                        }
-
-                        // Fallback for DOOH if exact match failed (e.g. if template list is empty or mismatch)
-                        if (!found) {
-                            var type = getTemplateType(mainComp.width, mainComp.height);
-                            if (type.indexOf("dooh") !== -1) {
-                                // Try to find a generic DOOH template or just leave selection alone
-                            }
-                        }
-                    }
-
-                    ui.inputs.brand.text = parsed.brand;
-                    if (parsed.campaign) ui.inputs.campaign.text = parsed.campaign;
-                    if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
-                    if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
-
-                    if (parsed.quarter) {
-                        for (var x = 0; x < ui.dropdowns.quarter.items.length; x++) {
-                            if (ui.dropdowns.quarter.items[x].text === parsed.quarter) {
-                                ui.dropdowns.quarter.selection = x;
-                                break;
-                            }
-                        }
-                    }
-                } else if (parsed && parsed.isDOOH && mainComp) {
-                    // DOOH Auto-Detect Fix
-                    var type = getTemplateType(mainComp.width, mainComp.height);
-                    for (var i = 0; i < ui.templates.length; i++) {
-                        var t = ui.templates[i];
-                        if (type.indexOf("dooh") !== -1) {
-                            // Match dimensions specifically for DOOH
-                            if (mainComp.width === t.width && mainComp.height === t.height) {
-                                ui.dropdowns.template.selection = i;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (parsed.campaign) {
-                        ui.inputs.brand.text = "DOOH"; // Set brand generic
-                        ui.inputs.campaign.text = parsed.campaign; // Set campaign correctly
-                    }
-                    if (parsed.version) ui.inputs.version.text = parsed.version.replace(/^V/i, "");
-                    if (parsed.revision) ui.inputs.revision.text = parsed.revision.replace(/^R/i, "");
-                }
-            } catch (e) { }
+            syncUIFromProject(ui);
         }
         ui.updateStatus();
         ui.updatePreview();
