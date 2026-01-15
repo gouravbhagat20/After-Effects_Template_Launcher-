@@ -1652,10 +1652,22 @@
         };
 
         regenBtn.onClick = function () {
-            if (!tmplList.selection) return;
-            var t = ui.templates[tmplList.selection.index];
-            var res = generateTemplateFile(t, ui.templatesFolder);
-            if (res) alert("Regenerated: " + t.name);
+            // Bulk check for missing templates
+            var check = ensureTemplatesExist(ui.templates, ui.templatesFolder, false); // false = only missing
+
+            if (check.generated.length > 0) {
+                ui.templates = check.templates;
+                saveTemplates(ui.templates);
+                alert("Auto-repaired " + check.generated.length + " missing template(s):\n\n" + check.generated.join("\n"));
+            } else {
+                // If none missing, offer Factory Reset
+                if (confirm("All templates are present.\n\nForce Regenerate ALL templates (Factory Reset)?\nThis will overwrite any manual changes to .aep files.")) {
+                    check = ensureTemplatesExist(ui.templates, ui.templatesFolder, true); // true = force all
+                    ui.templates = check.templates;
+                    saveTemplates(ui.templates);
+                    alert("Success: All templates have been reset to factory defaults.");
+                }
+            }
         };
 
 
