@@ -422,7 +422,7 @@
         }
 
         // Fix: Add Numeric Validations
-        if (type === "width" || type === "height" || type === "fps") {
+        if (type === "width" || type === "height" || type === "fps" || type === "duration") {
             var num = parseFloat(text);
             if (isNaN(num)) return { isValid: false, msg: "Not a number" };
             if (num <= 0) return { isValid: false, msg: "Must be positive" };
@@ -430,6 +430,7 @@
             if (type === "width" && (num < CONFIG.LIMITS.WIDTH_MIN || num > CONFIG.LIMITS.WIDTH_MAX)) return { isValid: false, msg: "Width out of range" };
             if (type === "height" && (num < CONFIG.LIMITS.HEIGHT_MIN || num > CONFIG.LIMITS.HEIGHT_MAX)) return { isValid: false, msg: "Height out of range" };
             if (type === "fps" && (num < CONFIG.LIMITS.FPS_MIN || num > CONFIG.LIMITS.FPS_MAX)) return { isValid: false, msg: "FPS out of range" };
+            if (type === "duration" && (num < CONFIG.LIMITS.DURATION_MIN || num > CONFIG.LIMITS.DURATION_MAX)) return { isValid: false, msg: "Duration out of range" };
 
             return { isValid: true, msg: "OK" };
         }
@@ -673,10 +674,7 @@
 
             // campaign = everything after "DOOH_"
             var doohContent = remaining.replace(/^DOOH_?/i, "");
-            if (doohContent) {
-                result.campaign = doohContent;
-            }
-            // Use remaining (without DOOH_) as campaign if present, or just generic
+            result.campaign = doohContent || "";
             return result;
         }
 
@@ -714,6 +712,7 @@
             // FIX P0-4: Unit tests match parser behavior (isDOOH=true -> brand="DOOH")
             { input: "DOOH_Spotify_Wrapped_1080x1920_V3_R2", expected: { brand: "DOOH", campaign: "Spotify_Wrapped", quarter: null, size: "1080x1920", version: "V3", revision: "R2", isDOOH: true } },
             { input: "DOOH_Generic_1920x1080_V1_R1", expected: { brand: "DOOH", campaign: "Generic", quarter: null, size: "1920x1080", version: "V1", revision: "R1", isDOOH: true } },
+            { input: "DOOH_1920x1080_V1_R1", expected: { brand: "DOOH", campaign: "", quarter: null, size: "1920x1080", version: "V1", revision: "R1", isDOOH: true } },
             { input: "SimpleBrand_300x600_V1_R1", expected: { brand: "SimpleBrand", campaign: "", quarter: null, size: "300x600", version: "V1", revision: "R1", isDOOH: false } }
         ];
 
@@ -1950,7 +1949,7 @@
             // Add other types if needed, simplified for now to standard types
 
             var aeFolder = app.project.file.parent.fsName;
-            var revision = (parsed && parsed.revision) ? parsed.revision : ui.inputs.revision.text;
+            var revision = (parsed && parsed.revision) ? parsed.revision : ("R" + ui.inputs.revision.text);
             var renderFolder = joinPath(aeFolder, "Render_" + revision);
             createFolderRecursive(renderFolder);
             var outputPath = joinPath(renderFolder, renderName);
@@ -2401,8 +2400,8 @@
             // Hidden Unit Tests trigger (Alt+Click / Shift+Click on Title)
             title.addEventListener("click", function (k) {
                 // Check modifier keys using event object if available, or environment fallback
-                var isAlt = (k.altKey) || (ScriptUI.environment.keyboardState.altKey);
-                var isShift = (k.shiftKey) || (ScriptUI.environment.keyboardState.shiftKey);
+                var isAlt = (k.altKey) || (typeof ScriptUI.environment !== "undefined" && ScriptUI.environment.keyboardState && ScriptUI.environment.keyboardState.altKey);
+                var isShift = (k.shiftKey) || (typeof ScriptUI.environment !== "undefined" && ScriptUI.environment.keyboardState && ScriptUI.environment.keyboardState.shiftKey);
 
                 if (isAlt) {
                     runUnitTests();
@@ -2587,8 +2586,21 @@
             if (isDOOH) {
                 return "DOOH_" + (campaign || brand) + "_" + size + "_" + version + "_" + revision + ".aep";
             } else {
-                var campaignName = (campaign && campaign.length > 0) ? campaign : "Campaign";
-                return brand + "_" + campaignName + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+                var separator = (campaign && campaign.length > 0) ? "_" : "";
+                var campaignPart = (campaign && campaign.length > 0) ? campaign : "";
+                // If campaign is empty, we don't want trailing/double underscores
+                // Pattern: Brand_Quarter... OR Brand_Campaign_Quarter...
+                // Actually user requested strict specific fallback removal.
+                // Re-reading logic: folder structure is Brand_Campaign (or just Brand if empty).
+                // Filename was: brand + "_" + campaignName + "_" + quarter...
+                // If we remove fallback, it becomes brand + "__" + quarter if we are not careful.
+
+                // Let's match the folder logic:
+                if (campaign && campaign.length > 0) {
+                    return brand + "_" + campaign + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+                } else {
+                    return brand + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
+                }
             }
         };
 
