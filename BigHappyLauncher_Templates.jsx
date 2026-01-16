@@ -2463,10 +2463,11 @@
 
 
         function createMainInputs() {
-            ui.mainGrp = ui.w.add("group");
+            ui.mainGrp = ui.w.add("panel", undefined, "Project Details");
             ui.mainGrp.orientation = "column";
             ui.mainGrp.alignChildren = ["fill", "top"];
-            ui.mainGrp.spacing = 5;
+            ui.mainGrp.spacing = 8;
+            ui.mainGrp.margins = 15;
 
             // Template Dropdown
             var tmplGrp = ui.mainGrp.add("group");
@@ -2486,41 +2487,47 @@
             ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
             ui.inputs.campaign.helpTip = "Enter the campaign or project name";
 
-            // Quarter & Year
-            var qyRow = ui.mainGrp.add("group");
-            qyRow.orientation = "row";
-            qyRow.alignChildren = ["left", "center"];
-            var qLbl = qyRow.add("statictext", undefined, "Quarter:");
-            qLbl.preferredSize.width = 65;
-            ui.dropdowns.quarter = qyRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
-            ui.dropdowns.quarter.selection = getCurrentQuarter();
-            ui.dropdowns.quarter.preferredSize.width = 60;
-            ui.dropdowns.quarter.helpTip = "Select fiscal quarter";
+            // Quarter & Year & Version & Revision (Grouped for Layout)
+            var metaGrp = ui.mainGrp.add("group");
+            metaGrp.orientation = "row";
+            metaGrp.alignChildren = ["left", "center"];
+            metaGrp.spacing = 15; // Increased spacing between groups
 
-            var yLbl = qyRow.add("statictext", undefined, "Year:");
-            yLbl.preferredSize.width = 35;
+            // Quarter & Year Group
+            var dateGrp = metaGrp.add("group");
+            dateGrp.orientation = "row";
+            dateGrp.spacing = 5;
+            dateGrp.alignChildren = ["left", "center"];
+
+            dateGrp.add("statictext", undefined, "Q:");
+            ui.dropdowns.quarter = dateGrp.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+            ui.dropdowns.quarter.selection = getCurrentQuarter();
+            ui.dropdowns.quarter.preferredSize = [50, 25];
+
+            dateGrp.add("statictext", undefined, "Y:");
             var currentYear = getCurrentYear();
-            ui.dropdowns.year = qyRow.add("dropdownlist", undefined, [
+            ui.dropdowns.year = dateGrp.add("dropdownlist", undefined, [
                 String(currentYear - 1),
                 String(currentYear),
                 String(currentYear + 1),
                 String(currentYear + 2)
             ]);
-            ui.dropdowns.year.selection = 1; // Current year
-            ui.dropdowns.year.preferredSize.width = 65;
+            ui.dropdowns.year.selection = 1;
+            ui.dropdowns.year.preferredSize = [65, 25];
 
-            // Version & Revision
-            var vrRow = ui.mainGrp.add("group");
-            vrRow.orientation = "row";
-            vrRow.alignChildren = ["left", "center"];
-            var verLbl = vrRow.add("statictext", undefined, "Version:");
-            verLbl.preferredSize.width = 65;
-            ui.inputs.version = vrRow.add("edittext", undefined, "1");
-            ui.inputs.version.preferredSize.width = 50;
-            var revLbl = vrRow.add("statictext", undefined, "Revision:");
-            revLbl.preferredSize.width = 60;
-            ui.inputs.revision = vrRow.add("edittext", undefined, "1");
-            ui.inputs.revision.preferredSize.width = 50;
+            // Version & Revision Group
+            var verGrp = metaGrp.add("group");
+            verGrp.orientation = "row";
+            verGrp.spacing = 5;
+            verGrp.alignChildren = ["left", "center"];
+
+            verGrp.add("statictext", undefined, "Ver:");
+            ui.inputs.version = verGrp.add("edittext", undefined, "1");
+            ui.inputs.version.preferredSize = [40, 25];
+
+            verGrp.add("statictext", undefined, "Rev:");
+            ui.inputs.revision = verGrp.add("edittext", undefined, "1");
+            ui.inputs.revision.preferredSize = [40, 25];
 
             // Base Folder (Label Only)
             var baseGrp = ui.mainGrp.add("group");
@@ -2531,7 +2538,6 @@
             ui.labels.basePath = baseGrp.add("statictext", undefined, getBaseWorkFolder());
             ui.labels.basePath.alignment = ["fill", "center"];
             setTextColor(ui.labels.basePath, [0.5, 0.5, 0.5]);
-            // Cleaned up: Browse button removed, moved to Settings
         }
 
         function createPreview() {
@@ -2539,7 +2545,7 @@
             div.alignment = ["fill", "top"];
 
             ui.labels.pathPreview = ui.w.add("statictext", undefined, "Path: ...");
-            ui.labels.pathPreview.alignment = ["fill", "top"];
+            ui.labels.pathPreview.alignment = ["center", "top"];
             setTextColor(ui.labels.pathPreview, [0.4, 0.8, 0.4]);
 
             ui.labels.filenamePreview = ui.w.add("statictext", undefined, "Filename: ...");
@@ -2548,33 +2554,40 @@
         }
 
         function createActionButtons() {
-            var btnGroup = ui.w.add("group");
-            btnGroup.orientation = "row";
-            btnGroup.alignChildren = ["fill", "top"];
-            btnGroup.spacing = 5;
-            btnGroup.alignment = ["fill", "top"];
+            var actionsGrp = ui.w.add("group");
+            actionsGrp.orientation = "column";
+            actionsGrp.alignChildren = ["fill", "top"];
+            actionsGrp.spacing = 5;
 
-            ui.btns.create = btnGroup.add("button", undefined, "CREATE");
-            ui.btns.create.preferredSize.height = 35;
-            ui.btns.create.preferredSize.width = 100;
-            try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+            // 1. Primary Action: CREATE
+            ui.btns.create = actionsGrp.add("button", undefined, "CREATE PROJECT");
+            ui.btns.create.preferredSize.height = 40;
+            try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
+            ui.btns.create.helpTip = "Create a new project from the selected template";
 
-            ui.btns.open = btnGroup.add("button", undefined, "OPEN...");
-            ui.btns.open.preferredSize.height = 35;
+            // 2. Secondary Actions: Tools (Open, Import, Save As, R+)
+            var toolsGrp = actionsGrp.add("group");
+            toolsGrp.orientation = "row";
+            toolsGrp.alignChildren = ["fill", "center"];
+            toolsGrp.spacing = 5;
+
+            ui.btns.open = toolsGrp.add("button", undefined, "Open...");
+            ui.btns.open.preferredSize.height = 30;
             ui.btns.open.helpTip = "Open an existing .aep project";
 
-            ui.btns.saveAs = btnGroup.add("button", undefined, "SAVE AS...");
-            ui.btns.saveAs.preferredSize.height = 35;
-            try { ui.btns.saveAs.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
-
-            ui.btns.importBtn = btnGroup.add("button", undefined, "IMPORT");
-            ui.btns.importBtn.preferredSize.height = 35;
+            ui.btns.importBtn = toolsGrp.add("button", undefined, "Import");
+            ui.btns.importBtn.preferredSize.height = 30;
             ui.btns.importBtn.helpTip = "Import and standardize an existing .aep file";
 
-            ui.btns.quickDup = btnGroup.add("button", undefined, "R+");
-            ui.btns.quickDup.preferredSize.height = 35;
+            ui.btns.saveAs = toolsGrp.add("button", undefined, "Save As...");
+            ui.btns.saveAs.preferredSize.height = 30;
+            ui.btns.saveAs.helpTip = "Save current project as new copy";
+
+            ui.btns.quickDup = toolsGrp.add("button", undefined, "R+");
+            ui.btns.quickDup.preferredSize.height = 30;
             ui.btns.quickDup.preferredSize.width = 40;
-            try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+            ui.btns.quickDup.helpTip = "Quick Save: Increment Revision";
+            try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
         }
 
         function createTemplateManagement() {
@@ -2585,14 +2598,18 @@
         }
 
         function createRenderSection() {
-            ui.btns.render = ui.w.add("button", undefined, "ADD TO RENDER QUEUE");
-            ui.btns.render.preferredSize.height = 28;
-            ui.btns.render.alignment = ["fill", "top"];
+            var rPanel = ui.w.add("panel", undefined, "Output"); // Renamed from "Output & Delivery" to prevent cutoff
+            rPanel.orientation = "column";
+            rPanel.alignChildren = ["fill", "top"];
+            rPanel.spacing = 5;
+            rPanel.margins = 10;
+
+            ui.btns.render = rPanel.add("button", undefined, "ADD TO RENDER QUEUE");
+            ui.btns.render.preferredSize.height = 30;
             try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
 
-            ui.btns.convert = ui.w.add("button", undefined, "CONVERT (WebM / MOV)");
+            ui.btns.convert = rPanel.add("button", undefined, "CONVERT (WebM / MOV)");
             ui.btns.convert.preferredSize.height = 25;
-            ui.btns.convert.alignment = ["fill", "top"];
             ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
         }
 
