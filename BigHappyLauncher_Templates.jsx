@@ -2633,7 +2633,7 @@
             ui.btns.render.preferredSize.height = 30;
             try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
 
-            ui.btns.convert = rPanel.add("button", undefined, "CONVERT (WebM / MOV)");
+            ui.btns.convert = rPanel.add("button", undefined, "Optimize");
             ui.btns.convert.preferredSize.height = 25;
             ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
         }
