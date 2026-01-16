@@ -2729,6 +2729,18 @@
             }
 
             ui.inputs.revision.text = String(foundR);
+
+            // Visual Feedback: Green if auto-incremented
+            var whiteColor = [1, 1, 1];
+            var greenColor = [0.85, 1, 0.85];
+            var brushType = ui.inputs.revision.graphics.BrushType.SOLID_COLOR;
+
+            if (foundR > 1) {
+                try { ui.inputs.revision.graphics.backgroundColor = ui.inputs.revision.graphics.newBrush(brushType, greenColor); } catch (e) { }
+            } else {
+                try { ui.inputs.revision.graphics.backgroundColor = ui.inputs.revision.graphics.newBrush(brushType, whiteColor); } catch (e) { }
+            }
+
             ui.updatePreview();
 
             // SMART VERSIONING
