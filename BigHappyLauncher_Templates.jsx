@@ -1722,8 +1722,18 @@
 
     function bindEvents(ui) {
         // Inputs
-        ui.inputs.brand.onChanging = ui.inputs.campaign.onChanging = ui.inputs.version.onChanging = ui.inputs.revision.onChanging = ui.updatePreview;
-        ui.inputs.brand.onChange = ui.inputs.campaign.onChange = ui.dropdowns.quarter.onChange = ui.dropdowns.year.onChange = function () { ui.checkRevision(); };
+        // Inputs
+        // CRASH FIX: Removed onChanging entirely. ScriptUI instability.
+        // Updates will happen on commit (Enter or click away).
+
+        // Update labels only on change (done typing)
+        ui.inputs.brand.onChange = ui.inputs.campaign.onChange = function () {
+            ui.updatePreview();
+            ui.checkRevision();
+        };
+
+        ui.inputs.version.onChanging = ui.inputs.revision.onChanging = ui.updatePreview;
+        ui.dropdowns.quarter.onChange = ui.dropdowns.year.onChange = function () { ui.checkRevision(); };
 
         ui.dropdowns.template.onChange = function () {
             ui.updateStatus();
@@ -2529,15 +2539,25 @@
             ui.inputs.revision = verGrp.add("edittext", undefined, "1");
             ui.inputs.revision.preferredSize = [40, 25];
 
-            // Base Folder (Label Only)
+            // Base Folder (Label + Path + Open Button)
             var baseGrp = ui.mainGrp.add("group");
             baseGrp.orientation = "row";
             baseGrp.alignChildren = ["left", "center"];
+
             var baseLbl = baseGrp.add("statictext", undefined, "Base:");
             baseLbl.preferredSize.width = 65;
+
             ui.labels.basePath = baseGrp.add("statictext", undefined, getBaseWorkFolder());
             ui.labels.basePath.alignment = ["fill", "center"];
             setTextColor(ui.labels.basePath, [0.5, 0.5, 0.5]);
+
+            var openBaseBtn = baseGrp.add("button", undefined, "📂");
+            openBaseBtn.preferredSize = [30, 20];
+            openBaseBtn.helpTip = "Open Base Folder";
+            openBaseBtn.onClick = function () {
+                var f = new Folder(ui.labels.basePath.text);
+                if (f.exists) f.execute();
+            };
         }
 
         function createPreview() {
@@ -2574,6 +2594,11 @@
             ui.btns.open = toolsGrp.add("button", undefined, "Open...");
             ui.btns.open.preferredSize.height = 30;
             ui.btns.open.helpTip = "Open an existing .aep project";
+
+            ui.btns.recent = toolsGrp.add("button", undefined, "🕒");
+            ui.btns.recent.preferredSize = [35, 30];
+            ui.btns.recent.helpTip = "Recent Projects History";
+            ui.btns.recent.onClick = function () { ui.showRecentDialog(); };
 
             ui.btns.importBtn = toolsGrp.add("button", undefined, "Import");
             ui.btns.importBtn.preferredSize.height = 30;
@@ -2614,6 +2639,50 @@
         }
 
         // --- LOGIC FUNCTIONS (Methods attached to UI object) ---
+
+        ui.showRecentDialog = function () {
+            var recent = loadRecentFiles();
+            if (!recent || recent.length === 0) {
+                alert("No recent history found.");
+                return;
+            }
+
+            var d = new Window("dialog", "Recent Projects");
+            d.orientation = "column";
+            d.alignChildren = ["fill", "top"];
+            d.spacing = 10;
+            d.margins = 15;
+
+            var list = d.add("listbox", undefined, [], { multiselect: false });
+            list.preferredSize = [450, 250];
+
+            for (var i = 0; i < recent.length; i++) {
+                var f = new File(recent[i]);
+                var item = list.add("item", f.name);
+                item.subItems[0] = f.parent.fsName; // Store path hinted if needed
+            }
+
+            var btnGrp = d.add("group");
+            btnGrp.alignment = ["center", "bottom"];
+            var openBtn = btnGrp.add("button", undefined, "Open", { name: "ok" });
+            var cancelBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+            list.onDoubleClick = function () {
+                openBtn.notify("onClick");
+            };
+
+            openBtn.onClick = function () {
+                if (list.selection) {
+                    var selectedPath = recent[list.selection.index];
+                    d.close();
+                    ui.openProject(selectedPath);
+                }
+            };
+            cancelBtn.onClick = function () { d.close(); };
+
+            d.center();
+            d.show();
+        };
 
         ui.refreshDropdown = function () {
             var prevIdx = ui.dropdowns.template.selection ? ui.dropdowns.template.selection.index : 0;
@@ -2702,6 +2771,8 @@
             ui.labels.filenamePreview.text = filename;
         };
 
+
+
         ui.checkRevision = function () {
             if (!ui.dropdowns.template.selection) return;
             var t = ui.templates[ui.dropdowns.template.selection.index];
@@ -2729,18 +2800,6 @@
             }
 
             ui.inputs.revision.text = String(foundR);
-
-            // Visual Feedback: Green if auto-incremented
-            var whiteColor = [1, 1, 1];
-            var greenColor = [0.85, 1, 0.85];
-            var brushType = ui.inputs.revision.graphics.BrushType.SOLID_COLOR;
-
-            if (foundR > 1) {
-                try { ui.inputs.revision.graphics.backgroundColor = ui.inputs.revision.graphics.newBrush(brushType, greenColor); } catch (e) { }
-            } else {
-                try { ui.inputs.revision.graphics.backgroundColor = ui.inputs.revision.graphics.newBrush(brushType, whiteColor); } catch (e) { }
-            }
-
             ui.updatePreview();
 
             // SMART VERSIONING
@@ -2980,8 +3039,14 @@
             return false;
         }
 
-        ui.openProject = function () {
-            var file = File.openDialog("Open After Effects Project", "*.aep");
+        ui.openProject = function (pathOrFile) {
+            var file = null;
+            if (pathOrFile) {
+                file = (pathOrFile instanceof File) ? pathOrFile : new File(pathOrFile);
+                if (!file.exists) { alert("File not found:\n" + file.fsName); return; }
+            } else {
+                file = File.openDialog("Open After Effects Project", "*.aep");
+            }
             if (!file) return;
 
             try {
