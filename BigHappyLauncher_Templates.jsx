@@ -249,15 +249,22 @@
         pb.preferredSize.width = 300;
         w.center(); w.show(); w.update();
 
-        function updateProgress(msg, pct) {
+        // Step-based progress tracking (more accurate than hardcoded percentages)
+        var TOTAL_STEPS = 10; // Total workflow steps
+        var currentStep = 0;
+
+        function updateProgress(msg, stepNum) {
+            if (typeof stepNum === "number") currentStep = stepNum;
+            else currentStep++;
+            var pct = Math.round((currentStep / TOTAL_STEPS) * 100);
             stText.text = msg;
-            pb.value = pct;
+            pb.value = Math.min(pct, 100);
             w.update();
         }
 
         try {
             // 2. Prepare Local Collect
-            updateProgress("Preparing local folders...", 10);
+            updateProgress("Preparing local folders...", 1);
 
             var currentFile = app.project.file;
             var currentName = currentFile.name.replace(/\.aep$/i, "");
@@ -297,7 +304,7 @@
             // ==============================
             // PRE-FLIGHT CHECK
             // ==============================
-            updateProgress("Running Pre-Flight Check...", 15);
+            updateProgress("Running Pre-Flight Check...", 2);
             var missingFiles = preFlightCheck();
             if (missingFiles.length > 0) {
                 var preview = missingFiles.slice(0, 5).join("\n");
@@ -312,11 +319,11 @@
             // ==============================
             // REMOVE UNUSED FOOTAGE
             // ==============================
-            updateProgress("Removing unused footage...", 20);
+            updateProgress("Removing unused footage...", 3);
             removeUnusedFootage();
 
             // 3. Save Copy & Collect Assets LOCALLY
-            updateProgress("Saving local copy...", 30);
+            updateProgress("Saving local copy...", 4);
 
             // Step 3a: Save ORIGINAL first to ensure changes are safe
             if (app.project.file) app.project.save();
@@ -324,7 +331,7 @@
             app.project.save(new File(localAepPath)); // Save project As copy
 
             // Collect Assets (Use Shared Folder)
-            updateProgress("Collecting assets to Shared Library...", 40);
+            updateProgress("Collecting assets to Shared Library...", 5);
             // Pass localCommonAssets to collectAssets to force it to use this folder
             var assetsCount = collectAssets(destFolder, localCommonAssets);
 
@@ -334,13 +341,13 @@
             // ==============================
             // GENERATE PACK REPORT
             // ==============================
-            updateProgress("Generating Pack Report...", 50);
+            updateProgress("Generating Pack Report...", 6);
             generatePackReport(destFolder, missingFiles);
 
             writeLog("Locally Collected: " + localAepPath, "INFO");
 
             // 4. UPLOAD TO DRIVE (Smart Mirroring)
-            updateProgress("Connecting to Drive...", 60);
+            updateProgress("Connecting to Drive...", 7);
 
             var year = "2026"; // Default
             var quarter = "Q1";
@@ -375,7 +382,7 @@
             var driveCommonAssets = new Folder(joinPath(pAE, "_Common_Assets"));
 
             // Create Drive Structure
-            updateProgress("Creating Drive structure...", 70);
+            updateProgress("Creating Drive structure...", 8);
             if (!createFolderRecursive(pAE)) {
                 w.close();
                 alert("Failed to create Drive folders:\n" + pAE + "\n\nCheck permissions.");
@@ -383,10 +390,7 @@
             }
 
             // 5. UPLOAD SHARED ASSETS
-            updateProgress("Syncing Shared Assets...", 75);
-
-            // Define Drive Path for Shared Assets (was defined above but good to ensure)
-            var driveCommonAssets = new Folder(joinPath(pAE, "_Common_Assets"));
+            updateProgress("Syncing Shared Assets...", 9);
 
             if (localCommonAssets.exists) {
                 // Ensure drive common folder exists
@@ -415,7 +419,7 @@
             var driveAepPath = joinPath(driveRevisionFolder.fsName, currentName + ".aep");
 
             // Copy AEP
-            updateProgress("Uploading Project File...", 90);
+            updateProgress("Uploading Project File...", 10);
             var localFile = new File(localAepPath);
             if (localFile.copy(driveAepPath)) {
                 writeLog("Uploaded Project: " + driveAepPath, "INFO");
@@ -425,7 +429,7 @@
                 return;
             }
 
-            updateProgress("Done!", 100);
+            updateProgress("Done!", 10);
             $.sleep(200);
             w.close();
 
