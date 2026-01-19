@@ -78,7 +78,8 @@
                 POST_RENDER_MOV: "post_render_mov",
                 POST_RENDER_HTML: "post_render_html",
                 POST_RENDER_ZIP: "post_render_zip",
-                TARGET_SIZE_MB: "target_size_mb"
+                TARGET_SIZE_MB: "target_size_mb",
+                GDRIVE_ROOT: "gdrive_root"
             },
             MAX_RECENT_FILES: 10
         },
@@ -206,6 +207,219 @@
         message += "\n\n" + error.fix;
 
         alert(message);
+    }
+
+    // =========================================================================
+    // SECTION 1B.1: GOOGLE DRIVE SYNC LOGIC
+    // =========================================================================
+
+    function copyFolderRecursive(sourceFolder, destFolder) {
+        if (!sourceFolder.exists) return false;
+        if (!destFolder.exists) destFolder.create();
+
+        var files = sourceFolder.getFiles();
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            if (f instanceof File) {
+                f.copy(joinPath(destFolder.fsName, f.name));
+            } else if (f instanceof Folder) {
+                var newDest = new Folder(joinPath(destFolder.fsName, f.name));
+                copyFolderRecursive(f, newDest);
+            }
+        }
+        return true;
+    }
+
+    function collectAndUpload(ui) {
+        // 1. Validation
+        if (!app.project || !app.project.file) { showError("BH-2003"); return; }
+
+        var driveRoot = getSetting(CONFIG.SETTINGS.KEYS.GDRIVE_ROOT, "");
+        if (!driveRoot || !new Folder(driveRoot).exists) {
+            alert("Google Drive Root path is not set or invalid.\n\nPlease go to Settings > System > Google Drive Root.");
+            return;
+        }
+
+        // --- PROGRESS UI ---
+        var w = new Window("palette", "Collect & Upload", undefined, { closeButton: false });
+        w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.spacing = 10; w.margins = 15;
+        var stText = w.add("statictext", undefined, "Initializing...", { truncate: "middle" });
+        stText.preferredSize.width = 300;
+        var pb = w.add("progressbar", undefined, 0, 100);
+        pb.preferredSize.width = 300;
+        w.center(); w.show(); w.update();
+
+        function updateProgress(msg, pct) {
+            stText.text = msg;
+            pb.value = pct;
+            w.update();
+        }
+
+        try {
+            // 2. Prepare Local Collect
+            updateProgress("Preparing local folders...", 10);
+
+            var currentFile = app.project.file;
+            var currentName = currentFile.name.replace(/\.aep$/i, "");
+            var projectFolder = currentFile.parent;
+
+            // FIX: Prevent Recursive Collection
+            // Check if we are already inside a collection folder
+            if (projectFolder.name === "Collected_Files" || projectFolder.parent.name === "Collected_Files" ||
+                projectFolder.name === "_Collected" || projectFolder.parent.name === "_Collected") {
+                w.close();
+                alert("Cannot Collect a project that is already inside a 'Collected_Files' folder.\n\nPlease open the original source project and try again.");
+                return;
+            }
+
+            // Create "Collected_Files" folder in current project directory
+            var localCollectRoot = new Folder(joinPath(projectFolder.fsName, "Collected_Files"));
+            if (!localCollectRoot.exists) localCollectRoot.create();
+
+            // Unique folder for this collect action: Brand_Campaign_V#_R#
+            var parsed = parseProjectName(currentName);
+            var collectFolderName = currentName; // Fallback
+
+            // Use parsed info to ensure proper naming if possible, otherwise use filename
+            if (parsed) {
+                // Reconstruct clean name for folder
+                collectFolderName = ui.buildFilename(parsed.brand, parsed.campaign, parsed.quarter || "QX", parsed.size, parsed.version, parsed.revision, parsed.isDOOH);
+                collectFolderName = collectFolderName.replace(/\.aep$/i, "");
+            }
+
+            // SHARED ASSETS: Create Shared Library Folder
+            var localCommonAssets = new Folder(joinPath(localCollectRoot.fsName, "_Common_Assets"));
+            if (!localCommonAssets.exists) localCommonAssets.create();
+
+            var destFolder = new Folder(joinPath(localCollectRoot.fsName, collectFolderName));
+            if (!destFolder.exists) destFolder.create();
+
+
+
+            // 3. Save Copy & Collect Assets LOCALLY
+            updateProgress("Saving local copy...", 30);
+
+            // Step 3a: Save ORIGINAL first to ensure changes are safe
+            if (app.project.file) app.project.save();
+            var localAepPath = joinPath(destFolder.fsName, currentName + ".aep");
+            app.project.save(new File(localAepPath)); // Save project As copy
+
+            // Collect Assets (Use Shared Folder)
+            updateProgress("Collecting assets to Shared Library...", 40);
+            // Pass localCommonAssets to collectAssets to force it to use this folder
+            var assetsCount = collectAssets(destFolder, localCommonAssets);
+
+            // Step 3b: Save COLLECTED project to persist the asset relinks made by collectAssets
+            app.project.save();
+            // Note: collectAssets creates a "(Footage)" folder inside destFolder and moves items there relative to project
+
+            writeLog("Locally Collected: " + localAepPath, "INFO");
+
+            // 4. UPLOAD TO DRIVE (Smart Mirroring)
+            updateProgress("Connecting to Drive...", 60);
+
+            var year = "2026"; // Default
+            var quarter = "Q1";
+            var brandFolder = "01.Brand_Project";
+
+            // Try to derive better structure from parsed data or current UI
+            if (parsed) {
+                year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
+                quarter = parsed.quarter || (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1");
+
+                var bName = parsed.brand;
+                var cName = parsed.campaign;
+                if (parsed.isDOOH && bName === "DOOH") {
+                    // For DOOH, maybe use Campaign as main folder? Or keep "DOOH"? 
+                    bName = "DOOH";
+                }
+
+                var folderName = bName;
+                if (cName) folderName += "_" + cName;
+
+                brandFolder = "01." + folderName;
+            }
+
+            // Construct Drive Paths
+            var pYear = joinPath(driveRoot, year);
+            var pQuarter = joinPath(pYear, quarter);
+            var pBrand = joinPath(pQuarter, brandFolder);
+
+            var pAE = joinPath(pBrand, "AE");
+
+            // Define Drive Path for Shared Assets
+            var driveCommonAssets = new Folder(joinPath(pAE, "_Common_Assets"));
+
+            // Create Drive Structure
+            updateProgress("Creating Drive structure...", 70);
+            if (!createFolderRecursive(pAE)) {
+                w.close();
+                alert("Failed to create Drive folders:\n" + pAE + "\n\nCheck permissions.");
+                return;
+            }
+
+            // 5. UPLOAD SHARED ASSETS
+            updateProgress("Syncing Shared Assets...", 75);
+
+            // Define Drive Path for Shared Assets (was defined above but good to ensure)
+            var driveCommonAssets = new Folder(joinPath(pAE, "_Common_Assets"));
+
+            if (localCommonAssets.exists) {
+                // Ensure drive common folder exists
+                if (!createFolderRecursive(driveCommonAssets.fsName)) {
+                    // Try standard create if recursive fails or returns false
+                    driveCommonAssets.create();
+                }
+
+                var commonFiles = localCommonAssets.getFiles();
+                for (var cf = 0; cf < commonFiles.length; cf++) {
+                    var cFile = commonFiles[cf];
+                    if (cFile instanceof File) {
+                        var driveFile = new File(joinPath(driveCommonAssets.fsName, cFile.name));
+                        if (!driveFile.exists) {
+                            cFile.copy(driveFile); // Only copy if missing
+                        }
+                    }
+                }
+                writeLog("Synced Shared Assets to: " + driveCommonAssets.fsName, "INFO");
+            }
+
+            // Project File Destination
+            var driveRevisionFolder = new Folder(joinPath(pAE, collectFolderName));
+            if (!driveRevisionFolder.exists) driveRevisionFolder.create();
+
+            var driveAepPath = joinPath(driveRevisionFolder.fsName, currentName + ".aep");
+
+            // Copy AEP
+            updateProgress("Uploading Project File...", 90);
+            var localFile = new File(localAepPath);
+            if (localFile.copy(driveAepPath)) {
+                writeLog("Uploaded Project: " + driveAepPath, "INFO");
+            } else {
+                w.close();
+                alert("Failed to copy project file to Drive.");
+                return;
+            }
+
+            updateProgress("Done!", 100);
+            $.sleep(200);
+            w.close();
+
+            var resultMsg = "Pack & Upload Complete!\n\nLocal: " + destFolder.fsName + "\nDrive Project: " + driveAepPath + "\n(Assets Shared)";
+            alert(resultMsg);
+
+
+            // 6. RETURN TO ORIGINAL PROJECT
+            // Since we did 'Save As', the user is currently looking at the _Collected file.
+            // We should return them to the original working file to prevent confusion and recursion errors.
+            if (currentFile && currentFile.exists) {
+                app.open(currentFile);
+            }
+
+        } catch (e) {
+            w.close();
+            alert("Error during Collection/Upload:\n" + e.toString());
+        }
     }
 
     // =========================================================================
@@ -373,6 +587,97 @@
             return false;
         }
     }
+
+    function collectAssets(targetFolder, targetFolderOverride) {
+        var w = null;
+        try {
+            // SHARED ASSET LOGIC: 
+            // If targetFolderOverride is passed, use it directly (e.g. _Common_Assets).
+            // Otherwise, create standard "(Footage)" folder inside targetFolder.
+            var footageFolder;
+            if (targetFolderOverride) {
+                footageFolder = targetFolderOverride;
+            } else {
+                footageFolder = new Folder(joinPath(targetFolder.fsName, "(Footage)"));
+                if (!footageFolder.exists) footageFolder.create();
+            }
+
+            var items = app.project.items;
+            var totalItems = items.length;
+            var count = 0;
+
+            // Simple Progress UI
+            // Check if ScriptUI is available (run via panel) or fallback?
+            // Since this might be called from collectAndUpload which HAS a progress bar,
+            // we might want to suppress the UI if running silently? 
+            // For now, let's keep it as is, it will just show a second popup which is fine for "Import" workflow too.
+            // OPTIONAL: Pass a flag to suppress UI? Let's leave it simple for now.
+            w = new Window("palette", "Importing Project...", undefined, { closeButton: false });
+            w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.margins = 15; w.spacing = 10;
+            w.add("statictext", undefined, "Collection Mode: " + (targetFolderOverride ? "Shared Assets" : "Standard"));
+            var pb = w.add("progressbar", [0, 0, 300, 15], 0, totalItems);
+            var lbl = w.add("statictext", undefined, "Scanning...");
+            try { lbl.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
+            w.center(); w.show(); w.update();
+
+            for (var i = 1; i <= items.length; i++) {
+                // Update Progress
+                if (i % 5 === 0) { // Throttle updates
+                    pb.value = i;
+                    lbl.text = "Item " + i + " of " + totalItems;
+                    w.update();
+                }
+
+                // FIX P0-2: Correct ItemCollection indexing (1-based, use .item())
+                var item = items[i]; // Try standard access first
+                if (!item && typeof items.item === "function") item = items.item(i);
+                if (!item) continue;
+
+                if (item instanceof FootageItem && item.file && item.mainSource && !(item.mainSource instanceof SolidSource)) {
+                    var sourceFile = item.file;
+                    if (sourceFile.exists) {
+                        var destName = sanitizeName(sourceFile.name);
+                        var destPath = joinPath(footageFolder.fsName, destName);
+                        var destFile = new File(destPath);
+
+                        // Smart Link Logic with Versioning:
+                        // 1. If file exists AND is identical (same size), reuse it.
+                        // 2. If file exists AND is different (size mismatch), create a NEW version (CTA_1.png).
+
+                        var dupIdx = 1;
+                        var parts = destName.split(".");
+                        var ext = parts.pop();
+                        var base = parts.join(".");
+
+                        // Check for collisions where content differs
+                        while (destFile.exists && destFile.length !== sourceFile.length) {
+                            // Collision detected! File exists but size is different.
+                            // Create a new version for this asset.
+                            destFile = new File(joinPath(footageFolder.fsName, base + "_" + dupIdx + "." + ext));
+                            dupIdx++;
+                        }
+
+                        // Now destFile is either:
+                        // A) The existing identical file (we link to it)
+                        // B) A new unique path (we copy to it)
+
+                        if (!destFile.exists) {
+                            sourceFile.copy(destFile);
+                        }
+
+                        item.replace(destFile);
+                        count++;
+                    }
+                }
+            }
+            if (w) w.close();
+            return count;
+        } catch (e) {
+            if (w) w.close();
+            return 0; // Return 0 on error
+        }
+    }
+
 
     function buildProjectFolderName(brand, campaign) {
         if (campaign && campaign.length > 0) {
@@ -1571,6 +1876,21 @@
             if (f.exists) f.execute(); else alert("Log file not found.");
         };
 
+        // Google Drive
+        var driveGrp = sysTab.add("panel", undefined, "Google Drive Sync");
+        driveGrp.alignChildren = ["left", "top"];
+        driveGrp.add("statictext", undefined, "Google Drive Root Folder:");
+        var driveRow = driveGrp.add("group");
+        var driveInput = driveRow.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.GDRIVE_ROOT, ""));
+        driveInput.preferredSize.width = 250;
+        var driveBtn = driveRow.add("button", undefined, "...");
+        driveBtn.onClick = function () {
+            var f = Folder.selectDialog("Select Google Drive Root (e.g. G:/My Drive)");
+            if (f) driveInput.text = f.fsName;
+        };
+        driveGrp.add("statictext", undefined, "Structure: Root / Year / Quarter / 00.Brand_Campaign / AE");
+
+
         // --- BOTTOM BUTTONS ---
         var btnGrp = d.add("group");
         btnGrp.alignment = ["center", "bottom"];
@@ -1693,6 +2013,9 @@
             setSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_ZIP, String(zipCheck.value));
             var tSize = parseFloat(sizeInput.text);
             if (!isNaN(tSize)) setSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, String(tSize));
+
+            // Save System Settings
+            setSetting(CONFIG.SETTINGS.KEYS.GDRIVE_ROOT, driveInput.text);
 
             // Save Templates
             saveTemplates(ui.templates);
@@ -2392,7 +2715,8 @@
                     down: null,
                     regen: null,
                     folder: null
-                }
+                },
+                collect: null
             },
             labels: {
                 pathPreview: null,
@@ -2547,12 +2871,12 @@
             var baseLbl = baseGrp.add("statictext", undefined, "Base:");
             baseLbl.preferredSize.width = 65;
 
-            ui.labels.basePath = baseGrp.add("statictext", undefined, getBaseWorkFolder());
+            ui.labels.basePath = baseGrp.add("edittext", undefined, getBaseWorkFolder(), { readonly: true });
             ui.labels.basePath.alignment = ["fill", "center"];
-            setTextColor(ui.labels.basePath, [0.5, 0.5, 0.5]);
+            ui.labels.basePath.enabled = false; // Optional: greys it out slightly, but text remains readable
 
             var openBaseBtn = baseGrp.add("button", undefined, "📂");
-            openBaseBtn.preferredSize = [30, 20];
+            openBaseBtn.preferredSize = [30, 25]; // Match height of input
             openBaseBtn.helpTip = "Open Base Folder";
             openBaseBtn.onClick = function () {
                 var f = new Folder(ui.labels.basePath.text);
@@ -2613,6 +2937,14 @@
             ui.btns.quickDup.preferredSize.width = 40;
             ui.btns.quickDup.helpTip = "Quick Save: Increment Revision";
             try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
+
+            // Collect & Upload
+            ui.btns.collect = toolsGrp.add("button", undefined, "☁ Collect");
+            ui.btns.collect.preferredSize.height = 30;
+            ui.btns.collect.helpTip = "Local Collect + Upload to Google Drive";
+            ui.btns.collect.onClick = function () {
+                collectAndUpload(ui);
+            };
         }
 
         function createTemplateManagement() {
@@ -2822,76 +3154,7 @@
 
         // --- NEW: IMPORT WORKFLOW ---
 
-        function collectAssets(targetFolder) {
-            var w = null; // Fix 3: Declare w at top scope
-            try {
-                var footageFolder = new Folder(joinPath(targetFolder.fsName, "(Footage)"));
-                if (!footageFolder.exists) footageFolder.create();
 
-                var items = app.project.items;
-                var totalItems = items.length;
-                var count = 0;
-
-                // Simple Progress UI
-                w = new Window("palette", "Importing Project...", undefined, { closeButton: false });
-                w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.margins = 15; w.spacing = 10;
-                w.add("statictext", undefined, "Collecting and unifying assets...");
-                var pb = w.add("progressbar", [0, 0, 300, 15], 0, totalItems);
-                var lbl = w.add("statictext", undefined, "Scanning...");
-                lbl.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10);
-                w.center(); w.show(); w.update();
-
-                for (var i = 1; i <= items.length; i++) {
-                    // Update Progress
-                    if (i % 5 === 0) { // Throttle updates
-                        pb.value = i;
-                        lbl.text = "Item " + i + " of " + totalItems;
-                        w.update();
-                    }
-
-                    // FIX P0-2: Correct ItemCollection indexing (1-based, use .item())
-                    var item = items[i]; // Try standard access first
-                    if (!item && typeof items.item === "function") item = items.item(i);
-                    if (!item) continue;
-
-                    if (item instanceof FootageItem && item.file && item.mainSource && !(item.mainSource instanceof SolidSource)) {
-                        var sourceFile = item.file;
-                        if (sourceFile.exists) {
-                            var destName = sanitizeName(sourceFile.name);
-                            var destPath = joinPath(footageFolder.fsName, destName);
-                            var destFile = new File(destPath);
-
-                            // Prevent overwriting if multiple files have same name (append index)
-                            var dupIdx = 1;
-                            while (destFile.exists && destFile.length !== sourceFile.length) { // Simple overlap check
-                                var parts = destName.split(".");
-                                var ext = parts.pop();
-                                var base = parts.join(".");
-                                destFile = new File(joinPath(footageFolder.fsName, base + "_" + dupIdx + "." + ext));
-                                dupIdx++;
-                            }
-
-                            if (!destFile.exists) {
-                                sourceFile.copy(destFile);
-                            }
-
-                            // Relink
-                            item.replace(destFile);
-                            count++;
-                        }
-                    }
-                }
-                if (w) w.close();
-                return count;
-            } catch (e) {
-                if (w) w.close();
-                writeLog("Asset collection failed: " + e.toString(), "ERROR");
-                return 0;
-            } finally {
-                // Fix 8: Ensure window always closes
-                if (w && w.close) w.close();
-            }
-        }
 
         function showMetadataDialog(dims, prefill) {
             var dlg = new Window("dialog", "Standardize Project Details");
@@ -3034,10 +3297,12 @@
                     }
                 }
             } catch (e) {
-                writeLog("Auto-detect failed: " + e.toString(), "WARN");
+                // writeLog("Auto-detect failed: " + e.toString(), "WARN");
             }
             return false;
         }
+
+        ui.collectAndUpload = function () { collectAndUpload(ui); };
 
         ui.openProject = function (pathOrFile) {
             var file = null;
