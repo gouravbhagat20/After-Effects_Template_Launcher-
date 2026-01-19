@@ -294,7 +294,26 @@
             var destFolder = new Folder(joinPath(localCollectRoot.fsName, collectFolderName));
             if (!destFolder.exists) destFolder.create();
 
+            // ==============================
+            // PRE-FLIGHT CHECK
+            // ==============================
+            updateProgress("Running Pre-Flight Check...", 15);
+            var missingFiles = preFlightCheck();
+            if (missingFiles.length > 0) {
+                var preview = missingFiles.slice(0, 5).join("\n");
+                if (missingFiles.length > 5) preview += "\n... and " + (missingFiles.length - 5) + " more.";
+                var proceed = confirm("⚠️ PRE-FLIGHT WARNING\n\n" + missingFiles.length + " file(s) are MISSING:\n\n" + preview + "\n\nContinue anyway?");
+                if (!proceed) {
+                    w.close();
+                    return;
+                }
+            }
 
+            // ==============================
+            // REMOVE UNUSED FOOTAGE
+            // ==============================
+            updateProgress("Removing unused footage...", 20);
+            removeUnusedFootage();
 
             // 3. Save Copy & Collect Assets LOCALLY
             updateProgress("Saving local copy...", 30);
@@ -311,7 +330,12 @@
 
             // Step 3b: Save COLLECTED project to persist the asset relinks made by collectAssets
             app.project.save();
-            // Note: collectAssets creates a "(Footage)" folder inside destFolder and moves items there relative to project
+
+            // ==============================
+            // GENERATE PACK REPORT
+            // ==============================
+            updateProgress("Generating Pack Report...", 50);
+            generatePackReport(destFolder, missingFiles);
 
             writeLog("Locally Collected: " + localAepPath, "INFO");
 
@@ -584,6 +608,168 @@
             }
             return folder.create();
         } catch (e) {
+            return false;
+        }
+    }
+
+    // =========================================================================
+    // SECTION 2B.2: COLLECT & UPLOAD HELPERS
+    // =========================================================================
+
+    /**
+     * Remove unused footage from project before collecting.
+     * Uses app.project.reduceProject() which keeps only items used in specified comps.
+     */
+    function removeUnusedFootage() {
+        try {
+            var mainComp = findMainComp();
+            if (mainComp) {
+                app.project.reduceProject([mainComp]);
+                writeLog("Removed unused footage (reduceProject)", "INFO");
+                return true;
+            }
+            return false;
+        } catch (e) {
+            writeLog("removeUnusedFootage failed: " + e.toString(), "WARN");
+            return false;
+        }
+    }
+
+    /**
+     * Pre-flight check: scan for missing files before upload.
+     * @returns {Array} List of missing file descriptions
+     */
+    function preFlightCheck() {
+        var missing = [];
+        try {
+            var items = app.project.items;
+            for (var i = 1; i <= items.length; i++) {
+                var item = items[i];
+                if (item instanceof FootageItem && item.file && !item.file.exists) {
+                    missing.push(item.name + " → " + item.file.fsName);
+                }
+            }
+        } catch (e) {
+            writeLog("preFlightCheck error: " + e.toString(), "WARN");
+        }
+        return missing;
+    }
+
+    /**
+     * Get list of fonts used in text layers across all comps.
+     * @returns {Array} Unique font names
+     */
+    function getFontsUsed() {
+        var fonts = {};
+        try {
+            for (var i = 1; i <= app.project.numItems; i++) {
+                var item = app.project.item(i);
+                if (item instanceof CompItem) {
+                    for (var j = 1; j <= item.numLayers; j++) {
+                        var layer = item.layer(j);
+                        if (layer instanceof TextLayer) {
+                            try {
+                                var textDoc = layer.property("Source Text").value;
+                                if (textDoc && textDoc.font) {
+                                    fonts[textDoc.font] = true;
+                                }
+                            } catch (e) { /* ignore */ }
+                        }
+                    }
+                }
+            }
+        } catch (e) { /* ignore */ }
+        var result = [];
+        for (var f in fonts) result.push(f);
+        return result;
+    }
+
+    /**
+     * Get list of effects/plugins used across all layers.
+     * @returns {Array} Unique effect names
+     */
+    function getEffectsUsed() {
+        var effects = {};
+        try {
+            for (var i = 1; i <= app.project.numItems; i++) {
+                var item = app.project.item(i);
+                if (item instanceof CompItem) {
+                    for (var j = 1; j <= item.numLayers; j++) {
+                        var layer = item.layer(j);
+                        try {
+                            var effectsGroup = layer.property("Effects");
+                            if (effectsGroup) {
+                                for (var e = 1; e <= effectsGroup.numProperties; e++) {
+                                    var eff = effectsGroup.property(e);
+                                    if (eff && eff.matchName) {
+                                        effects[eff.name + " (" + eff.matchName + ")"] = true;
+                                    }
+                                }
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+            }
+        } catch (e) { /* ignore */ }
+        var result = [];
+        for (var f in effects) result.push(f);
+        return result;
+    }
+
+    /**
+     * Generate pack report with fonts, effects, and missing files.
+     * @param {Folder} destFolder - Destination folder for report
+     * @param {Array} missingList - List of missing files from preFlightCheck
+     */
+    function generatePackReport(destFolder, missingList) {
+        try {
+            var report = "=== PACK REPORT ===\n";
+            report += "Generated: " + new Date().toLocaleString() + "\n";
+            report += "Project: " + (app.project.file ? app.project.file.name : "Untitled") + "\n\n";
+
+            // Missing Files
+            report += "--- MISSING FILES (" + missingList.length + ") ---\n";
+            if (missingList.length === 0) {
+                report += "(None - All files found!)\n";
+            } else {
+                for (var i = 0; i < missingList.length; i++) {
+                    report += "• " + missingList[i] + "\n";
+                }
+            }
+
+            // Fonts Used
+            var fonts = getFontsUsed();
+            report += "\n--- FONTS USED (" + fonts.length + ") ---\n";
+            if (fonts.length === 0) {
+                report += "(No text layers found)\n";
+            } else {
+                for (var j = 0; j < fonts.length; j++) {
+                    report += "• " + fonts[j] + "\n";
+                }
+            }
+
+            // Effects Used
+            var effects = getEffectsUsed();
+            report += "\n--- EFFECTS/PLUGINS (" + effects.length + ") ---\n";
+            if (effects.length === 0) {
+                report += "(No effects applied)\n";
+            } else {
+                for (var k = 0; k < effects.length; k++) {
+                    report += "• " + effects[k] + "\n";
+                }
+            }
+
+            // Write File
+            var reportPath = joinPath(destFolder.fsName, "_Pack_Report.txt");
+            var reportFile = new File(reportPath);
+            reportFile.open("w");
+            reportFile.write(report);
+            reportFile.close();
+
+            writeLog("Generated Pack Report: " + reportPath, "INFO");
+            return true;
+        } catch (e) {
+            writeLog("generatePackReport error: " + e.toString(), "WARN");
             return false;
         }
     }
