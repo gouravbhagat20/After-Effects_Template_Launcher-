@@ -85,7 +85,11 @@
         },
         PATHS: {
             LOG_FILE: joinPath(Folder.myDocuments.fsName, "BigHappyLauncher_Log.txt"),
-            GLOBAL_ASSETS: "_GlobalAssets"
+            GLOBAL_ASSETS: "_GlobalAssets",
+            FOLDER_AE: "AE_File",
+            FOLDER_ASSETS: "Assets",
+            FOLDER_RENDER_PREFIX: "Render_", // Prefix for Render_R1, Render_R2...
+            FOLDER_FOOTAGE: "(Footage)"
         },
         DEFAULTS: {
             TEMPLATES: [
@@ -788,7 +792,7 @@
             if (targetFolderOverride) {
                 footageFolder = targetFolderOverride;
             } else {
-                footageFolder = new Folder(joinPath(targetFolder.fsName, "(Footage)"));
+                footageFolder = new Folder(joinPath(targetFolder.fsName, CONFIG.PATHS.FOLDER_FOOTAGE));
                 if (!footageFolder.exists) footageFolder.create();
             }
 
@@ -796,12 +800,6 @@
             var totalItems = items.length;
             var count = 0;
 
-            // Simple Progress UI
-            // Check if ScriptUI is available (run via panel) or fallback?
-            // Since this might be called from collectAndUpload which HAS a progress bar,
-            // we might want to suppress the UI if running silently? 
-            // For now, let's keep it as is, it will just show a second popup which is fine for "Import" workflow too.
-            // OPTIONAL: Pass a flag to suppress UI? Let's leave it simple for now.
             w = new Window("palette", "Importing Project...", undefined, { closeButton: false });
             w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.margins = 15; w.spacing = 10;
             w.add("statictext", undefined, "Collection Mode: " + (targetFolderOverride ? "Shared Assets" : "Standard"));
@@ -818,9 +816,7 @@
                     w.update();
                 }
 
-                // FIX P0-2: Correct ItemCollection indexing (1-based, use .item())
-                var item = items[i]; // Try standard access first
-                if (!item && typeof items.item === "function") item = items.item(i);
+                var item = items[i];
                 if (!item) continue;
 
                 if (item instanceof FootageItem && item.file && item.mainSource && !(item.mainSource instanceof SolidSource)) {
@@ -828,35 +824,108 @@
                     if (sourceFile.exists) {
                         var destName = sanitizeName(sourceFile.name);
                         var destPath = joinPath(footageFolder.fsName, destName);
-                        var destFile = new File(destPath);
+                        var destFile = new File(destPath); // Target for the main file (or first frame)
 
-                        // Smart Link Logic with Versioning:
-                        // 1. If file exists AND is identical (same size), reuse it.
-                        // 2. If file exists AND is different (size mismatch), create a NEW version (CTA_1.png).
-
-                        var dupIdx = 1;
-                        var parts = destName.split(".");
-                        var ext = parts.pop();
-                        var base = parts.join(".");
-
-                        // Check for collisions where content differs
-                        while (destFile.exists && destFile.length !== sourceFile.length) {
-                            // Collision detected! File exists but size is different.
-                            // Create a new version for this asset.
-                            destFile = new File(joinPath(footageFolder.fsName, base + "_" + dupIdx + "." + ext));
-                            dupIdx++;
+                        // Check if it is a sequence
+                        var isSequence = false;
+                        if (!item.mainSource.isStill) {
+                            var ext = sourceFile.name.split(".").pop().toLowerCase();
+                            // If not still, and has image extension, treat as sequence
+                            if (ext.match(/^(png|jpg|jpeg|tif|tiff|tga|exr|psd)$/i)) {
+                                isSequence = true;
+                            }
                         }
 
-                        // Now destFile is either:
-                        // A) The existing identical file (we link to it)
-                        // B) A new unique path (we copy to it)
+                        if (isSequence) {
+                            // SEQUENCE COPY LOGIC
+                            // Robust approach to find all files in the sequence
+                            var seqFolder = sourceFile.parent;
+                            if (seqFolder && seqFolder.exists) {
+                                // Regex to find the number part at end of filename
+                                // e.g. "Seq.0001.png" -> prefix "Seq.", digits "0001"
+                                var namePart = sourceFile.name.replace(/\.[^\.]+$/, ""); // strip extension
+                                var match = namePart.match(/^(.*?)(\d+)$/);
 
-                        if (!destFile.exists) {
-                            sourceFile.copy(destFile);
+                                var foundFiles = false;
+
+                                if (match) {
+                                    var prefix = match[1];
+                                    var fileExt = sourceFile.name.split(".").pop();
+
+                                    // Robust Case-Insensitive Search
+                                    var lowerPrefix = prefix.toLowerCase();
+                                    var lowerExt = fileExt.toLowerCase();
+
+                                    var seqFiles = seqFolder.getFiles(function (f) {
+                                        if (f instanceof Folder) return false;
+                                        var fName = f.name.toLowerCase();
+                                        // Match prefix AND extension
+                                        return (fName.indexOf(lowerPrefix) === 0 && fName.indexOf("." + lowerExt) !== -1);
+                                    });
+
+                                    if (seqFiles && seqFiles.length > 0) {
+                                        foundFiles = true;
+                                        var allCopied = true;
+                                        for (var s = 0; s < seqFiles.length; s++) {
+                                            var sf = seqFiles[s];
+                                            var df = new File(joinPath(footageFolder.fsName, sf.name));
+                                            if (!df.exists) {
+                                                if (!sf.copy(df.fsName)) allCopied = false;
+                                            }
+                                        }
+
+                                        // Update item to point to the new location of the representative file
+                                        // Use replaceWithSequence to force AE to detect it as a sequence
+                                        if (allCopied) {
+                                            destFile = new File(joinPath(footageFolder.fsName, sourceFile.name));
+
+                                            // Safe check for sequence replacement approach
+                                            var replaced = false;
+                                            try {
+                                                if (typeof item.replaceWithSequence === "function") {
+                                                    item.replaceWithSequence(destFile, false); // false = trust numbering
+                                                    replaced = true;
+                                                }
+                                            } catch (errSeq) {
+                                                // Fallback if method fails or not supported
+                                            }
+
+                                            if (!replaced) {
+                                                item.replace(destFile);
+                                            }
+                                            count++;
+                                        }
+                                    }
+                                }
+
+                                // Fallback: If logic matches failed or no files found,
+                                // revert to single file copy to ensure at least something is copied.
+                                if (!foundFiles) {
+                                    if (!destFile.exists) sourceFile.copy(destFile);
+                                    item.replace(destFile);
+                                    count++;
+                                }
+                            }
+                        } else {
+                            // STANDARD SINGLE FILE COPY (Images, Movies, Audio)
+                            // Smart Link Logic:
+                            var dupIdx = 1;
+                            var parts = destName.split(".");
+                            var fileExt = parts.pop();
+                            var base = parts.join(".");
+
+                            while (destFile.exists && destFile.length !== sourceFile.length) {
+                                destFile = new File(joinPath(footageFolder.fsName, base + "_" + dupIdx + "." + fileExt));
+                                dupIdx++;
+                            }
+
+                            if (!destFile.exists) {
+                                sourceFile.copy(destFile);
+                            }
+
+                            item.replace(destFile);
+                            count++;
                         }
-
-                        item.replace(destFile);
-                        count++;
                     }
                 }
             }
@@ -864,7 +933,8 @@
             return count;
         } catch (e) {
             if (w) w.close();
-            return 0; // Return 0 on error
+            // writeLog("Collection Error: " + e.toString(), "ERROR");
+            return 0;
         }
     }
 
@@ -1508,9 +1578,9 @@
             var projectRoot = joinPath(joinPath(joinPath(basePath, String(year)), quarter), projectName);
             var sizeFolder = joinPath(projectRoot, size);
             var versionFolder = joinPath(sizeFolder, version);
-            var aeFolder = joinPath(versionFolder, "AE_File");
-            var publishedFolder = joinPath(aeFolder, "Render_" + revision);
-            var assetsFolder = joinPath(versionFolder, "Assets");
+            var aeFolder = joinPath(versionFolder, CONFIG.PATHS.FOLDER_AE);
+            var publishedFolder = joinPath(aeFolder, CONFIG.PATHS.FOLDER_RENDER_PREFIX + revision);
+            var assetsFolder = joinPath(versionFolder, CONFIG.PATHS.FOLDER_ASSETS);
 
             // Get template-specific asset folders or use default
             var assetSubfolders = CONFIG.TEMPLATE_FOLDERS[templateType] || CONFIG.TEMPLATE_FOLDERS["default"];
@@ -2814,14 +2884,14 @@
 
         // Try to guess Render folder
         var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
-        var possibleRenderFolder = new Folder(aeFile.parent.fsName + "/Render_R" + projectRev);
+        var possibleRenderFolder = new Folder(aeFile.parent.fsName + "/" + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R" + projectRev);
 
         var targetFolder = null;
         if (possibleRenderFolder.exists) {
             targetFolder = possibleRenderFolder;
         } else {
             // Check previous revision? Or just prompt
-            targetFolder = Folder.selectDialog("Select the Render_R# folder containing PNG sequence");
+            targetFolder = Folder.selectDialog("Select the " + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R# folder containing PNG sequence");
         }
 
         if (!targetFolder || !targetFolder.exists) return;
@@ -2850,6 +2920,233 @@
         };
 
         showPostRenderDialog(targetFolder, seq, ffmpegOk, opts, dims);
+    }
+
+    // --- EXTRACTED UI HELPERS ---
+
+    function addRow(parent, label, defaultVal) {
+        var g = parent.add("group");
+        g.orientation = "row";
+        g.alignChildren = ["left", "center"];
+        var lbl = g.add("statictext", undefined, label);
+        lbl.preferredSize.width = 65;
+        var inp = g.add("edittext", undefined, defaultVal);
+        inp.alignment = ["fill", "center"];
+        return inp;
+    }
+
+    function createHeader(ui) {
+        var hdrGrp = ui.w.add("group");
+        hdrGrp.orientation = "row";
+        hdrGrp.alignment = ["fill", "top"];
+        hdrGrp.alignChildren = ["fill", "center"];
+
+        var titleGrp = hdrGrp.add("group");
+        titleGrp.orientation = "row";
+        titleGrp.alignChildren = ["left", "center"];
+
+        var title = titleGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
+        try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
+
+        // Version Label
+        var ver = titleGrp.add("statictext", undefined, "v" + CONFIG.VERSION);
+        try { ver.graphics.foregroundColor = ver.graphics.newPen(ver.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
+
+        // Hidden Unit Tests trigger (Alt+Click / Shift+Click on Title)
+        title.addEventListener("click", function (k) {
+            // Check modifier keys using event object if available, or environment fallback
+            var isAlt = (k.altKey) || (typeof ScriptUI.environment !== "undefined" && ScriptUI.environment.keyboardState && ScriptUI.environment.keyboardState.altKey);
+            var isShift = (k.shiftKey) || (typeof ScriptUI.environment !== "undefined" && ScriptUI.environment.keyboardState && ScriptUI.environment.keyboardState.shiftKey);
+
+            if (isAlt) {
+                runUnitTests();
+            } else if (isShift) {
+                runStressTests();
+            }
+        });
+
+        // Spacer to push settings button to right
+        var spacer = hdrGrp.add("group");
+        spacer.alignment = ["fill", "fill"];
+
+        ui.btns.settings = hdrGrp.add("button", undefined, "⚙");
+        ui.btns.settings.preferredSize = [25, 25];
+        ui.btns.settings.helpTip = "Open Settings";
+    }
+
+    function createMainInputs(ui) {
+        ui.mainGrp = ui.w.add("panel", undefined, "Project Details");
+        ui.mainGrp.orientation = "column";
+        ui.mainGrp.alignChildren = ["fill", "top"];
+        ui.mainGrp.spacing = 8;
+        ui.mainGrp.margins = 15;
+
+        // Template Dropdown
+        var tmplGrp = ui.mainGrp.add("group");
+        tmplGrp.orientation = "row";
+        tmplGrp.alignChildren = ["left", "center"];
+        var tmplLbl = tmplGrp.add("statictext", undefined, "Template:");
+        tmplLbl.preferredSize.width = 65;
+        ui.dropdowns.template = tmplGrp.add("dropdownlist", undefined, []);
+        ui.dropdowns.template.alignment = ["fill", "center"];
+        ui.dropdowns.template.preferredSize.height = 25;
+        ui.dropdowns.template.helpTip = "Select a template";
+
+        // Brand & Campaign
+        ui.inputs.brand = addRow(ui.mainGrp, "Brand:", "");
+        ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
+
+        ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
+        ui.inputs.campaign.helpTip = "Enter the campaign or project name";
+
+        // Quarter & Year & Version & Revision (Grouped for Layout)
+        var metaGrp = ui.mainGrp.add("group");
+        metaGrp.orientation = "row";
+        metaGrp.alignChildren = ["left", "center"];
+        metaGrp.spacing = 15;
+
+        // Quarter & Year Group
+        var dateGrp = metaGrp.add("group");
+        dateGrp.orientation = "row";
+        dateGrp.spacing = 5;
+        dateGrp.alignChildren = ["left", "center"];
+
+        dateGrp.add("statictext", undefined, "Q:");
+        ui.dropdowns.quarter = dateGrp.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
+        ui.dropdowns.quarter.selection = getCurrentQuarter();
+        ui.dropdowns.quarter.preferredSize = [50, 25];
+
+        dateGrp.add("statictext", undefined, "Y:");
+        var currentYear = getCurrentYear();
+        ui.dropdowns.year = dateGrp.add("dropdownlist", undefined, [
+            String(currentYear - 1),
+            String(currentYear),
+            String(currentYear + 1),
+            String(currentYear + 2)
+        ]);
+        ui.dropdowns.year.selection = 1;
+        ui.dropdowns.year.preferredSize = [65, 25];
+
+        // Version & Revision Group
+        var verGrp = metaGrp.add("group");
+        verGrp.orientation = "row";
+        verGrp.spacing = 5;
+        verGrp.alignChildren = ["left", "center"];
+
+        verGrp.add("statictext", undefined, "Ver:");
+        ui.inputs.version = verGrp.add("edittext", undefined, "1");
+        ui.inputs.version.preferredSize = [40, 25];
+
+        verGrp.add("statictext", undefined, "Rev:");
+        ui.inputs.revision = verGrp.add("edittext", undefined, "1");
+        ui.inputs.revision.preferredSize = [40, 25];
+
+        // Base Folder (Label + Path + Open Button)
+        var baseGrp = ui.mainGrp.add("group");
+        baseGrp.orientation = "row";
+        baseGrp.alignChildren = ["left", "center"];
+
+        var baseLbl = baseGrp.add("statictext", undefined, "Base:");
+        baseLbl.preferredSize.width = 65;
+
+        ui.labels.basePath = baseGrp.add("edittext", undefined, getBaseWorkFolder(), { readonly: true });
+        ui.labels.basePath.alignment = ["fill", "center"];
+        ui.labels.basePath.enabled = false;
+
+        var openBaseBtn = baseGrp.add("button", undefined, "📂");
+        openBaseBtn.preferredSize = [30, 25];
+        openBaseBtn.helpTip = "Open Base Folder";
+        openBaseBtn.onClick = function () {
+            var f = new Folder(ui.labels.basePath.text);
+            if (f.exists) f.execute();
+        };
+    }
+
+    function createPreview(ui) {
+        var div = ui.w.add("panel", [0, 0, 100, 1]);
+        div.alignment = ["fill", "top"];
+
+        ui.labels.pathPreview = ui.w.add("statictext", undefined, "Path: ...");
+        ui.labels.pathPreview.alignment = ["center", "top"];
+        setTextColor(ui.labels.pathPreview, [0.4, 0.8, 0.4]);
+
+        ui.labels.filenamePreview = ui.w.add("statictext", undefined, "Filename: ...");
+        ui.labels.filenamePreview.alignment = ["center", "top"];
+        setTextColor(ui.labels.filenamePreview, [0.4, 0.7, 1]);
+    }
+
+    function createActionButtons(ui) {
+        var actionsGrp = ui.w.add("group");
+        actionsGrp.orientation = "column";
+        actionsGrp.alignChildren = ["fill", "top"];
+        actionsGrp.spacing = 5;
+
+        // 1. Primary Action: CREATE
+        ui.btns.create = actionsGrp.add("button", undefined, "CREATE PROJECT");
+        ui.btns.create.preferredSize.height = 40;
+        try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
+        ui.btns.create.helpTip = "Create a new project from the selected template";
+        ui.btns.create.onClick = function () { ui.createProject(); };
+
+        // 2. Secondary Actions: Tools (Open, Import, Save As, R+)
+        var toolsGrp = actionsGrp.add("group");
+        toolsGrp.orientation = "row";
+        toolsGrp.alignChildren = ["fill", "center"];
+        toolsGrp.spacing = 5;
+
+        ui.btns.open = toolsGrp.add("button", undefined, "Open...");
+        ui.btns.open.preferredSize.height = 30;
+        ui.btns.open.helpTip = "Open an existing .aep project";
+
+        ui.btns.recent = toolsGrp.add("button", undefined, "🕒");
+        ui.btns.recent.preferredSize = [35, 30];
+        ui.btns.recent.helpTip = "Recent Projects History";
+        ui.btns.recent.onClick = function () { ui.showRecentDialog(); };
+
+        ui.btns.importBtn = toolsGrp.add("button", undefined, "Import");
+        ui.btns.importBtn.preferredSize.height = 30;
+        ui.btns.importBtn.helpTip = "Import and standardize an existing .aep file";
+
+        ui.btns.saveAs = toolsGrp.add("button", undefined, "Save As...");
+        ui.btns.saveAs.preferredSize.height = 30;
+        ui.btns.saveAs.helpTip = "Save current project as new copy";
+
+        ui.btns.quickDup = toolsGrp.add("button", undefined, "R+");
+        ui.btns.quickDup.preferredSize.height = 30;
+        ui.btns.quickDup.preferredSize.width = 40;
+        ui.btns.quickDup.helpTip = "Quick Save: Increment Revision";
+        try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
+
+        // Collect & Upload
+        ui.btns.collect = toolsGrp.add("button", undefined, "☁ Collect");
+        ui.btns.collect.preferredSize.height = 30;
+        ui.btns.collect.helpTip = "Local Collect + Upload to Google Drive";
+        ui.btns.collect.onClick = function () {
+            collectAndUpload(ui);
+        };
+    }
+
+    function createTemplateManagement(ui) {
+        ui.labels.status = ui.w.add("statictext", undefined, "Ready");
+        ui.labels.status.alignment = ["center", "top"];
+        try { ui.labels.status.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
+        setTextColor(ui.labels.status, [0.5, 0.5, 0.5]);
+    }
+
+    function createRenderSection(ui) {
+        var rPanel = ui.w.add("panel", undefined, "Output");
+        rPanel.orientation = "column";
+        rPanel.alignChildren = ["fill", "top"];
+        rPanel.spacing = 5;
+        rPanel.margins = 10;
+
+        ui.btns.render = rPanel.add("button", undefined, "ADD TO RENDER QUEUE");
+        ui.btns.render.preferredSize.height = 30;
+        try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
+
+        ui.btns.convert = rPanel.add("button", undefined, "OPTIMIZE RENDER");
+        ui.btns.convert.preferredSize.height = 25;
+        ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
     }
 
     function buildUI(thisObj) {
@@ -2927,238 +3224,25 @@
         ui.w.spacing = 10;
         ui.w.margins = 15;
 
-        // UI Helpers
-        function addRow(parent, label, defaultVal) {
-            var g = parent.add("group");
-            g.orientation = "row";
-            g.alignChildren = ["left", "center"];
-            var lbl = g.add("statictext", undefined, label);
-            lbl.preferredSize.width = 65;
-            var inp = g.add("edittext", undefined, defaultVal);
-            inp.alignment = ["fill", "center"];
-            return inp;
-        }
+
 
 
 
         ui.btns.settings = null;
 
-        // --- SUB-BUILDER FUNCTIONS ---
-
-        function createHeader() {
-            var hdrGrp = ui.w.add("group");
-            hdrGrp.orientation = "row";
-            hdrGrp.alignment = ["fill", "top"];
-            hdrGrp.alignChildren = ["fill", "center"];
-
-            var titleGrp = hdrGrp.add("group");
-            titleGrp.orientation = "row";
-            titleGrp.alignChildren = ["left", "center"];
-
-            var title = titleGrp.add("statictext", undefined, "BIG HAPPY LAUNCHER");
-            try { title.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
-
-            // Version Label
-            var ver = titleGrp.add("statictext", undefined, "v" + CONFIG.VERSION);
-            try { ver.graphics.foregroundColor = ver.graphics.newPen(ver.graphics.PenType.SOLID_COLOR, [0.5, 0.5, 0.5], 1); } catch (e) { }
-
-            // Hidden Unit Tests trigger (Alt+Click / Shift+Click on Title)
-            title.addEventListener("click", function (k) {
-                // Check modifier keys using event object if available, or environment fallback
-                var isAlt = (k.altKey) || (typeof ScriptUI.environment !== "undefined" && ScriptUI.environment.keyboardState && ScriptUI.environment.keyboardState.altKey);
-                var isShift = (k.shiftKey) || (typeof ScriptUI.environment !== "undefined" && ScriptUI.environment.keyboardState && ScriptUI.environment.keyboardState.shiftKey);
-
-                if (isAlt) {
-                    runUnitTests();
-                } else if (isShift) {
-                    runStressTests();
-                }
-            });
-
-            // Spacer to push settings button to right
-            var spacer = hdrGrp.add("group");
-            spacer.alignment = ["fill", "fill"];
-
-            ui.btns.settings = hdrGrp.add("button", undefined, "⚙");
-            ui.btns.settings.preferredSize = [25, 25];
-            ui.btns.settings.helpTip = "Open Settings";
-        }
 
 
 
-        function createMainInputs() {
-            ui.mainGrp = ui.w.add("panel", undefined, "Project Details");
-            ui.mainGrp.orientation = "column";
-            ui.mainGrp.alignChildren = ["fill", "top"];
-            ui.mainGrp.spacing = 8;
-            ui.mainGrp.margins = 15;
 
-            // Template Dropdown
-            var tmplGrp = ui.mainGrp.add("group");
-            tmplGrp.orientation = "row";
-            tmplGrp.alignChildren = ["left", "center"];
-            var tmplLbl = tmplGrp.add("statictext", undefined, "Template:");
-            tmplLbl.preferredSize.width = 65;
-            ui.dropdowns.template = tmplGrp.add("dropdownlist", undefined, []);
-            ui.dropdowns.template.alignment = ["fill", "center"];
-            ui.dropdowns.template.preferredSize.height = 25;
-            ui.dropdowns.template.helpTip = "Select a template";
 
-            // Brand & Campaign
-            ui.inputs.brand = addRow(ui.mainGrp, "Brand:", "");
-            ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
 
-            ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
-            ui.inputs.campaign.helpTip = "Enter the campaign or project name";
 
-            // Quarter & Year & Version & Revision (Grouped for Layout)
-            var metaGrp = ui.mainGrp.add("group");
-            metaGrp.orientation = "row";
-            metaGrp.alignChildren = ["left", "center"];
-            metaGrp.spacing = 15; // Increased spacing between groups
 
-            // Quarter & Year Group
-            var dateGrp = metaGrp.add("group");
-            dateGrp.orientation = "row";
-            dateGrp.spacing = 5;
-            dateGrp.alignChildren = ["left", "center"];
 
-            dateGrp.add("statictext", undefined, "Q:");
-            ui.dropdowns.quarter = dateGrp.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
-            ui.dropdowns.quarter.selection = getCurrentQuarter();
-            ui.dropdowns.quarter.preferredSize = [50, 25];
 
-            dateGrp.add("statictext", undefined, "Y:");
-            var currentYear = getCurrentYear();
-            ui.dropdowns.year = dateGrp.add("dropdownlist", undefined, [
-                String(currentYear - 1),
-                String(currentYear),
-                String(currentYear + 1),
-                String(currentYear + 2)
-            ]);
-            ui.dropdowns.year.selection = 1;
-            ui.dropdowns.year.preferredSize = [65, 25];
 
-            // Version & Revision Group
-            var verGrp = metaGrp.add("group");
-            verGrp.orientation = "row";
-            verGrp.spacing = 5;
-            verGrp.alignChildren = ["left", "center"];
 
-            verGrp.add("statictext", undefined, "Ver:");
-            ui.inputs.version = verGrp.add("edittext", undefined, "1");
-            ui.inputs.version.preferredSize = [40, 25];
 
-            verGrp.add("statictext", undefined, "Rev:");
-            ui.inputs.revision = verGrp.add("edittext", undefined, "1");
-            ui.inputs.revision.preferredSize = [40, 25];
-
-            // Base Folder (Label + Path + Open Button)
-            var baseGrp = ui.mainGrp.add("group");
-            baseGrp.orientation = "row";
-            baseGrp.alignChildren = ["left", "center"];
-
-            var baseLbl = baseGrp.add("statictext", undefined, "Base:");
-            baseLbl.preferredSize.width = 65;
-
-            ui.labels.basePath = baseGrp.add("edittext", undefined, getBaseWorkFolder(), { readonly: true });
-            ui.labels.basePath.alignment = ["fill", "center"];
-            ui.labels.basePath.enabled = false; // Optional: greys it out slightly, but text remains readable
-
-            var openBaseBtn = baseGrp.add("button", undefined, "📂");
-            openBaseBtn.preferredSize = [30, 25]; // Match height of input
-            openBaseBtn.helpTip = "Open Base Folder";
-            openBaseBtn.onClick = function () {
-                var f = new Folder(ui.labels.basePath.text);
-                if (f.exists) f.execute();
-            };
-        }
-
-        function createPreview() {
-            var div = ui.w.add("panel", [0, 0, 100, 1]);
-            div.alignment = ["fill", "top"];
-
-            ui.labels.pathPreview = ui.w.add("statictext", undefined, "Path: ...");
-            ui.labels.pathPreview.alignment = ["center", "top"];
-            setTextColor(ui.labels.pathPreview, [0.4, 0.8, 0.4]);
-
-            ui.labels.filenamePreview = ui.w.add("statictext", undefined, "Filename: ...");
-            ui.labels.filenamePreview.alignment = ["center", "top"];
-            setTextColor(ui.labels.filenamePreview, [0.4, 0.7, 1]);
-        }
-
-        function createActionButtons() {
-            var actionsGrp = ui.w.add("group");
-            actionsGrp.orientation = "column";
-            actionsGrp.alignChildren = ["fill", "top"];
-            actionsGrp.spacing = 5;
-
-            // 1. Primary Action: CREATE
-            ui.btns.create = actionsGrp.add("button", undefined, "CREATE PROJECT");
-            ui.btns.create.preferredSize.height = 40;
-            try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
-            ui.btns.create.helpTip = "Create a new project from the selected template";
-
-            // 2. Secondary Actions: Tools (Open, Import, Save As, R+)
-            var toolsGrp = actionsGrp.add("group");
-            toolsGrp.orientation = "row";
-            toolsGrp.alignChildren = ["fill", "center"];
-            toolsGrp.spacing = 5;
-
-            ui.btns.open = toolsGrp.add("button", undefined, "Open...");
-            ui.btns.open.preferredSize.height = 30;
-            ui.btns.open.helpTip = "Open an existing .aep project";
-
-            ui.btns.recent = toolsGrp.add("button", undefined, "🕒");
-            ui.btns.recent.preferredSize = [35, 30];
-            ui.btns.recent.helpTip = "Recent Projects History";
-            ui.btns.recent.onClick = function () { ui.showRecentDialog(); };
-
-            ui.btns.importBtn = toolsGrp.add("button", undefined, "Import");
-            ui.btns.importBtn.preferredSize.height = 30;
-            ui.btns.importBtn.helpTip = "Import and standardize an existing .aep file";
-
-            ui.btns.saveAs = toolsGrp.add("button", undefined, "Save As...");
-            ui.btns.saveAs.preferredSize.height = 30;
-            ui.btns.saveAs.helpTip = "Save current project as new copy";
-
-            ui.btns.quickDup = toolsGrp.add("button", undefined, "R+");
-            ui.btns.quickDup.preferredSize.height = 30;
-            ui.btns.quickDup.preferredSize.width = 40;
-            ui.btns.quickDup.helpTip = "Quick Save: Increment Revision";
-            try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
-
-            // Collect & Upload
-            ui.btns.collect = toolsGrp.add("button", undefined, "☁ Collect");
-            ui.btns.collect.preferredSize.height = 30;
-            ui.btns.collect.helpTip = "Local Collect + Upload to Google Drive";
-            ui.btns.collect.onClick = function () {
-                collectAndUpload(ui);
-            };
-        }
-
-        function createTemplateManagement() {
-            ui.labels.status = ui.w.add("statictext", undefined, "Ready");
-            ui.labels.status.alignment = ["center", "top"];
-            try { ui.labels.status.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
-            setTextColor(ui.labels.status, [0.5, 0.5, 0.5]);
-        }
-
-        function createRenderSection() {
-            var rPanel = ui.w.add("panel", undefined, "Output"); // Renamed from "Output & Delivery" to prevent cutoff
-            rPanel.orientation = "column";
-            rPanel.alignChildren = ["fill", "top"];
-            rPanel.spacing = 5;
-            rPanel.margins = 10;
-
-            ui.btns.render = rPanel.add("button", undefined, "ADD TO RENDER QUEUE");
-            ui.btns.render.preferredSize.height = 30;
-            try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
-
-            ui.btns.convert = rPanel.add("button", undefined, "OPTIMIZE RENDER");
-            ui.btns.convert.preferredSize.height = 25;
-            ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
-        }
 
         // --- LOGIC FUNCTIONS (Methods attached to UI object) ---
 
@@ -3605,12 +3689,12 @@
         };
 
         // --- EXECUTE BUILD ---
-        createHeader();
-        createMainInputs();
-        createPreview();
-        createActionButtons();
-        createTemplateManagement();
-        createRenderSection();
+        createHeader(ui);
+        createMainInputs(ui);
+        createPreview(ui);
+        createActionButtons(ui);
+        createTemplateManagement(ui);
+        createRenderSection(ui);
 
         // Init
         ui.refreshDropdown();
