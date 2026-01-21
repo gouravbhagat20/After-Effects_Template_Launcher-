@@ -3517,21 +3517,38 @@
             }
         };
 
+        // TRAFFIC LIGHT STATUS SYSTEM
+        ui.setSuccess = function (text) {
+            ui.labels.status.text = "🟢 " + text;
+            setTextColor(ui.labels.status, [0.4, 0.9, 0.4]); // Bright Green
+        };
+
+        ui.setWarn = function (text) {
+            ui.labels.status.text = "🟡 " + text;
+            setTextColor(ui.labels.status, [1, 0.9, 0.2]); // Bright Yellow
+        };
+
+        ui.setError = function (text) {
+            ui.labels.status.text = "🔴 " + text;
+            setTextColor(ui.labels.status, [1, 0.4, 0.4]); // Soft Red
+        };
+
+        // Generic fallback
         ui.setStatus = function (text, color) {
             ui.labels.status.text = text;
-            setTextColor(ui.labels.status, color);
+            setTextColor(ui.labels.status, color || [0.8, 0.8, 0.8]);
         };
 
         ui.updateStatus = function () {
             if (!ui.templates.length || !ui.dropdowns.template.selection) {
-                ui.setStatus("No templates", [0.6, 0.6, 0.6]);
+                ui.setStatus("⚪ No templates loaded", [0.6, 0.6, 0.6]);
                 return;
             }
             var t = ui.templates[ui.dropdowns.template.selection.index];
             if (!t.path || !fileExists(t.path)) {
-                ui.setStatus("Template missing (Regenerate)", [0.9, 0.5, 0.2]);
+                ui.setWarn("Template missing (Regenerate)");
             } else {
-                ui.setStatus("Ready: " + t.name, [0.5, 0.8, 0.5]);
+                ui.setSuccess("Ready: " + t.name);
             }
         };
 
@@ -3568,20 +3585,20 @@
             var version = "V" + (parseInt(ui.inputs.version.text, 10) || 1);
             var revision = "R" + (parseInt(ui.inputs.revision.text, 10) || 1);
 
-            // Validation Feedback
+            // Validation Feedback with Traffic Lights
             var brandVal = validateInput(ui.inputs.brand.text, "brand");
             var cmpVal = validateInput(ui.inputs.campaign.text, "campaign");
 
             if (!brandVal.isValid && ui.inputs.brand.text.length > 0) {
                 ui.inputs.brand.helpTip = "Error: " + brandVal.msg;
-                ui.setStatus("Brand invalid: " + brandVal.msg, [1, 0, 0]);
+                ui.setError("Brand invalid: " + brandVal.msg);
             } else if (!cmpVal.isValid && ui.inputs.campaign.text.length > 0) {
                 ui.inputs.campaign.helpTip = "Error: " + cmpVal.msg;
-                ui.setStatus("Campaign invalid: " + cmpVal.msg, [1, 0, 0]);
+                ui.setError("Campaign invalid: " + cmpVal.msg);
             } else {
                 ui.inputs.brand.helpTip = "Enter the brand/client name (required)";
                 ui.inputs.campaign.helpTip = "Enter the campaign or project name";
-                ui.updateStatus();
+                ui.updateStatus(); // Reset to Green/Ready if clean
             }
 
             var filename = ui.buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
