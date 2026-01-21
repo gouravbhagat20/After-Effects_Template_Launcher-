@@ -3503,6 +3503,13 @@
             var defCamp = (prefill && prefill.campaign) ? prefill.campaign : "";
             var dCamp = cRow.add("edittext", undefined, defCamp); dCamp.preferredSize.width = 200;
 
+            // Simple Structure Checkbox
+            var sRow = grp.add("group");
+            sRow.alignment = ["right", "top"];
+            var dSimple = sRow.add("checkbox", undefined, "Simple Folder Structure");
+            dSimple.helpTip = "Check this to save directly to Base folder (skip Year/Quarter folders)";
+            dSimple.value = false; // Default: Standard Structure
+
             // Quarter
             var qRow = grp.add("group"); qRow.add("statictext", undefined, "Quarter:").preferredSize.width = 90;
             var dQuart = qRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
@@ -3526,12 +3533,25 @@
                 }
             }
 
+            // Toggle Dropdowns based on Simple Checkbox
+            dSimple.onClick = function () {
+                dQuart.enabled = !dSimple.value;
+                dYear.enabled = !dSimple.value;
+            };
+
             // Version
             var vRow = grp.add("group"); vRow.add("statictext", undefined, "Version:").preferredSize.width = 90;
             var defVer = (prefill && prefill.version) ? prefill.version.replace(/^V/i, "") : "1";
             var dVer = vRow.add("edittext", undefined, defVer); dVer.preferredSize.width = 50;
 
-            var helpTxt = vRow.add("statictext", undefined, "(Change this to V2, V3 etc)");
+            vRow.add("statictext", undefined, "(V2, V3 etc)");
+
+            // Revision
+            var rRow = grp.add("group"); rRow.add("statictext", undefined, "Revision:").preferredSize.width = 90;
+            var defRev = (prefill && prefill.revision) ? prefill.revision.replace(/^R/i, "") : "1";
+            var dRev = rRow.add("edittext", undefined, defRev); dRev.preferredSize.width = 50;
+
+            var helpTxt = rRow.add("statictext", undefined, "(R1, R2 etc)");
             setTextColor(helpTxt, [0.5, 0.5, 0.5]);
 
             // Buttons
@@ -3555,7 +3575,8 @@
                     quarter: dQuart.selection.text,
                     year: dYear.selection.text,
                     version: "V" + (parseInt(dVer.text) || 1),
-                    revision: "R1" // Always start at R1 for new Imports, or let auto-bump handle collisions
+                    revision: "R" + (parseInt(dRev.text) || 1),
+                    isSimple: dSimple.value
                 };
             }
             return null;
@@ -3684,6 +3705,7 @@
                 prefill.campaign = parsed.campaign || "";
                 prefill.quarter = parsed.quarter || "Q" + (getCurrentQuarter() + 1);
                 prefill.version = parsed.version || "V1";
+                prefill.revision = parsed.revision || "R1"; // Prefill Revision
             }
 
             // ALWAYS SHOW DIALOG to allow user to confirm/edit logic
@@ -3693,8 +3715,13 @@
 
             // 4. Structure & Save
             var basePath = getBaseWorkFolder();
+
+            // Simple Structure Logic: if isSimple is true, pass empty strings for Year/Quarter
+            var safeYear = meta.isSimple ? "" : meta.year;
+            var safeQuarter = meta.isSimple ? "" : meta.quarter;
+
             var projectName = buildProjectFolderName(meta.brand, meta.campaign);
-            var folders = createProjectStructure(basePath, meta.year, meta.quarter, projectName, sizeStr, meta.revision, templateType, meta.version);
+            var folders = createProjectStructure(basePath, safeYear, safeQuarter, projectName, sizeStr, meta.revision, templateType, meta.version);
 
             if (!folders) return;
 
@@ -3708,15 +3735,17 @@
             // Auto-Bump Revision Check
             var finalVer = meta.version;
             var finalRev = meta.revision;
-            var stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
+            var stdName = ui.buildFilename(meta.brand, meta.campaign, safeQuarter, sizeForFilename, finalVer, finalRev, isDOOH);
             var savePath = joinPath(folders.aeFolder, stdName);
 
-            // If exists, bump R until safe
+            // If exists, bump R until safe (Collision check)
+            // But if user MANUALLY entered R5, and R5 exists, we should probably warn or bump. 
+            // Current behavior: bumps to avoid overwrite.
             var safeR = parseInt(finalRev.replace(/^R/, "")) || 1;
             while (fileExists(savePath) && safeR < 50) {
                 safeR++;
                 finalRev = "R" + safeR;
-                stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
+                stdName = ui.buildFilename(meta.brand, meta.campaign, safeQuarter, sizeForFilename, finalVer, finalRev, isDOOH);
                 savePath = joinPath(folders.aeFolder, stdName);
             }
 
@@ -3726,6 +3755,19 @@
             // Update UI to reflect new file
             ui.inputs.brand.text = meta.brand;
             ui.inputs.campaign.text = meta.campaign;
+            ui.inputs.revision.text = finalRev.replace(/^R/, ""); // Update Revision in UI
+            if (!meta.isSimple) {
+                // Try to match dropdowns if possible, though if simple they were ignored
+                if (meta.quarter) {
+                    for (var q = 0; q < ui.dropdowns.quarter.items.length; q++) {
+                        if (ui.dropdowns.quarter.items[q].text === meta.quarter) {
+                            ui.dropdowns.quarter.selection = q;
+                            break;
+                        }
+                    }
+                }
+            }
+
             // Trigger UI update
             ui.checkRevision();
 
