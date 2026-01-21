@@ -234,6 +234,57 @@
         return true;
     }
 
+    /**
+     * Get or create a numbered project folder in the target directory.
+     * Scans for existing "##.FolderName" patterns and reuses if found, otherwise increments.
+     * @param {string} quarterFolderPath - Path to the quarter folder (e.g., "Drive/2026/Q1")
+     * @param {string} projectName - The project name without number prefix (e.g., "Brand_Campaign")
+     * @returns {string} The full numbered folder name (e.g., "03.Brand_Campaign")
+     */
+    function getOrCreateNumberedFolder(quarterFolderPath, projectName) {
+        var quarterFolder = new Folder(quarterFolderPath);
+        if (!quarterFolder.exists) {
+            // First project in this quarter
+            return "01." + projectName;
+        }
+
+        var subFolders = quarterFolder.getFiles(function (f) { return f instanceof Folder; });
+        var highestNumber = 0;
+        var existingFolder = null;
+
+        // Pattern: "##.FolderName" where ## is 2-digit number
+        var pattern = /^(\d{2})\.(.+)$/;
+
+        for (var i = 0; i < subFolders.length; i++) {
+            var folderName = subFolders[i].name;
+            var match = folderName.match(pattern);
+            if (match) {
+                var num = parseInt(match[1], 10);
+                var name = match[2];
+
+                // Track highest number
+                if (num > highestNumber) {
+                    highestNumber = num;
+                }
+
+                // Check if this folder matches our project name (case-insensitive)
+                if (name.toLowerCase() === projectName.toLowerCase()) {
+                    existingFolder = folderName;
+                }
+            }
+        }
+
+        // If we found an existing folder with the same name, reuse it
+        if (existingFolder) {
+            return existingFolder;
+        }
+
+        // Otherwise, create a new incremented number
+        var nextNumber = highestNumber + 1;
+        var paddedNumber = (nextNumber < 10 ? "0" : "") + nextNumber;
+        return paddedNumber + "." + projectName;
+    }
+
     function collectAndUpload(ui) {
         // 1. Validation
         if (!app.project || !app.project.file) { showError("BH-2003"); return; }
@@ -353,31 +404,30 @@
             // 4. UPLOAD TO DRIVE (Smart Mirroring)
             updateProgress("Connecting to Drive...", 7);
 
-            var year = "2026"; // Default
+            var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
             var quarter = "Q1";
-            var brandFolder = "01.Brand_Project";
+            var projectFolderName = "Brand_Project"; // Fallback
 
             // Try to derive better structure from parsed data or current UI
             if (parsed) {
-                year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
                 quarter = parsed.quarter || (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1");
 
                 var bName = parsed.brand;
                 var cName = parsed.campaign;
                 if (parsed.isDOOH && bName === "DOOH") {
-                    // For DOOH, maybe use Campaign as main folder? Or keep "DOOH"? 
                     bName = "DOOH";
                 }
 
-                var folderName = bName;
-                if (cName) folderName += "_" + cName;
-
-                brandFolder = "01." + folderName;
+                projectFolderName = bName;
+                if (cName) projectFolderName += "_" + cName;
             }
 
             // Construct Drive Paths
             var pYear = joinPath(driveRoot, year);
             var pQuarter = joinPath(pYear, quarter);
+
+            // Use incremental numbering helper
+            var brandFolder = getOrCreateNumberedFolder(pQuarter, projectFolderName);
             var pBrand = joinPath(pQuarter, brandFolder);
 
             var pAE = joinPath(pBrand, "AE");
