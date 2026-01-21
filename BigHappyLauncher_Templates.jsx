@@ -638,9 +638,7 @@
     }
 
     function getBaseWorkFolder() {
-        var defaultPath = ($.os && $.os.indexOf("Windows") !== -1)
-            ? "C:\\Work\\Animate CC"
-            : "~/Work/Animate CC";
+        var defaultPath = (typeof Folder !== "undefined" && Folder.desktop) ? Folder.desktop.fsName : "~/";
         return getSetting(CONFIG.SETTINGS.KEYS.BASE_WORK_FOLDER, defaultPath);
     }
 
