@@ -3234,12 +3234,38 @@
         var div = ui.w.add("panel", [0, 0, 100, 1]);
         div.alignment = ["fill", "top"];
 
-        ui.labels.pathPreview = ui.w.add("statictext", undefined, "Path: ...");
-        ui.labels.pathPreview.alignment = ["center", "top"];
+        // Structured Information Group
+        var infoGrp = ui.w.add("group");
+        infoGrp.orientation = "column";
+        infoGrp.alignChildren = ["left", "center"];
+        infoGrp.spacing = 2;
+        infoGrp.margins = [10, 5, 0, 5];
+
+        // Path Row
+        var pRow = infoGrp.add("group");
+        pRow.orientation = "row";
+        pRow.alignChildren = ["left", "center"];
+        pRow.spacing = 5;
+
+        var pIcon = pRow.add("statictext", undefined, "📂");
+        pIcon.helpTip = "Target Folder: This is where the project will be saved";
+
+        ui.labels.pathPreview = pRow.add("statictext", undefined, "Path: ...", { truncate: "middle" });
+        ui.labels.pathPreview.preferredSize.width = 380;
+        ui.labels.pathPreview.helpTip = "Target Folder Path (Click Create to save here)";
         setTextColor(ui.labels.pathPreview, [0.4, 0.8, 0.4]);
 
-        ui.labels.filenamePreview = ui.w.add("statictext", undefined, "Filename: ...");
-        ui.labels.filenamePreview.alignment = ["center", "top"];
+        // File Row
+        var fRow = infoGrp.add("group");
+        fRow.orientation = "row";
+        fRow.alignChildren = ["left", "center"];
+        fRow.spacing = 5;
+
+        var fIcon = fRow.add("statictext", undefined, "📄");
+        fIcon.helpTip = "Target Filename: The standardized name for your project";
+
+        ui.labels.filenamePreview = fRow.add("statictext", undefined, "Filename: ...");
+        ui.labels.filenamePreview.helpTip = "Final Filename (Standardized)";
         setTextColor(ui.labels.filenamePreview, [0.4, 0.7, 1]);
     }
 
