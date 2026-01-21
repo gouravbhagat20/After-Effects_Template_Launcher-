@@ -3503,13 +3503,6 @@
             var defCamp = (prefill && prefill.campaign) ? prefill.campaign : "";
             var dCamp = cRow.add("edittext", undefined, defCamp); dCamp.preferredSize.width = 200;
 
-            // Simple Structure Checkbox
-            var sRow = grp.add("group");
-            sRow.alignment = ["right", "top"];
-            var dSimple = sRow.add("checkbox", undefined, "Simple Folder Structure");
-            dSimple.helpTip = "Check this to save directly to Base folder (skip Year/Quarter folders)";
-            dSimple.value = false; // Default: Standard Structure
-
             // Quarter
             var qRow = grp.add("group"); qRow.add("statictext", undefined, "Quarter:").preferredSize.width = 90;
             var dQuart = qRow.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
@@ -3532,12 +3525,6 @@
                     if (dYear.items[i].text === prefill.year) { dYear.selection = i; break; }
                 }
             }
-
-            // Toggle Dropdowns based on Simple Checkbox
-            dSimple.onClick = function () {
-                dQuart.enabled = !dSimple.value;
-                dYear.enabled = !dSimple.value;
-            };
 
             // Version
             var vRow = grp.add("group"); vRow.add("statictext", undefined, "Version:").preferredSize.width = 90;
@@ -3575,8 +3562,7 @@
                     quarter: dQuart.selection.text,
                     year: dYear.selection.text,
                     version: "V" + (parseInt(dVer.text) || 1),
-                    revision: "R" + (parseInt(dRev.text) || 1),
-                    isSimple: dSimple.value
+                    revision: "R" + (parseInt(dRev.text) || 1)
                 };
             }
             return null;
@@ -3716,12 +3702,8 @@
             // 4. Structure & Save
             var basePath = getBaseWorkFolder();
 
-            // Simple Structure Logic: if isSimple is true, pass empty strings for Year/Quarter
-            var safeYear = meta.isSimple ? "" : meta.year;
-            var safeQuarter = meta.isSimple ? "" : meta.quarter;
-
             var projectName = buildProjectFolderName(meta.brand, meta.campaign);
-            var folders = createProjectStructure(basePath, safeYear, safeQuarter, projectName, sizeStr, meta.revision, templateType, meta.version);
+            var folders = createProjectStructure(basePath, meta.year, meta.quarter, projectName, sizeStr, meta.revision, templateType, meta.version);
 
             if (!folders) return;
 
@@ -3735,7 +3717,7 @@
             // Auto-Bump Revision Check
             var finalVer = meta.version;
             var finalRev = meta.revision;
-            var stdName = ui.buildFilename(meta.brand, meta.campaign, safeQuarter, sizeForFilename, finalVer, finalRev, isDOOH);
+            var stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
             var savePath = joinPath(folders.aeFolder, stdName);
 
             // If exists, bump R until safe (Collision check)
@@ -3745,7 +3727,7 @@
             while (fileExists(savePath) && safeR < 50) {
                 safeR++;
                 finalRev = "R" + safeR;
-                stdName = ui.buildFilename(meta.brand, meta.campaign, safeQuarter, sizeForFilename, finalVer, finalRev, isDOOH);
+                stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
                 savePath = joinPath(folders.aeFolder, stdName);
             }
 
