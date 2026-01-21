@@ -136,6 +136,7 @@
         "BH-1003": { msg: "Failed to generate template file", fix: "Check disk space and folder permissions" },
         "BH-1004": { msg: "No templates available", fix: "Add a template using the '+' button" },
         "BH-1005": { msg: "Base work folder does not exist", fix: "Click '...' to select a valid base folder, or create it first" },
+        "BH-1006": { msg: "File path too long (Windows Limit)", fix: "Move base folder higher up (e.g. C:/Projects) or shorten Brand/Campaign/Template names" },
 
         // 2xxx - Project Errors
         "BH-2001": { msg: "Failed to save project", fix: "Check disk space, file permissions, or if file is in use" },
@@ -1645,6 +1646,14 @@
 
             // Get template-specific asset folders or use default
             var assetSubfolders = CONFIG.TEMPLATE_FOLDERS[templateType] || CONFIG.TEMPLATE_FOLDERS["default"];
+
+            // FIX P2-1: PATH LENGTH CHECK (Prevent silent Windows failures)
+            // Estimate max file length ~50 chars inside deepest folder
+            var deepestPathLen = publishedFolder.length + 50;
+            if (deepestPathLen > CONFIG.LIMITS.PATH_MAX) {
+                showError("BH-1006", "Estimated path: " + deepestPathLen + " chars\nLimit: " + CONFIG.LIMITS.PATH_MAX + "\nPath: " + publishedFolder);
+                return null;
+            }
 
             // Build list of all folders to create
             var folders = [projectRoot, sizeFolder, versionFolder, aeFolder, publishedFolder, assetsFolder];
