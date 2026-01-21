@@ -3167,24 +3167,27 @@
         ui.inputs.campaign = addRow(ui.mainGrp, "Campaign:", "");
         ui.inputs.campaign.helpTip = "Enter the campaign or project name";
 
-        // Quarter & Year & Version & Revision (Grouped for Layout)
+        // META ROW: Time & Versioning (Icon-based Groups)
         var metaGrp = ui.mainGrp.add("group");
         metaGrp.orientation = "row";
-        metaGrp.alignChildren = ["left", "center"];
-        metaGrp.spacing = 15;
+        metaGrp.alignChildren = ["fill", "center"];
+        metaGrp.spacing = 10;
 
-        // Quarter & Year Group
+        // GROUP 1: Time (Calendar Icon)
         var dateGrp = metaGrp.add("group");
         dateGrp.orientation = "row";
-        dateGrp.spacing = 5;
+        dateGrp.spacing = 2; // Tighter spacing within group
         dateGrp.alignChildren = ["left", "center"];
 
-        dateGrp.add("statictext", undefined, "Q:");
+        var dateIcon = dateGrp.add("statictext", undefined, "📅");
+        dateIcon.preferredSize.width = 65; // MATCH LABEL WIDTH (65px) for vertical alignment
+        dateIcon.helpTip = "Period (Quarter & Year)";
+
         ui.dropdowns.quarter = dateGrp.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
         ui.dropdowns.quarter.selection = getCurrentQuarter();
-        ui.dropdowns.quarter.preferredSize = [50, 25];
+        ui.dropdowns.quarter.preferredSize = [55, 25]; // Restore reasonable width
+        ui.dropdowns.quarter.helpTip = "Quarter";
 
-        dateGrp.add("statictext", undefined, "Y:");
         var currentYear = getCurrentYear();
         ui.dropdowns.year = dateGrp.add("dropdownlist", undefined, [
             String(currentYear - 1),
@@ -3194,39 +3197,63 @@
         ]);
         ui.dropdowns.year.selection = 1;
         ui.dropdowns.year.preferredSize = [65, 25];
+        ui.dropdowns.year.helpTip = "Year";
 
-        // Version & Revision Group
+
+        // Spacer between groups
+        var spacer = metaGrp.add("group");
+        spacer.preferredSize.width = 10; // Explicit spacer
+
+
+        // GROUP 2: Versioning (Tag Icon)
         var verGrp = metaGrp.add("group");
         verGrp.orientation = "row";
-        verGrp.spacing = 5;
+        verGrp.spacing = 2; // Tighter spacing within group
         verGrp.alignChildren = ["left", "center"];
 
-        verGrp.add("statictext", undefined, "Ver:");
+        var verIcon = verGrp.add("statictext", undefined, "🏷️");
+        verIcon.preferredSize.width = 25; // This is inside the row, can stay small
+        verIcon.helpTip = "Versioning (V = Version, R = Revision)";
+
+        var vLbl = verGrp.add("statictext", undefined, "V");
         ui.inputs.version = verGrp.add("edittext", undefined, "1");
-        ui.inputs.version.preferredSize = [40, 25];
+        ui.inputs.version.preferredSize = [35, 25];
+        ui.inputs.version.helpTip = "Version Number";
 
-        verGrp.add("statictext", undefined, "Rev:");
+        var rLbl = verGrp.add("statictext", undefined, "R");
         ui.inputs.revision = verGrp.add("edittext", undefined, "1");
-        ui.inputs.revision.preferredSize = [40, 25];
+        ui.inputs.revision.preferredSize = [35, 25];
+        ui.inputs.revision.helpTip = "Revision Number";
 
-        // Base Folder (Label + Path + Open Button)
+
+        // BASE ROW (Folder Icon)
         var baseGrp = ui.mainGrp.add("group");
         baseGrp.orientation = "row";
         baseGrp.alignChildren = ["left", "center"];
+        baseGrp.spacing = 2; // Match group spacing above
 
-        var baseLbl = baseGrp.add("statictext", undefined, "Base:");
-        baseLbl.preferredSize.width = 65;
+        var baseIcon = baseGrp.add("statictext", undefined, "📂");
+        baseIcon.preferredSize.width = 65; // MATCH LABEL WIDTH (65px)
+        baseIcon.helpTip = "Base Work Folder";
 
         ui.labels.basePath = baseGrp.add("edittext", undefined, getBaseWorkFolder(), { readonly: true });
         ui.labels.basePath.alignment = ["fill", "center"];
+        ui.labels.basePath.preferredSize.height = 25;
         ui.labels.basePath.enabled = false;
 
-        var openBaseBtn = baseGrp.add("button", undefined, "📂");
+        var openBaseBtn = baseGrp.add("button", undefined, "...");
         openBaseBtn.preferredSize = [30, 25];
-        openBaseBtn.helpTip = "Open Base Folder";
+        openBaseBtn.helpTip = "Browse / Open Base Folder";
         openBaseBtn.onClick = function () {
             var f = new Folder(ui.labels.basePath.text);
             if (f.exists) f.execute();
+            else {
+                var newFolder = Folder.selectDialog("Select Base Work Folder");
+                if (newFolder) {
+                    setBaseWorkFolder(newFolder.fsName);
+                    ui.labels.basePath.text = newFolder.fsName;
+                }
+            }
         };
     }
 
