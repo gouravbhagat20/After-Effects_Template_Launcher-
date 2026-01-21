@@ -2602,6 +2602,86 @@
 
         };
 
+        ui.btns.vPlus.onClick = function () {
+            if (!app.project || !app.project.file) { showError("BH-2003"); return; }
+            try {
+                var currentName = app.project.file.name.replace(/\.aep$/i, "");
+                var parsed = parseProjectName(currentName);
+                if (!parsed) { alert("Cannot parse project name format."); return; }
+
+                // 1. Calculate New Version (Bump V, Reset R)
+                var currentVerNum = parseInt(parsed.version.replace(/^V/i, ""), 10) || 1;
+                var newVerNum = currentVerNum + 1;
+                var version = "V" + newVerNum;
+                var revision = "R1"; // Reset to R1
+
+                // 2. Initial Guess for Year/Quarter
+                var currentPath = app.project.file.parent.fsName;
+                var yearMatch = currentPath.match(/[\/\\](\d{4})[\/\\]/);
+                var quarterMatch = currentPath.match(/[\/\\](Q[1-4])[\/\\]/);
+
+                var year = yearMatch ? yearMatch[1] : String(getCurrentYear());
+                var quarter = parsed.quarter || (quarterMatch ? quarterMatch[1] : (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1"));
+
+                // 3. Confirm Dialog
+                var confirmWin = new Window("dialog", "Major Version Up");
+                confirmWin.add("statictext", undefined, "Create New Version: " + version + "?");
+
+                var grp = confirmWin.add("group");
+                grp.add("statictext", undefined, "Year: " + year + " | Quarter: " + quarter);
+
+                var btnGrp = confirmWin.add("group");
+                btnGrp.alignment = ["center", "bottom"];
+                var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
+                var cnclBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+                if (confirmWin.show() !== 1) return;
+
+                // 4. Structure
+                var dims = parsed.size.split("x");
+                var width = parseInt(dims[0], 10);
+                var height = parseInt(dims[1], 10);
+                var templateType = getTemplateType(width, height);
+                var templateFolderName = getTemplateFolderName(width, height);
+                var sizeFolderName = templateFolderName + "_" + parsed.size;
+                var brand = parsed.brand;
+                if (parsed.isDOOH && !brand) brand = "DOOH";
+                var campaign = parsed.campaign || "";
+                var projectName = buildProjectFolderName(brand, campaign);
+                var basePath = getBaseWorkFolder();
+
+                var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
+                if (!folders) return;
+
+                // 5. Filename
+                var newFilename;
+                if (parsed.isDOOH) {
+                    newFilename = "DOOH_" + (campaign || brand) + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
+                } else {
+                    newFilename = brand + "_" + campaign + "_" + quarter + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
+                }
+
+                // 6. Save
+                var savePath = joinPath(folders.aeFolder, newFilename);
+                var saveFile = new File(savePath);
+
+                if (saveFile.exists) {
+                    if (!confirm("File already exists:\n" + newFilename + "\n\nOverwrite?")) return;
+                }
+
+                app.project.save(saveFile);
+
+                // Update UI
+                ui.inputs.version.text = String(newVerNum);
+                ui.inputs.revision.text = "1";
+                ui.updatePreview();
+                addToRecentFiles(savePath);
+
+                alert("Version Up Successful!\n\nNew Version: " + version + "\nReset to: R1\nSaved to: " + folders.aeFolder);
+
+            } catch (e) { showError("BH-2001", e.toString()); }
+        };
+
         ui.btns.render.onClick = function () {
             if (!app.project || !app.project.file) { showError("BH-2003"); return; }
             var mainComp = findMainComp();
@@ -3179,6 +3259,12 @@
         ui.btns.quickDup.preferredSize.width = 40;
         ui.btns.quickDup.helpTip = "Quick Save: Increment Revision";
         try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
+
+        ui.btns.vPlus = toolsGrp.add("button", undefined, "V+");
+        ui.btns.vPlus.preferredSize.height = 30;
+        ui.btns.vPlus.preferredSize.width = 40;
+        ui.btns.vPlus.helpTip = "Version Up: Increment V# & Reset to R1";
+        try { ui.btns.vPlus.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
         // Collect & Upload
         ui.btns.collect = toolsGrp.add("button", undefined, "☁ Collect");
