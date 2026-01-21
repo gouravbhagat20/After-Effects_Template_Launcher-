@@ -3108,13 +3108,38 @@
             }
         });
 
-        // Spacer to push settings button to right
+        // Spacer to push buttons to right
         var spacer = hdrGrp.add("group");
         spacer.alignment = ["fill", "fill"];
 
-        ui.btns.settings = hdrGrp.add("button", undefined, "⚙");
-        ui.btns.settings.preferredSize = [25, 25];
-        ui.btns.settings.helpTip = "Open Settings";
+        // HEADER TOOLBAR (Open, Import, Recent, Settings)
+        var toolBar = hdrGrp.add("group");
+        toolBar.orientation = "row";
+        toolBar.spacing = 2;
+
+        ui.btns.open = toolBar.add("button", undefined, "📂");
+        ui.btns.open.preferredSize = [30, 25];
+        ui.btns.open.helpTip = "Open Project";
+        ui.btns.open.onClick = function () { ui.openProject(); };
+
+        ui.btns.importBtn = toolBar.add("button", undefined, "📥");
+        ui.btns.importBtn.preferredSize = [30, 25];
+        ui.btns.importBtn.helpTip = "Import & Standardize";
+        // onClick assigned in createActionButtons originally, needs to be here or reassigned?
+        // Better to assign purely logic later or inline here if simple. 
+        // Logic for import is "ui.importProject()" but it is defined via "ui.importProject = ..." in buildUI.
+        // So we assign the click handler LATER in buildUI or wrapper.
+        // Actually, we can just assign a proxy or keep the ref clearly.
+        // We will assign the click handler in the main logic block (createActionButtons section usually does logic binding).
+
+        ui.btns.recent = toolBar.add("button", undefined, "🕒");
+        ui.btns.recent.preferredSize = [30, 25];
+        ui.btns.recent.helpTip = "Recent Files";
+        ui.btns.recent.onClick = function () { ui.showRecentDialog(); };
+
+        ui.btns.settings = toolBar.add("button", undefined, "⚙");
+        ui.btns.settings.preferredSize = [30, 25];
+        ui.btns.settings.helpTip = "Settings";
     }
 
     function createMainInputs(ui) {
@@ -3231,43 +3256,32 @@
         ui.btns.create.helpTip = "Create a new project from the selected template";
         ui.btns.create.onClick = function () { ui.createProject(); };
 
-        // 2. Secondary Actions: Tools (Open, Import, Save As, R+)
-        var toolsGrp = actionsGrp.add("group");
-        toolsGrp.orientation = "row";
-        toolsGrp.alignChildren = ["fill", "center"];
-        toolsGrp.spacing = 5;
+        // 2. Active Project Tools (Row below Create)
+        var toolsRow = actionsGrp.add("group");
+        toolsRow.orientation = "row";
+        toolsRow.alignChildren = ["fill", "center"];
+        toolsRow.spacing = 5;
 
-        ui.btns.open = toolsGrp.add("button", undefined, "Open...");
-        ui.btns.open.preferredSize.height = 30;
-        ui.btns.open.helpTip = "Open an existing .aep project";
-
-        ui.btns.recent = toolsGrp.add("button", undefined, "🕒");
-        ui.btns.recent.preferredSize = [35, 30];
-        ui.btns.recent.helpTip = "Recent Projects History";
-        ui.btns.recent.onClick = function () { ui.showRecentDialog(); };
-
-        ui.btns.importBtn = toolsGrp.add("button", undefined, "Import");
-        ui.btns.importBtn.preferredSize.height = 30;
-        ui.btns.importBtn.helpTip = "Import and standardize an existing .aep file";
-
-        ui.btns.saveAs = toolsGrp.add("button", undefined, "Save As...");
+        // Save As
+        ui.btns.saveAs = toolsRow.add("button", undefined, "Save As...");
         ui.btns.saveAs.preferredSize.height = 30;
         ui.btns.saveAs.helpTip = "Save current project as new copy";
 
-        ui.btns.quickDup = toolsGrp.add("button", undefined, "R+");
+        // Versioning Group
+        ui.btns.quickDup = toolsRow.add("button", undefined, "R+");
         ui.btns.quickDup.preferredSize.height = 30;
         ui.btns.quickDup.preferredSize.width = 40;
         ui.btns.quickDup.helpTip = "Quick Save: Increment Revision";
         try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
-        ui.btns.vPlus = toolsGrp.add("button", undefined, "V+");
+        ui.btns.vPlus = toolsRow.add("button", undefined, "V+");
         ui.btns.vPlus.preferredSize.height = 30;
         ui.btns.vPlus.preferredSize.width = 40;
         ui.btns.vPlus.helpTip = "Version Up: Increment V# & Reset to R1";
         try { ui.btns.vPlus.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
-        // Collect & Upload
-        ui.btns.collect = toolsGrp.add("button", undefined, "☁ Collect");
+        // Collect
+        ui.btns.collect = toolsRow.add("button", undefined, "☁ Collect");
         ui.btns.collect.preferredSize.height = 30;
         ui.btns.collect.helpTip = "Local Collect + Upload to Google Drive";
         ui.btns.collect.onClick = function () {
