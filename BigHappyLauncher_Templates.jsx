@@ -472,14 +472,26 @@
 
             var driveAepPath = joinPath(driveRevisionFolder.fsName, currentName + ".aep");
 
-            // Copy AEP
+            // Copy AEP with Retry
             updateProgress("Uploading Project File...", 10);
             var localFile = new File(localAepPath);
-            if (localFile.copy(driveAepPath)) {
-                writeLog("Uploaded Project: " + driveAepPath, "INFO");
-            } else {
+            var uploadSuccess = false;
+            var maxRetries = 3;
+
+            for (var attempt = 1; attempt <= maxRetries; attempt++) {
+                if (localFile.copy(driveAepPath)) {
+                    uploadSuccess = true;
+                    writeLog("Uploaded Project: " + driveAepPath, "INFO");
+                    break;
+                } else {
+                    writeLog("Upload attempt " + attempt + " failed. Retrying...", "WARN");
+                    $.sleep(1000); // Wait 1 second before retry
+                }
+            }
+
+            if (!uploadSuccess) {
                 w.close();
-                alert("Failed to copy project file to Drive.");
+                alert("Failed to copy project file to Drive after " + maxRetries + " attempts.");
                 return;
             }
 
@@ -487,8 +499,9 @@
             $.sleep(200);
             w.close();
 
-            var resultMsg = "Pack & Upload Complete!\n\nLocal: " + destFolder.fsName + "\nDrive Project: " + driveAepPath + "\n(Assets Shared)";
-            alert(resultMsg);
+            var resultMsg = "Pack & Upload Complete: " + driveAepPath;
+            ui.setStatus(resultMsg, [0, 0.8, 0]); // GREEN Status
+            // alert(resultMsg); // Disabled per user request
 
 
             // 6. RETURN TO ORIGINAL PROJECT
@@ -499,7 +512,7 @@
             }
 
         } catch (e) {
-            w.close();
+            if (w) w.close();
             alert("Error during Collection/Upload:\n" + e.toString());
         }
     }
@@ -3711,24 +3724,29 @@
             // We want assets next to the AE file in a (Footage) folder
             // folders.aeFolder is the folder where the .aep will live
             var collectedCount = collectAssets(new Folder(folders.aeFolder));
-
             var isDOOH = (templateType.indexOf("dooh") !== -1 || meta.brand === "DOOH");
 
-            // Auto-Bump Revision Check
+            // Build Target Filename
             var finalVer = meta.version;
             var finalRev = meta.revision;
             var stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
             var savePath = joinPath(folders.aeFolder, stdName);
 
-            // If exists, bump R until safe (Collision check)
-            // But if user MANUALLY entered R5, and R5 exists, we should probably warn or bump. 
-            // Current behavior: bumps to avoid overwrite.
-            var safeR = parseInt(finalRev.replace(/^R/, "")) || 1;
-            while (fileExists(savePath) && safeR < 50) {
-                safeR++;
-                finalRev = "R" + safeR;
-                stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
-                savePath = joinPath(folders.aeFolder, stdName);
+            // OVERWRITE SAFETY CHECK
+            if (fileExists(savePath)) {
+                var confirmOverwrite = confirm("File already exists:\n" + stdName + "\n\nOverwrite?");
+                if (!confirmOverwrite) {
+                    // Auto-bump instead
+                    var safeR = parseInt(finalRev.replace(/^R/, "")) || 1;
+                    while (fileExists(savePath) && safeR < 50) {
+                        safeR++;
+                        finalRev = "R" + safeR;
+                        stdName = ui.buildFilename(meta.brand, meta.campaign, meta.quarter, sizeForFilename, finalVer, finalRev, isDOOH);
+                        savePath = joinPath(folders.aeFolder, stdName);
+                    }
+                    ui.setStatus("File existed. Auto-bumped to " + finalRev, [1, 0.5, 0]);
+                }
+                // If confirmed overwrite, we use original savePath logic below
             }
 
             app.project.save(new File(savePath));
@@ -3759,7 +3777,9 @@
             var saveFile = new File(savePath);
             if (saveFile.parent) saveFile.parent.execute();
 
-            alert("Import Successful!\n\nStandardized: " + stdName + "\nAssets Collected: " + collectedCount + "\n\nFolder opened.");
+            var statusMsg = "Imported: " + stdName + " (Assets: " + collectedCount + ")";
+            ui.setStatus(statusMsg, [0, 0.8, 0]); // Green Success
+            // alert("Import Successful!\n\nStandardized: " + stdName + "\nAssets Collected: " + collectedCount + "\n\nFolder opened.");
         };
 
         // --- EXECUTE BUILD ---
