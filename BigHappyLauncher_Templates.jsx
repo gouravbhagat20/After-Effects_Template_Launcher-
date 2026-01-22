@@ -79,6 +79,7 @@
                 POST_RENDER_HTML: "post_render_html",
                 POST_RENDER_ZIP: "post_render_zip",
                 TARGET_SIZE_MB: "target_size_mb",
+                DOOH_TARGET_MB: "dooh_target_mb",
                 GDRIVE_ROOT: "gdrive_root"
             },
             MAX_RECENT_FILES: 10
@@ -2179,6 +2180,12 @@
         var sizeInput = sizeGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, "2.5"));
         sizeInput.characters = 5;
 
+        // DOOH Target Size
+        var doohSizeGrp = convTab.add("group");
+        doohSizeGrp.add("statictext", undefined, "DOOH Target Size (MB):");
+        var doohSizeInput = doohSizeGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.DOOH_TARGET_MB, "6.8"));
+        doohSizeInput.characters = 5;
+
         // --- TAB 4: SYSTEM ---
         var sysTab = tPanel.add("tab", undefined, "System");
         sysTab.alignChildren = ["fill", "top"];
@@ -2343,6 +2350,9 @@
             setSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_ZIP, String(zipCheck.value));
             var tSize = parseFloat(sizeInput.text);
             if (!isNaN(tSize)) setSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, String(tSize));
+
+            var dSize = parseFloat(doohSizeInput.text);
+            if (!isNaN(dSize)) setSetting(CONFIG.SETTINGS.KEYS.DOOH_TARGET_MB, String(dSize));
 
             // Save System Settings
             setSetting(CONFIG.SETTINGS.KEYS.GDRIVE_ROOT, driveInput.text);
@@ -2747,6 +2757,12 @@
             processPostRender(ui);
         };
 
+        if (ui.btns.convertDOOH) {
+            ui.btns.convertDOOH.onClick = function () {
+                processDOOHRender(ui);
+            };
+        }
+
         // Keyboard Shortcuts
         ui.w.addEventListener("keydown", function (e) {
             if (e.ctrlKey && e.keyName === "Enter") { ui.btns.create.notify("onClick"); e.preventDefault(); }
@@ -2949,6 +2965,19 @@
         };
     }
 
+    function detectMP4s(folder) {
+        var files = folder.getFiles("*.mp4");
+        if (!files || files.length === 0) return [];
+        // Filter out optimized files
+        var candidates = [];
+        for (var i = 0; i < files.length; i++) {
+            if (files[i].name.indexOf("_Optimized") === -1) {
+                candidates.push(files[i]);
+            }
+        }
+        return candidates;
+    }
+
 
 
     function showPostRenderDialog(outFolder, seq, ffmpegRes, options, dims) {
@@ -3070,6 +3099,146 @@
         };
 
         showPostRenderDialog(targetFolder, seq, ffmpegOk, opts, dims);
+    }
+
+    function processDOOHRender(ui) {
+        if (!app.project || !app.project.file) { alert("Save project first."); return; }
+
+        var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
+        var possibleRenderFolder = new Folder(app.project.file.parent.fsName + "/" + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R" + projectRev);
+
+        var targetFolder = null;
+        if (possibleRenderFolder.exists) {
+            targetFolder = possibleRenderFolder;
+        } else {
+            targetFolder = Folder.selectDialog("Select the Render folder containing the MP4 file");
+        }
+
+        if (!targetFolder || !targetFolder.exists) return;
+
+        var mp4Files = detectMP4s(targetFolder);
+        if (mp4Files.length === 0) {
+            alert("No MP4 file found in:\n" + targetFolder.fsName + "\n\nPlease render your composition as an MP4 first.");
+            return;
+        }
+
+        var mp4File = mp4Files[0];
+        if (mp4Files.length > 1) {
+            // Show Selection Dialog
+            var d = new Window("dialog", "Select MP4 to Optimize");
+            d.orientation = "column"; d.alignChildren = ["fill", "top"]; d.spacing = 10; d.margins = 15;
+            d.add("statictext", undefined, "Multiple MP4s found. Select one:");
+
+            var list = d.add("listbox", undefined, [], { multiselect: false });
+            list.preferredSize = [450, 200];
+            for (var i = 0; i < mp4Files.length; i++) list.add("item", mp4Files[i].name);
+            list.selection = 0;
+
+            var btnGrp = d.add("group");
+            btnGrp.alignment = ["center", "bottom"];
+            var okBtn = btnGrp.add("button", undefined, "Process Selected", { name: "ok" });
+            var cancelBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+            okBtn.onClick = function () { d.close(1); };
+            cancelBtn.onClick = function () { d.close(0); };
+
+            if (d.show() !== 1) return;
+            mp4File = mp4Files[list.selection.index];
+        }
+
+        var ffmpegOk = checkFFmpeg();
+        if (!ffmpegOk) {
+            alert("FFmpeg not found. Please install it via Settings.");
+            return;
+        }
+
+        // Get Configurable Target
+        var targetMB = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DOOH_TARGET_MB, "6.8"));
+        if (isNaN(targetMB) || targetMB <= 0) targetMB = 6.8;
+
+        // Get Duration to calculate bitrate
+        var mainComp = findMainComp();
+        var duration = (mainComp) ? mainComp.duration : 15;
+
+        // Confirmation
+        if (!confirm("Optimize " + mp4File.name + " to < " + targetMB + "MB?\n\nThis will run in the BACKGROUND.\nDuration: " + duration.toFixed(1) + "s")) return;
+
+        runMP4Optimizer(mp4File, targetFolder, targetMB, duration);
+    }
+
+    function runMP4Optimizer(mp4File, outFolder, targetMB, duration) {
+        var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        var isWin = ($.os.indexOf("Windows") !== -1);
+        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
+
+        var outName = mp4File.name.replace(/\.mp4$/i, "") + "_Optimized.mp4";
+        var outMP4 = outFolder.fsName + (isWin ? "\\" : "/") + outName;
+        var scriptPath = outFolder.fsName + (isWin ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
+        var logPath = outFolder.fsName + (isWin ? "\\optimize_log.txt" : "/optimize_log.txt");
+        var passLog = outFolder.fsName + (isWin ? "\\ffmpeg2pass" : "/ffmpeg2pass");
+
+        // Calculate bitrate
+        if (duration < 1) duration = 1;
+        var totalBitrate = (targetMB * 8192) / duration;
+        var videoBitrate = Math.floor(totalBitrate - 128); // Audio safety
+        if (videoBitrate < 1000) videoBitrate = 1000; // Minimum 1mbps just in case
+
+        var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
+        var script = "";
+
+        if (isWin) {
+            script += "@echo off\r\n";
+            script += "chcp 65001 >NUL\r\n";
+            script += "echo Starting optimization... > \"" + logPath + "\"\r\n";
+            script += "echo Target: " + targetMB + "MB for " + duration.toFixed(1) + "s >> \"" + logPath + "\"\r\n";
+            script += "echo Bitrate: " + videoBitrate + "k >> \"" + logPath + "\"\r\n";
+
+            // 2-Pass MP4
+            script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
+            script += "if %errorlevel% neq 0 (echo PASS 1 FAILED >> \"" + logPath + "\" & exit /b %errorlevel%)\r\n";
+
+            script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\r\n";
+            script += "if %errorlevel% neq 0 (echo PASS 2 FAILED >> \"" + logPath + "\" & exit /b %errorlevel%)\r\n";
+
+            script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo FAILED >> \"" + logPath + "\")\r\n";
+            script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
+            script += "del \"" + passLog + ".mbtree\" 2>nul\r\n";
+            script += "msg * \"Optimization Complete! Check: " + outName + "\"\r\n";
+            script += "if %errorlevel% neq 0 (mshta \"javascript:alert('Optimization Complete! Check: " + outName + "');close();\")\r\n";
+            script += "timeout /t 2 > nul\r\n"; // Slight delay
+        } else {
+            script += "#!/bin/bash\n";
+            script += "echo 'Starting optimization...' > \"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\n";
+            script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || echo 'FAILED' >> \"" + logPath + "\"\n";
+            script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
+            script += "rm -f \"" + passLog + ".mbtree\" 2>/dev/null\n";
+            script += "osascript -e 'display notification \"Optimization Complete\" with title \"Big Happy Launcher\"'\n";
+        }
+
+        // Write Script
+        var sFile = new File(scriptPath);
+        sFile.open("w"); sFile.write(script); sFile.close();
+
+        if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
+
+        // UI
+        var w = new Window("palette", "Optimizing...", undefined, { closeButton: false });
+        w.add("statictext", undefined, "Optimizing MP4 to " + targetMB + "MB...");
+        w.center(); w.show(); w.update();
+
+        // UI Alert (Non-blocking)
+        alert("Optimization started in BACKGROUND.\n\nYou can continue working.\nA popup will appear when complete.");
+
+        // EXECUTE - NON-BLOCKING
+        if (isWin) {
+            system.callSystem("cmd /c start \"\" /min \"" + scriptPath + "\"");
+        } else {
+            system.callSystem("open \"" + scriptPath + "\"");
+        }
+
+        w.close();
     }
 
     // --- EXTRACTED UI HELPERS ---
@@ -3370,6 +3539,11 @@
         ui.btns.convert = rPanel.add("button", undefined, "OPTIMIZE RENDER");
         ui.btns.convert.preferredSize.height = 25;
         ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
+
+        ui.btns.convertDOOH = rPanel.add("button", undefined, "OPTIMIZE DOOH (7MB)");
+        ui.btns.convertDOOH.preferredSize.height = 25;
+        ui.btns.convertDOOH.helpTip = "Strict 7MB Limit for DOOH (1080p/1920p)";
+        try { ui.btns.convertDOOH.graphics.foregroundColor = ui.btns.convertDOOH.graphics.newPen(ui.btns.convertDOOH.graphics.PenType.SOLID_COLOR, [0.9, 0.7, 0.2], 1); } catch (e) { }
     }
 
     function buildUI(thisObj) {
@@ -3413,6 +3587,8 @@
                 open: null,
                 saveAs: null,
                 render: null,
+                convert: null,
+                convertDOOH: null,
                 quickDup: null,
                 ameCheckbox: null,
                 baseBrowse: null,
@@ -4002,6 +4178,10 @@
      * Run post-render conversion via external shell script
      * This prevents crashes by using a single system.callSystem() call
      */
+    /**
+     * Run post-render conversion via external shell script
+     * This prevents crashes by using a single system.callSystem() call
+     */
     function runConversion(outFolder, seq, options, dims) {
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var isWin = ($.os.indexOf("Windows") !== -1);
@@ -4013,6 +4193,8 @@
         var outMov = outFolder.fsName + (isWin ? "\\output.mov" : "/output.mov");
         var outHtml = outFolder.fsName + (isWin ? "\\index.html" : "/index.html");
         var passLog = outFolder.fsName + (isWin ? "\\ffmpeg2pass" : "/ffmpeg2pass");
+
+
 
         // =================================================================================
         // 1. GENERATE HTML (Mediabunny External Link Version)
@@ -4113,7 +4295,7 @@
         var zipPath = outFolder.fsName + (isWin ? "\\" : "/") + seq.prefix.replace(/_+$/, "") + "_Optimized.zip";
 
         // =================================================================================
-        // 2. CONVERSION COMMANDS (Improved CRF)
+        // 2. CONVERSION COMMANDS
         // =================================================================================
         if (isWin) {
             script += "@echo off\r\n";
@@ -4121,10 +4303,18 @@
             script += "echo Starting conversion... > \"" + logPath + "\"\r\n";
 
             if (options.webm) {
-                script += "echo [1/3] Converting to WebM (High Quality)... >> \"" + logPath + "\"\r\n";
-                // CRF 24 = Better Quality
-                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
-                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
+                script += "echo [1/3] Converting to WebM... >> \"" + logPath + "\"\r\n";
+                if (isDOOH) {
+                    script += "echo (Enforcing 7MB Limit for DOOH) >> \"" + logPath + "\"\r\n";
+                    // 2-PASS BITRATE TARGET
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 4 -quality good -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
+                } else {
+                    // DEFAULT CRF for non-DOOH
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
+                }
+
                 script += "if exist \"" + outWebM + "\" (echo WebM: SUCCESS >> \"" + logPath + "\") else (echo WebM: FAILED >> \"" + logPath + "\")\r\n";
                 script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
             }
@@ -4160,8 +4350,17 @@
             script += "echo 'Starting conversion...' > \"" + logPath + "\"\n";
 
             if (options.webm) {
-                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
-                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
+                if (isDOOH) {
+                    script += "echo '(Enforcing 7MB Limit for DOOH)' >> \"" + logPath + "\"\n";
+                    // 2-PASS BITRATE TARGET
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 4 -quality good -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
+                } else {
+                    // DEFAULT CRF
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
+                }
+
                 script += "[ -f \"" + outWebM + "\" ] && echo 'WebM: SUCCESS' >> \"" + logPath + "\" || echo 'WebM: FAILED' >> \"" + logPath + "\"\n";
                 script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
             }
@@ -4268,6 +4467,7 @@
         alert(resultMsg);
 
     }
+
 
     buildUI(thisObj);
 
