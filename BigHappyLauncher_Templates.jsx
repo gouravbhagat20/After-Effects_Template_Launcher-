@@ -2754,6 +2754,16 @@
         };
 
         ui.btns.convert.onClick = function () {
+            // Validate this is a Sunrise project (750x300)
+            var mainComp = findMainComp();
+            if (!mainComp) {
+                alert("No 'Main' composition found.\n\nThis button is for Sunrise projects only.");
+                return;
+            }
+            if (mainComp.width !== 750 || mainComp.height !== 300) {
+                alert("This button is for Sunrise projects only (750x300).\n\nDetected: " + mainComp.width + "x" + mainComp.height + "\n\nFor DOOH projects, use 'OPTIMIZE DOOH' instead.");
+                return;
+            }
             processPostRender(ui);
         };
 
@@ -3544,9 +3554,9 @@
         ui.btns.render.preferredSize.height = 30;
         try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
 
-        ui.btns.convert = rPanel.add("button", undefined, "OPTIMIZE RENDER");
+        ui.btns.convert = rPanel.add("button", undefined, "OPTIMIZE SUNRISE");
         ui.btns.convert.preferredSize.height = 25;
-        ui.btns.convert.helpTip = "Process rendered PNG sequence to WebM, MOV, and HTML";
+        ui.btns.convert.helpTip = "Process Sunrise PNG sequence to WebM, MOV, and HTML (750x300 only)";
 
         ui.btns.convertDOOH = rPanel.add("button", undefined, "OPTIMIZE DOOH (7MB)");
         ui.btns.convertDOOH.preferredSize.height = 25;
