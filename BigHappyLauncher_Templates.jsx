@@ -3193,7 +3193,10 @@
         var outMP4 = outFolder.fsName + (isWin ? "\\" : "/") + outName;
         var scriptPath = outFolder.fsName + (isWin ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
         var logPath = outFolder.fsName + (isWin ? "\\optimize_log.txt" : "/optimize_log.txt");
-        var passLog = outFolder.fsName + (isWin ? "\\ffmpeg2pass" : "/ffmpeg2pass");
+
+        // FIX: Use system temp folder for pass log to verify write access and avoid space issues
+        var tempFolder = Folder.temp;
+        var passLog = tempFolder.fsName + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() : "/ffmpeg2pass_" + new Date().getTime());
 
         // Calculate bitrate
         if (duration < 1) duration = 1;
@@ -3210,26 +3213,41 @@
             script += "echo Starting optimization... > \"" + logPath + "\"\r\n";
             script += "echo Target: " + targetMB + "MB for " + duration.toFixed(1) + "s >> \"" + logPath + "\"\r\n";
             script += "echo Bitrate: " + videoBitrate + "k >> \"" + logPath + "\"\r\n";
+            script += "echo PassLog: " + passLog + " >> \"" + logPath + "\"\r\n";
 
             // 2-Pass MP4
             script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
-            script += "if %errorlevel% neq 0 (echo PASS 1 FAILED >> \"" + logPath + "\" & exit /b %errorlevel%)\r\n";
+            script += "if %errorlevel% neq 0 (echo PASS 1 FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
 
             script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\r\n";
-            script += "if %errorlevel% neq 0 (echo PASS 2 FAILED >> \"" + logPath + "\" & exit /b %errorlevel%)\r\n";
+            script += "if %errorlevel% neq 0 (echo PASS 2 FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
 
-            script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo FAILED >> \"" + logPath + "\")\r\n";
+            script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
+
+            // CLEANUP
             script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
             script += "del \"" + passLog + ".mbtree\" 2>nul\r\n";
-            script += "msg * \"Optimization Complete! Check: " + outName + "\"\r\n";
-            script += "if %errorlevel% neq 0 (mshta \"javascript:alert('Optimization Complete! Check: " + outName + "');close();\")\r\n";
-            script += "timeout /t 2 > nul\r\n"; // Slight delay
+
+            // SUCCESS
+            script += "mshta \"javascript:alert('Optimization Complete! Check: " + outName.replace(/'/g, "") + "');close();\"\r\n";
+            script += "exit /b 0\r\n";
+
+            // ERROR HANDLER
+            script += ":ERROR\r\n";
+            script += "mshta \"javascript:alert('Optimization FAILED! Check " + logPath.replace(/\\/g, "/").replace(/'/g, "") + " for details.');close();\"\r\n";
+            script += "exit /b 1\r\n";
+
         } else {
             script += "#!/bin/bash\n";
             script += "echo 'Starting optimization...' > \"" + logPath + "\"\n";
             script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
+            script += "[ $? -eq 0 ] || { echo 'PASS 1 FAILED' >> \"" + logPath + "\"; osascript -e 'display notification \"Optimization Failed\" with title \"Big Happy Launcher\"'; exit 1; }\n";
+
             script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\n";
-            script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || echo 'FAILED' >> \"" + logPath + "\"\n";
+            script += "[ $? -eq 0 ] || { echo 'PASS 2 FAILED' >> \"" + logPath + "\"; osascript -e 'display notification \"Optimization Failed\" with title \"Big Happy Launcher\"'; exit 1; }\n";
+
+            script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT MISSING' >> \"" + logPath + "\"; exit 1; }\n";
+
             script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
             script += "rm -f \"" + passLog + ".mbtree\" 2>/dev/null\n";
             script += "osascript -e 'display notification \"Optimization Complete\" with title \"Big Happy Launcher\"'\n";
@@ -3246,12 +3264,16 @@
         w.add("statictext", undefined, "Optimizing MP4 to " + targetMB + "MB...");
         w.center(); w.show(); w.update();
 
-        // UI Alert (Non-blocking)
+        // UI Alert (Non-blocking but waits for user input)
         alert("Optimization started in BACKGROUND.\n\nYou can continue working.\nA popup will appear when complete.");
 
-        // EXECUTE - NON-BLOCKING
+        // EXECUTE - NON-BLOCKING (v2: Use execute() to prevent AE freeze)
         if (isWin) {
-            system.callSystem("cmd /c start \"\" /min \"" + scriptPath + "\"");
+            // system.callSystem causes freeze on some systems even with start
+            // File.execute() is strictly fire-and-forget at OS level
+            var batFile = new File(scriptPath);
+            if (batFile.exists) batFile.execute();
+            else alert("Error: Batch file not created at:\n" + scriptPath);
         } else {
             system.callSystem("open \"" + scriptPath + "\"");
         }
