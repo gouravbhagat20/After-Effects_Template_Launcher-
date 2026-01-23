@@ -996,7 +996,7 @@
             return count;
         } catch (e) {
             if (w) w.close();
-            // writeLog("Collection Error: " + e.toString(), "ERROR");
+            writeLog("Collection Error: " + e.toString(), "ERROR");
             return 0;
         }
     }
@@ -3081,13 +3081,21 @@
 
         // 3. Get Options
         var ffmpegOk = checkFFmpeg();
+        // Detect DOOH from project name or template type
+        var projectName = app.project.file.name.replace(/\.aep$/i, "");
+        var parsedName = parseProjectName(projectName);
+        var templateType = (mainComp) ? getTemplateType(mainComp.width, mainComp.height) : "default";
+        var detectedDOOH = (parsedName && parsedName.isDOOH) || (templateType.indexOf("dooh") !== -1);
+
         var opts = {
             webm: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_WEBM, "true") === "true"),
             mov: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_MOV, "true") === "true"),
             html: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_HTML, "true") === "true"),
             zip: (getSetting(CONFIG.SETTINGS.KEYS.POST_RENDER_ZIP, "true") === "true"),
             targetMB: parseFloat(getSetting(CONFIG.SETTINGS.KEYS.TARGET_SIZE_MB, "2.5")) || 2.5,
-            title: app.project.file.name.replace(/\.aep/i, "")
+            title: projectName,
+            isDOOH: detectedDOOH,
+            duration: (mainComp) ? mainComp.duration : 15
         };
 
         // 4. Dimensions/FPS
@@ -4194,7 +4202,18 @@
         var outHtml = outFolder.fsName + (isWin ? "\\index.html" : "/index.html");
         var passLog = outFolder.fsName + (isWin ? "\\ffmpeg2pass" : "/ffmpeg2pass");
 
-
+        // FIX: Define isDOOH and bitrateFlags (previously undefined - would crash on DOOH WebM)
+        var isDOOH = options.isDOOH || false;
+        var bitrateFlags = "";
+        if (isDOOH) {
+            var duration = options.duration || 15;
+            if (duration < 1) duration = 1;
+            var targetMB = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DOOH_TARGET_MB, "6.8")) || 6.8;
+            var totalBitrate = (targetMB * 8192) / duration;
+            var videoBitrate = Math.floor(totalBitrate - 128);
+            if (videoBitrate < 1000) videoBitrate = 1000;
+            bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
+        }
 
         // =================================================================================
         // 1. GENERATE HTML (Mediabunny External Link Version)
