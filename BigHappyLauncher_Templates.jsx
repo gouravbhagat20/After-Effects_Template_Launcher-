@@ -47,6 +47,39 @@
 (function (thisObj) {
 
     // =========================================================================
+    // STARTUP: Permission Check
+    // =========================================================================
+
+    // Test if script permissions are enabled by attempting a harmless write
+    function checkScriptPermissions() {
+        try {
+            var testFile = new File(Folder.temp.fsName + "/bh_permission_test.txt");
+            testFile.open("w");
+            testFile.write("test");
+            testFile.close();
+            testFile.remove();
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Show setup dialog if permissions not enabled
+    if (!checkScriptPermissions()) {
+        var setupMsg = "╔═══════════════════════════════════════════════════╗\n";
+        setupMsg += "║       BIG HAPPY LAUNCHER - FIRST TIME SETUP        ║\n";
+        setupMsg += "╚═══════════════════════════════════════════════════╝\n\n";
+        setupMsg += "Script permissions are not enabled.\n\n";
+        setupMsg += "To enable:\n";
+        setupMsg += "1. Go to Edit > Preferences > Scripting & Expressions\n";
+        setupMsg += "2. Check 'Allow Scripts to Write Files and Access Network'\n";
+        setupMsg += "3. Restart After Effects\n\n";
+        setupMsg += "The script will now close.";
+        alert(setupMsg);
+        return; // Exit script gracefully
+    }
+
+    // =========================================================================
     // SECTION 0: CORE UTILITIES (Moved to top for Config dependency)
     // =========================================================================
 
