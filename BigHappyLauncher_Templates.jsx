@@ -1130,7 +1130,10 @@
         if (illegal) return { isValid: false, msg: "Illegal char: '" + illegal[0] + "'" };
 
         var reserved = ["CON", "PRN", "AUX", "NUL", "COM1", "LPT1"];
-        if (reserved.indexOf(text.toUpperCase()) !== -1) return { isValid: false, msg: "Reserved name" };
+        var upperText = text.toUpperCase();
+        for (var r = 0; r < reserved.length; r++) {
+            if (reserved[r] === upperText) return { isValid: false, msg: "Reserved name" };
+        }
 
         return { isValid: true, msg: "OK" };
     }
