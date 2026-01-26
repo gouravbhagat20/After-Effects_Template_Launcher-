@@ -588,6 +588,26 @@
         return s;
     }
 
+    /**
+     * Check if a path exceeds Windows MAX_PATH limit
+     * @param {string} path - Full path to check
+     * @param {boolean} [showAlert] - Show error dialog if too long
+     * @returns {object} { valid: boolean, length: number, limit: number }
+     */
+    function checkPathLength(path, showAlert) {
+        if (!path) return { valid: true, length: 0, limit: CONFIG.LIMITS.PATH_MAX };
+
+        var len = path.length;
+        var limit = CONFIG.LIMITS.PATH_MAX;
+        var isValid = len <= limit;
+
+        if (!isValid && showAlert) {
+            showError("BH-1006", "Path is " + len + " chars (limit: " + limit + ")");
+        }
+
+        return { valid: isValid, length: len, limit: limit };
+    }
+
     function setTextColor(element, color) {
         try {
             if (element.graphics) {
@@ -1124,29 +1144,34 @@
     // =========================================================================
 
     function jsonStringify(obj) {
-        if (obj === null) return "null";
-        if (typeof obj === "undefined") return "null";
-        if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
-        if (typeof obj === "string") {
-            return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
-        }
-        if (obj instanceof Array) {
-            var arr = [];
-            for (var i = 0; i < obj.length; i++) {
-                arr.push(jsonStringify(obj[i]));
+        try {
+            if (obj === null) return "null";
+            if (typeof obj === "undefined") return "null";
+            if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
+            if (typeof obj === "string") {
+                return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
             }
-            return "[" + arr.join(",") + "]";
-        }
-        if (typeof obj === "object") {
-            var pairs = [];
-            for (var k in obj) {
-                if (obj.hasOwnProperty(k)) {
-                    pairs.push('"' + k + '":' + jsonStringify(obj[k]));
+            if (obj instanceof Array) {
+                var arr = [];
+                for (var i = 0; i < obj.length; i++) {
+                    arr.push(jsonStringify(obj[i]));
                 }
+                return "[" + arr.join(",") + "]";
             }
-            return "{" + pairs.join(",") + "}";
+            if (typeof obj === "object") {
+                var pairs = [];
+                for (var k in obj) {
+                    if (obj.hasOwnProperty(k)) {
+                        pairs.push('"' + k + '":' + jsonStringify(obj[k]));
+                    }
+                }
+                return "{" + pairs.join(",") + "}";
+            }
+            return String(obj);
+        } catch (e) {
+            writeLog("jsonStringify failed: " + e.toString(), "ERROR");
+            return "null";
         }
-        return String(obj);
     }
 
     /**
@@ -1168,6 +1193,7 @@
             try {
                 return JSON.parse(str);
             } catch (e) {
+                writeLog("jsonParse (native) failed: " + str.substring(0, 50), "WARN");
                 return defaultValue;
             }
         }
@@ -1194,6 +1220,7 @@
             var result = eval("(" + str + ")");
             return result;
         } catch (e) {
+            writeLog("jsonParse (eval) failed: " + str.substring(0, 50), "WARN");
             return defaultValue;
         }
     }
@@ -1438,6 +1465,20 @@
         runTest("JSON: Valid", jsonParse('{"a":1}', null).a === 1);
         runTest("JSON: Malformed", jsonParse('{a:1', "fail") === "fail");
         runTest("JSON: Injection", jsonParse('(function(){return 1})()', "safe") === "safe");
+
+        // --- 6. Path Length Safety ---
+        runTest("Path: Short OK", checkPathLength("C:\\Short\\Path").valid === true);
+        runTest("Path: Long Fail", checkPathLength(new Array(250).join("x")).valid === false);
+        runTest("Path: Null Safe", checkPathLength(null).valid === true);
+        runTest("Path: Empty Safe", checkPathLength("").valid === true);
+        runTest("Path: Exact Limit", checkPathLength(new Array(241).join("x")).valid === false);
+
+        // --- 7. JSON Edge Cases ---
+        runTest("JSON: Empty Array", jsonParse('[]', null) instanceof Array);
+        runTest("JSON: Empty Object", jsonParse('{}', null) !== null);
+        runTest("JSON: Deep Nest", jsonParse('{"a":{"b":{"c":1}}}', null).a.b.c === 1);
+        runTest("JSON: Stringify Array", jsonStringify([1, 2, 3]) === "[1,2,3]");
+        runTest("JSON: Stringify Nested", jsonStringify({ a: 1 }) === '{"a":1}');
 
         var total = passed + failed;
         var resultMsg = "COMPREHENSIVE CHECK COMPLETED\n\n";
