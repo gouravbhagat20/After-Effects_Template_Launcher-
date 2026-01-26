@@ -3287,6 +3287,58 @@
     }
 
     /**
+     * Get video duration using FFprobe
+     * @param {File} videoFile - The video file to analyze
+     * @returns {number} Duration in seconds, or 0 if detection failed
+     */
+    function getVideoDuration(videoFile) {
+        if (!videoFile || !videoFile.exists) return 0;
+
+        var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        var ffprobePath = "";
+
+        // FFprobe is usually in the same folder as FFmpeg
+        if (ffmpegPath) {
+            ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
+            var probeFile = new File(ffprobePath);
+            if (!probeFile.exists) {
+                // Try without extension
+                ffprobePath = ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
+                probeFile = new File(ffprobePath);
+                if (!probeFile.exists) {
+                    ffprobePath = ""; // Fall back to system path
+                }
+            }
+        }
+
+        var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
+        var isWin = ($.os.indexOf("Windows") !== -1);
+
+        // FFprobe command to get duration in seconds
+        var cmd = exe + ' -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + videoFile.fsName + '"';
+
+        if (isWin) {
+            cmd = 'cmd /c ' + cmd;
+        }
+
+        try {
+            var result = system.callSystem(cmd);
+            // Clean up result and parse as float
+            result = result.replace(/[\r\n\s]/g, "");
+            var duration = parseFloat(result);
+
+            if (!isNaN(duration) && duration > 0) {
+                writeLog("Auto-detected duration: " + duration + "s for " + videoFile.name, "INFO");
+                return duration;
+            }
+        } catch (e) {
+            writeLog("FFprobe duration detection failed: " + e.toString(), "WARN");
+        }
+
+        return 0; // Return 0 to indicate failure
+    }
+
+    /**
      * Automatically download and install FFmpeg (Windows only)
      * @returns {boolean} true if successful
      */
@@ -3459,26 +3511,37 @@
             if (mp4Files.length === 0) return;
             targetFolder = mp4Files[0].parent;
 
-            // Ask for duration since we don't have comp info
-            var durationDialog = new Window("dialog", "Video Duration");
-            durationDialog.orientation = "column";
-            durationDialog.alignChildren = ["fill", "top"];
-            durationDialog.margins = 15;
-            durationDialog.spacing = 10;
+            // Auto-detect duration from first file using FFprobe
+            var detectedDuration = getVideoDuration(mp4Files[0]);
 
-            durationDialog.add("statictext", undefined, "Selected: " + mp4Files.length + " file(s)");
-            durationDialog.add("statictext", undefined, "Enter video duration (seconds):");
-            durationDialog.add("statictext", undefined, "(Used to calculate optimal bitrate)");
-            var durInput = durationDialog.add("edittext", undefined, "15");
-            durInput.preferredSize.width = 100;
+            if (detectedDuration > 0) {
+                // Duration auto-detected successfully
+                duration = detectedDuration;
+                // Show brief confirmation
+                // (Optional: could skip this alert for faster workflow)
+            } else {
+                // FFprobe failed - fall back to manual input
+                var durationDialog = new Window("dialog", "Video Duration");
+                durationDialog.orientation = "column";
+                durationDialog.alignChildren = ["fill", "top"];
+                durationDialog.margins = 15;
+                durationDialog.spacing = 10;
 
-            var btnGrp = durationDialog.add("group");
-            btnGrp.alignment = ["center", "top"];
-            var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
-            var cancelBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+                durationDialog.add("statictext", undefined, "Selected: " + mp4Files.length + " file(s)");
+                durationDialog.add("statictext", undefined, "⚠️ Could not auto-detect duration");
+                durationDialog.add("statictext", undefined, "Enter video duration (seconds):");
+                durationDialog.add("statictext", undefined, "(Used to calculate optimal bitrate)");
+                var durInput = durationDialog.add("edittext", undefined, "15");
+                durInput.preferredSize.width = 100;
 
-            if (durationDialog.show() !== 1) return;
-            duration = parseFloat(durInput.text) || 15;
+                var btnGrp = durationDialog.add("group");
+                btnGrp.alignment = ["center", "top"];
+                var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
+                var cancelBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+                if (durationDialog.show() !== 1) return;
+                duration = parseFloat(durInput.text) || 15;
+            }
 
         } else {
             // Mode 2: Try to find MP4 in project render folder
