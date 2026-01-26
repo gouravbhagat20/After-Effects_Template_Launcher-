@@ -3235,91 +3235,196 @@
         var scriptPath = outFolder.fsName + (isWin ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
         var logPath = outFolder.fsName + (isWin ? "\\optimize_log.txt" : "/optimize_log.txt");
 
-        // FIX: Use system temp folder for pass log to verify write access and avoid space issues
+        // FIX: Use system temp folder for pass log
         var tempFolder = Folder.temp;
         var passLog = tempFolder.fsName + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() : "/ffmpeg2pass_" + new Date().getTime());
 
         // Calculate bitrate
         if (duration < 1) duration = 1;
         var totalBitrate = (targetMB * 8192) / duration;
-        var videoBitrate = Math.floor(totalBitrate - 128); // Audio safety
-        if (videoBitrate < 1000) videoBitrate = 1000; // Minimum 1mbps just in case
+        var videoBitrate = Math.floor(totalBitrate - 128);
+        if (videoBitrate < 1000) videoBitrate = 1000;
 
         var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
+        var sourceSize = mp4File.length / (1024 * 1024); // MB
         var script = "";
 
+        // Build script with progress markers
         if (isWin) {
             script += "@echo off\r\n";
             script += "chcp 65001 >NUL\r\n";
-            script += "echo Starting optimization... > \"" + logPath + "\"\r\n";
-            script += "echo Target: " + targetMB + "MB for " + duration.toFixed(1) + "s >> \"" + logPath + "\"\r\n";
+            script += "echo STARTED > \"" + logPath + "\"\r\n";
+            script += "echo Source: " + mp4File.name + " >> \"" + logPath + "\"\r\n";
+            script += "echo Target: " + targetMB + "MB >> \"" + logPath + "\"\r\n";
             script += "echo Bitrate: " + videoBitrate + "k >> \"" + logPath + "\"\r\n";
-            script += "echo PassLog: " + passLog + " >> \"" + logPath + "\"\r\n";
-
-            // 2-Pass MP4
+            script += "echo PASS1_START >> \"" + logPath + "\"\r\n";
             script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
-            script += "if %errorlevel% neq 0 (echo PASS 1 FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
-
+            script += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
+            script += "echo PASS1_DONE >> \"" + logPath + "\"\r\n";
+            script += "echo PASS2_START >> \"" + logPath + "\"\r\n";
             script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\r\n";
-            script += "if %errorlevel% neq 0 (echo PASS 2 FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
-
-            script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
-
-            // CLEANUP
+            script += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
+            script += "echo PASS2_DONE >> \"" + logPath + "\"\r\n";
+            script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT_MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
             script += "del \"" + passLog + ".mbtree\" 2>nul\r\n";
-
-            // SUCCESS
-            script += "mshta \"javascript:alert('Optimization Complete! Check: " + outName.replace(/'/g, "") + "');close();\"\r\n";
             script += "exit /b 0\r\n";
-
-            // ERROR HANDLER
             script += ":ERROR\r\n";
-            script += "mshta \"javascript:alert('Optimization FAILED! Check " + logPath.replace(/\\/g, "/").replace(/'/g, "") + " for details.');close();\"\r\n";
+            script += "echo FAILED >> \"" + logPath + "\"\r\n";
             script += "exit /b 1\r\n";
-
         } else {
             script += "#!/bin/bash\n";
-            script += "echo 'Starting optimization...' > \"" + logPath + "\"\n";
+            script += "echo 'STARTED' > \"" + logPath + "\"\n";
+            script += "echo 'Source: " + mp4File.name + "' >> \"" + logPath + "\"\n";
+            script += "echo 'PASS1_START' >> \"" + logPath + "\"\n";
             script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
-            script += "[ $? -eq 0 ] || { echo 'PASS 1 FAILED' >> \"" + logPath + "\"; osascript -e 'display notification \"Optimization Failed\" with title \"Big Happy Launcher\"'; exit 1; }\n";
-
+            script += "[ $? -eq 0 ] || { echo 'PASS1_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
+            script += "echo 'PASS1_DONE' >> \"" + logPath + "\"\n";
+            script += "echo 'PASS2_START' >> \"" + logPath + "\"\n";
             script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\n";
-            script += "[ $? -eq 0 ] || { echo 'PASS 2 FAILED' >> \"" + logPath + "\"; osascript -e 'display notification \"Optimization Failed\" with title \"Big Happy Launcher\"'; exit 1; }\n";
-
-            script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT MISSING' >> \"" + logPath + "\"; exit 1; }\n";
-
+            script += "[ $? -eq 0 ] || { echo 'PASS2_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
+            script += "echo 'PASS2_DONE' >> \"" + logPath + "\"\n";
+            script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT_MISSING' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
             script += "rm -f \"" + passLog + ".mbtree\" 2>/dev/null\n";
-            script += "osascript -e 'display notification \"Optimization Complete\" with title \"Big Happy Launcher\"'\n";
         }
 
         // Write Script
         var sFile = new File(scriptPath);
         sFile.open("w"); sFile.write(script); sFile.close();
-
         if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
 
-        // UI
-        var w = new Window("palette", "Optimizing...", undefined, { closeButton: false });
-        w.add("statictext", undefined, "Optimizing MP4 to " + targetMB + "MB...");
-        w.center(); w.show(); w.update();
+        // Progress UI
+        var w = new Window("palette", "DOOH Optimization", undefined, { closeButton: false });
+        w.orientation = "column";
+        w.alignChildren = ["fill", "top"];
+        w.margins = 20;
+        w.spacing = 10;
 
-        // UI Alert (Non-blocking but waits for user input)
-        alert("Optimization started in BACKGROUND.\n\nYou can continue working.\nA popup will appear when complete.");
+        var titleLbl = w.add("statictext", undefined, "Optimizing: " + mp4File.name);
+        try { titleLbl.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
-        // EXECUTE - NON-BLOCKING (v2: Use execute() to prevent AE freeze)
+        var statusLbl = w.add("statictext", undefined, "Starting optimization...");
+        var progressBar = w.add("progressbar", [0, 0, 280, 20], 0, 100);
+
+        var detailGrp = w.add("group");
+        detailGrp.orientation = "column";
+        detailGrp.alignChildren = ["left", "top"];
+        var detailLbl = detailGrp.add("statictext", undefined, "Target: " + targetMB + " MB | Bitrate: " + videoBitrate + " kbps");
+        setTextColor(detailLbl, [0.5, 0.5, 0.5]);
+
+        w.center();
+        w.show();
+        w.update();
+
+        // Execute script (non-blocking)
         if (isWin) {
-            // system.callSystem causes freeze on some systems even with start
-            // File.execute() is strictly fire-and-forget at OS level
             var batFile = new File(scriptPath);
             if (batFile.exists) batFile.execute();
-            else alert("Error: Batch file not created at:\n" + scriptPath);
         } else {
             system.callSystem("open \"" + scriptPath + "\"");
         }
 
+        // Progress polling loop
+        var logFile = new File(logPath);
+        var maxWait = 600; // 10 minutes max
+        var waited = 0;
+        var pollInterval = 500; // ms
+        var lastStatus = "";
+
+        while (waited < maxWait) {
+            $.sleep(pollInterval);
+            waited += (pollInterval / 1000);
+
+            if (logFile.exists) {
+                logFile.open("r");
+                var logContent = logFile.read();
+                logFile.close();
+
+                // Update progress based on markers
+                if (logContent.indexOf("PASS1_START") !== -1 && lastStatus !== "PASS1") {
+                    lastStatus = "PASS1";
+                    statusLbl.text = "Pass 1 of 2: Analyzing...";
+                    progressBar.value = 20;
+                    w.update();
+                }
+                if (logContent.indexOf("PASS1_DONE") !== -1 && lastStatus !== "PASS1_DONE") {
+                    lastStatus = "PASS1_DONE";
+                    statusLbl.text = "Pass 1 complete. Starting Pass 2...";
+                    progressBar.value = 50;
+                    w.update();
+                }
+                if (logContent.indexOf("PASS2_START") !== -1 && lastStatus !== "PASS2") {
+                    lastStatus = "PASS2";
+                    statusLbl.text = "Pass 2 of 2: Encoding...";
+                    progressBar.value = 60;
+                    w.update();
+                }
+                if (logContent.indexOf("PASS2_DONE") !== -1 && lastStatus !== "PASS2_DONE") {
+                    lastStatus = "PASS2_DONE";
+                    statusLbl.text = "Finalizing...";
+                    progressBar.value = 90;
+                    w.update();
+                }
+
+                // Check for completion
+                if (logContent.indexOf("SUCCESS") !== -1) {
+                    progressBar.value = 100;
+                    statusLbl.text = "Complete!";
+                    w.update();
+                    $.sleep(500);
+                    break;
+                }
+                if (logContent.indexOf("FAILED") !== -1) {
+                    w.close();
+                    var failReason = "Unknown";
+                    if (logContent.indexOf("PASS1_FAILED") !== -1) failReason = "Pass 1 encoding failed";
+                    if (logContent.indexOf("PASS2_FAILED") !== -1) failReason = "Pass 2 encoding failed";
+                    if (logContent.indexOf("OUTPUT_MISSING") !== -1) failReason = "Output file not created";
+                    alert("Optimization FAILED!\n\nReason: " + failReason + "\n\nCheck log: " + logPath);
+                    return;
+                }
+            }
+        }
+
         w.close();
+
+        // Check if timed out
+        if (waited >= maxWait) {
+            alert("Optimization timed out after 10 minutes.\n\nCheck log: " + logPath);
+            return;
+        }
+
+        // Enhanced Results
+        var outputFile = new File(outMP4);
+        if (outputFile.exists) {
+            var outputSize = outputFile.length / (1024 * 1024);
+            var savings = ((sourceSize - outputSize) / sourceSize * 100);
+            var meetsTarget = outputSize <= targetMB;
+
+            var resultMsg = "═══════════════════════════════════════\n";
+            resultMsg += "        DOOH OPTIMIZATION COMPLETE\n";
+            resultMsg += "═══════════════════════════════════════\n\n";
+            resultMsg += "Source:   " + mp4File.name + "\n";
+            resultMsg += "          " + sourceSize.toFixed(2) + " MB\n\n";
+            resultMsg += "Output:   " + outName + "\n";
+            resultMsg += "          " + outputSize.toFixed(2) + " MB\n\n";
+            resultMsg += "───────────────────────────────────────\n";
+            resultMsg += "Target:   " + targetMB + " MB  " + (meetsTarget ? "✓ MET" : "✗ EXCEEDED") + "\n";
+            resultMsg += "Savings:  " + savings.toFixed(1) + "% reduction\n";
+            resultMsg += "Codec:    H.264 (libx264)\n";
+            resultMsg += "Bitrate:  " + videoBitrate + " kbps\n";
+            resultMsg += "Duration: " + duration.toFixed(1) + "s\n";
+            resultMsg += "───────────────────────────────────────\n\n";
+            resultMsg += "Location: " + outFolder.fsName;
+
+            alert(resultMsg);
+
+            // Open folder
+            outFolder.execute();
+        } else {
+            alert("Output file not found.\n\nExpected: " + outMP4 + "\n\nCheck log: " + logPath);
+        }
     }
 
     // --- EXTRACTED UI HELPERS ---
