@@ -5,6 +5,22 @@
 
 ---
 
+## Screenshots
+
+### Main Panel
+![Main Panel](screenshots/main_panel.png)
+*The main interface with template selection, project details, and action buttons*
+
+### Batch DOOH Optimization
+![Batch Progress](screenshots/batch_progress.png)
+*Real-time progress with elapsed time and estimated remaining time*
+
+### Optimization Results
+![Batch Results](screenshots/batch_results.png)
+*Detailed results showing file sizes Savings percentage for each file*
+
+---
+
 ## Quick Install
 
 1. **Copy the script file** to:
