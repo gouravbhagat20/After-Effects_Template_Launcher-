@@ -3204,6 +3204,220 @@
     }
 
     /**
+     * Show FFmpeg setup dialog with auto-install option
+     * @returns {boolean} true if FFmpeg is now available, false if cancelled
+     */
+    function showFFmpegSetupDialog() {
+        var isWin = ($.os.indexOf("Windows") !== -1);
+
+        var d = new Window("dialog", "FFmpeg Setup Required");
+        d.orientation = "column";
+        d.alignChildren = ["fill", "top"];
+        d.margins = 20;
+        d.spacing = 12;
+
+        // Title
+        var titleLbl = d.add("statictext", undefined, "FFmpeg is required for DOOH optimization");
+        try { titleLbl.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
+
+        d.add("statictext", undefined, "FFmpeg is a free video compression tool.");
+
+        // Options panel
+        var optPanel = d.add("panel", undefined, "Choose Setup Method");
+        optPanel.alignChildren = ["fill", "top"];
+        optPanel.margins = 15;
+
+        // Auto install option (Windows only)
+        if (isWin) {
+            var autoGrp = optPanel.add("group");
+            autoGrp.orientation = "column";
+            autoGrp.alignChildren = ["left", "top"];
+
+            var autoBtn = autoGrp.add("button", undefined, "⚡ Auto Install (Recommended)");
+            autoBtn.preferredSize = [280, 35];
+            var autoLbl = autoGrp.add("statictext", undefined, "Downloads and configures FFmpeg automatically");
+            setTextColor(autoLbl, [0.5, 0.5, 0.5]);
+        }
+
+        // Manual option
+        var manualGrp = optPanel.add("group");
+        manualGrp.orientation = "column";
+        manualGrp.alignChildren = ["left", "top"];
+
+        var manualBtn = manualGrp.add("button", undefined, "📁 Manual Setup");
+        manualBtn.preferredSize = [280, 30];
+        var manualLbl = manualGrp.add("statictext", undefined, "I already have FFmpeg - let me set the path");
+        setTextColor(manualLbl, [0.5, 0.5, 0.5]);
+
+        // Cancel
+        var cancelBtn = d.add("button", undefined, "Cancel");
+        cancelBtn.alignment = ["center", "top"];
+
+        var result = false;
+
+        if (isWin && autoBtn) {
+            autoBtn.onClick = function () {
+                d.close();
+                result = autoInstallFFmpeg();
+            };
+        }
+
+        manualBtn.onClick = function () {
+            d.close();
+            // Open file picker for ffmpeg.exe
+            var ffmpegFile = File.openDialog("Select ffmpeg.exe", "ffmpeg.exe:ffmpeg.exe");
+            if (ffmpegFile && ffmpegFile.exists) {
+                saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegFile.fsName);
+                alert("FFmpeg path saved!\n\n" + ffmpegFile.fsName);
+                result = true;
+            }
+        };
+
+        cancelBtn.onClick = function () {
+            d.close();
+            result = false;
+        };
+
+        d.center();
+        d.show();
+        return result;
+    }
+
+    /**
+     * Automatically download and install FFmpeg (Windows only)
+     * @returns {boolean} true if successful
+     */
+    function autoInstallFFmpeg() {
+        var installDir = "C:\\ffmpeg";
+        var ffmpegExe = installDir + "\\bin\\ffmpeg.exe";
+
+        // Check if already exists
+        var existing = new File(ffmpegExe);
+        if (existing.exists) {
+            saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegExe);
+            alert("FFmpeg found at C:\\ffmpeg\\bin\\ffmpeg.exe\n\nPath configured automatically!");
+            return true;
+        }
+
+        // Show progress
+        var w = new Window("palette", "Installing FFmpeg", undefined, { closeButton: false });
+        w.orientation = "column";
+        w.alignChildren = ["fill", "top"];
+        w.margins = 20;
+
+        var statusLbl = w.add("statictext", undefined, "Downloading FFmpeg...");
+        var progressBar = w.add("progressbar", [0, 0, 280, 20], 0, 100);
+        var detailLbl = w.add("statictext", undefined, "This may take 1-2 minutes");
+        setTextColor(detailLbl, [0.5, 0.5, 0.5]);
+
+        w.center();
+        w.show();
+        w.update();
+
+        // Download URL (essentials build - smaller)
+        var downloadUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
+        var zipPath = Folder.temp.fsName + "\\ffmpeg_download.zip";
+        var extractPath = Folder.temp.fsName + "\\ffmpeg_extract";
+
+        progressBar.value = 10;
+        statusLbl.text = "Downloading FFmpeg (60-80MB)...";
+        w.update();
+
+        // PowerShell download command
+        var downloadCmd = 'powershell -Command "try { ' +
+            '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ' +
+            'Invoke-WebRequest -Uri \'' + downloadUrl + '\' -OutFile \'' + zipPath + '\' -UseBasicParsing; ' +
+            'if (Test-Path \'' + zipPath + '\') { Write-Output \'SUCCESS\' } else { Write-Output \'FAILED\' } ' +
+            '} catch { Write-Output \'ERROR\' }"';
+
+        var downloadResult = "";
+        try {
+            downloadResult = system.callSystem(downloadCmd);
+        } catch (e) {
+            w.close();
+            alert("Download failed: " + e.toString() + "\n\nPlease try manual setup.");
+            return false;
+        }
+
+        if (downloadResult.indexOf("SUCCESS") === -1) {
+            w.close();
+            alert("Download failed. Please check your internet connection and try manual setup.");
+            return false;
+        }
+
+        progressBar.value = 50;
+        statusLbl.text = "Extracting files...";
+        w.update();
+
+        // Extract ZIP
+        var extractCmd = 'powershell -Command "Expand-Archive -Path \'' + zipPath + '\' -DestinationPath \'' + extractPath + '\' -Force"';
+        try {
+            system.callSystem(extractCmd);
+        } catch (e) {
+            w.close();
+            alert("Extraction failed: " + e.toString());
+            return false;
+        }
+
+        progressBar.value = 70;
+        statusLbl.text = "Installing to C:\\ffmpeg...";
+        w.update();
+
+        // Find the extracted folder (name varies by version)
+        var findCmd = 'powershell -Command "Get-ChildItem -Path \'' + extractPath + '\' -Directory | Select-Object -First 1 -ExpandProperty FullName"';
+        var extractedFolder = "";
+        try {
+            extractedFolder = system.callSystem(findCmd).replace(/[\r\n]/g, "").trim();
+        } catch (e) {
+            w.close();
+            alert("Could not find extracted folder.");
+            return false;
+        }
+
+        // Move to C:\ffmpeg
+        var moveCmd = 'powershell -Command "if (Test-Path \'' + installDir + '\') { Remove-Item -Path \'' + installDir + '\' -Recurse -Force }; Move-Item -Path \'' + extractedFolder + '\' -Destination \'' + installDir + '\'"';
+        try {
+            system.callSystem(moveCmd);
+        } catch (e) {
+            w.close();
+            alert("Installation failed: " + e.toString() + "\n\nTry running After Effects as Administrator.");
+            return false;
+        }
+
+        progressBar.value = 90;
+        statusLbl.text = "Configuring path...";
+        w.update();
+
+        // Cleanup
+        try {
+            var zipFile = new File(zipPath);
+            if (zipFile.exists) zipFile.remove();
+            var extractFolder = new Folder(extractPath);
+            if (extractFolder.exists) extractFolder.remove();
+        } catch (e) { }
+
+        // Verify installation
+        var ffmpegFile = new File(ffmpegExe);
+        if (!ffmpegFile.exists) {
+            w.close();
+            alert("Installation completed but ffmpeg.exe not found at expected location.\n\nPlease try manual setup.");
+            return false;
+        }
+
+        // Save path to settings
+        saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegExe);
+
+        progressBar.value = 100;
+        statusLbl.text = "Complete!";
+        w.update();
+        $.sleep(500);
+        w.close();
+
+        alert("✓ FFmpeg installed successfully!\n\nPath: " + ffmpegExe + "\n\nYou can now use DOOH optimization.");
+        return true;
+    }
+
+    /**
      * Process DOOH MP4 Optimization (supports single and batch)
      * @param {object} ui - UI reference
      * @param {boolean} [forceFilePick] - If true, skip project folder detection and directly open file picker
@@ -3216,8 +3430,16 @@
         // Check FFmpeg first
         var ffmpegOk = checkFFmpeg();
         if (!ffmpegOk) {
-            alert("FFmpeg not found. Please install it via Settings.");
-            return;
+            // Show FFmpeg setup dialog with auto-install option
+            var result = showFFmpegSetupDialog();
+            if (!result) return; // User cancelled or setup failed
+
+            // Re-check after potential install
+            ffmpegOk = checkFFmpeg();
+            if (!ffmpegOk) {
+                alert("FFmpeg still not configured. Please try manual setup.");
+                return;
+            }
         }
 
         // Mode 1: Direct file pick (no project open)
