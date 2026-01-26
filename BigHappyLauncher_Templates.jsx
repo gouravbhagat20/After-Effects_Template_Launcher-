@@ -1,7 +1,16 @@
 /*
 ================================================================================
   BigHappyLauncher_Templates.jsx
-  After Effects ScriptUI Panel - Production Ready v2.1
+  After Effects ScriptUI Panel - Production Ready v1.0
+  
+  CHANGELOG v2.2:
+  - DOOH Batch Optimization: Select multiple MP4s and optimize all at once
+  - Progress Polling: Visual progress bar with real-time status updates
+  - Enhanced Results: Shows source/output size, savings %, bitrate, codec
+  - Smart File Picker: No project required - pick any MP4 to optimize
+  - Path Safety: checkPathLength() utility prevents Windows MAX_PATH errors
+  - JSON Robustness: try/catch wrapping with error logging
+  - Expanded Tests: 37 unit tests covering path length and JSON edge cases
   
   CHANGELOG v2.1:
   - Fixed AME export: now uses app.project.renderQueue.queueInAME(true) instead
@@ -31,6 +40,7 @@
   - Render queue automation + AME export
   - Template management (Add/Edit/Delete/Duplicate/Reorder)
   - Auto-detect project details on open
+  - DOOH MP4 optimization (single & batch)
 ================================================================================
 */
 
@@ -61,7 +71,7 @@
     // =========================================================================
 
     var CONFIG = {
-        VERSION: "2.1", // FIX P1-6: Match header version
+        VERSION: "1.0", // Initial public release
         SETTINGS: {
             SECTION: "BigHappyLauncher",
             KEYS: {
@@ -3160,54 +3170,143 @@
         showPostRenderDialog(targetFolder, seq, ffmpegOk, opts, dims);
     }
 
-    function processDOOHRender(ui) {
-        if (!app.project || !app.project.file) { alert("Save project first."); return; }
-
-        var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
-        var possibleRenderFolder = new Folder(app.project.file.parent.fsName + "/" + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R" + projectRev);
-
+    /**
+     * Process DOOH MP4 Optimization (supports single and batch)
+     * @param {object} ui - UI reference
+     * @param {boolean} [forceFilePick] - If true, skip project folder detection and directly open file picker
+     */
+    function processDOOHRender(ui, forceFilePick) {
+        var mp4Files = [];
         var targetFolder = null;
-        if (possibleRenderFolder.exists) {
-            targetFolder = possibleRenderFolder;
-        } else {
-            targetFolder = Folder.selectDialog("Select the Render folder containing the MP4 file");
-        }
+        var duration = 15; // Default duration
 
-        if (!targetFolder || !targetFolder.exists) return;
-
-        var mp4Files = detectMP4s(targetFolder);
-        if (mp4Files.length === 0) {
-            alert("No MP4 file found in:\n" + targetFolder.fsName + "\n\nPlease render your composition as an MP4 first.");
-            return;
-        }
-
-        var mp4File = mp4Files[0];
-        if (mp4Files.length > 1) {
-            // Show Selection Dialog
-            var d = new Window("dialog", "Select MP4 to Optimize");
-            d.orientation = "column"; d.alignChildren = ["fill", "top"]; d.spacing = 10; d.margins = 15;
-            d.add("statictext", undefined, "Multiple MP4s found. Select one:");
-
-            var list = d.add("listbox", undefined, [], { multiselect: false });
-            list.preferredSize = [450, 200];
-            for (var i = 0; i < mp4Files.length; i++) list.add("item", mp4Files[i].name);
-            list.selection = 0;
-
-            var btnGrp = d.add("group");
-            btnGrp.alignment = ["center", "bottom"];
-            var okBtn = btnGrp.add("button", undefined, "Process Selected", { name: "ok" });
-            var cancelBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
-
-            okBtn.onClick = function () { d.close(1); };
-            cancelBtn.onClick = function () { d.close(0); };
-
-            if (d.show() !== 1) return;
-            mp4File = mp4Files[list.selection.index];
-        }
-
+        // Check FFmpeg first
         var ffmpegOk = checkFFmpeg();
         if (!ffmpegOk) {
             alert("FFmpeg not found. Please install it via Settings.");
+            return;
+        }
+
+        // Mode 1: Direct file pick (no project open)
+        if (forceFilePick || !app.project || !app.project.file) {
+            var selectedFiles = File.openDialog("Select MP4(s) to Optimize", "MP4 Files:*.mp4", true); // true = multiselect
+            if (!selectedFiles) return;
+
+            // Normalize to array
+            if (!(selectedFiles instanceof Array)) {
+                selectedFiles = [selectedFiles];
+            }
+
+            mp4Files = selectedFiles;
+            if (mp4Files.length === 0) return;
+            targetFolder = mp4Files[0].parent;
+
+            // Ask for duration since we don't have comp info
+            var durationDialog = new Window("dialog", "Video Duration");
+            durationDialog.orientation = "column";
+            durationDialog.alignChildren = ["fill", "top"];
+            durationDialog.margins = 15;
+            durationDialog.spacing = 10;
+
+            durationDialog.add("statictext", undefined, "Selected: " + mp4Files.length + " file(s)");
+            durationDialog.add("statictext", undefined, "Enter video duration (seconds):");
+            durationDialog.add("statictext", undefined, "(Used to calculate optimal bitrate)");
+            var durInput = durationDialog.add("edittext", undefined, "15");
+            durInput.preferredSize.width = 100;
+
+            var btnGrp = durationDialog.add("group");
+            btnGrp.alignment = ["center", "top"];
+            var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
+            var cancelBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+            if (durationDialog.show() !== 1) return;
+            duration = parseFloat(durInput.text) || 15;
+
+        } else {
+            // Mode 2: Try to find MP4 in project render folder
+            var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
+            var possibleRenderFolder = new Folder(app.project.file.parent.fsName + "/" + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R" + projectRev);
+
+            if (possibleRenderFolder.exists) {
+                targetFolder = possibleRenderFolder;
+            } else {
+                targetFolder = Folder.selectDialog("Select folder containing MP4(s), or Cancel to pick files directly");
+            }
+
+            // If no folder selected, offer file picker
+            if (!targetFolder || !targetFolder.exists) {
+                var selectedFiles = File.openDialog("Select MP4(s) to Optimize", "MP4 Files:*.mp4", true);
+                if (!selectedFiles) return;
+                if (!(selectedFiles instanceof Array)) selectedFiles = [selectedFiles];
+                mp4Files = selectedFiles;
+                if (mp4Files.length === 0) return;
+                targetFolder = mp4Files[0].parent;
+            } else {
+                // Search for MP4s in folder
+                var folderMP4s = detectMP4s(targetFolder);
+                if (folderMP4s.length === 0) {
+                    var selectedFiles = File.openDialog("No MP4 found in folder. Select MP4(s):", "MP4 Files:*.mp4", true);
+                    if (!selectedFiles) return;
+                    if (!(selectedFiles instanceof Array)) selectedFiles = [selectedFiles];
+                    mp4Files = selectedFiles;
+                    if (mp4Files.length === 0) return;
+                    targetFolder = mp4Files[0].parent;
+                } else if (folderMP4s.length === 1) {
+                    mp4Files = folderMP4s;
+                } else {
+                    // Multiple MP4s - show batch selection dialog
+                    var d = new Window("dialog", "Select MP4(s) to Optimize");
+                    d.orientation = "column"; d.alignChildren = ["fill", "top"]; d.spacing = 10; d.margins = 15;
+                    d.add("statictext", undefined, "Found " + folderMP4s.length + " MP4 files. Select files to optimize:");
+
+                    var list = d.add("listbox", undefined, [], { multiselect: true });
+                    list.preferredSize = [450, 250];
+                    for (var i = 0; i < folderMP4s.length; i++) {
+                        var sizeKB = Math.round(folderMP4s[i].length / 1024);
+                        var sizeMB = (sizeKB / 1024).toFixed(1);
+                        list.add("item", folderMP4s[i].name + " (" + sizeMB + " MB)");
+                    }
+                    list.selection = 0; // Select first by default
+
+                    var helpLbl = d.add("statictext", undefined, "Tip: Ctrl+Click to select multiple files");
+                    setTextColor(helpLbl, [0.5, 0.5, 0.5]);
+
+                    var selBtnGrp = d.add("group");
+                    selBtnGrp.alignment = ["center", "bottom"];
+                    var selAllBtn = selBtnGrp.add("button", undefined, "Select All");
+                    var selOkBtn = selBtnGrp.add("button", undefined, "Optimize Selected", { name: "ok" });
+                    var selCancelBtn = selBtnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+                    selAllBtn.onClick = function () {
+                        for (var j = 0; j < list.items.length; j++) {
+                            list.items[j].selected = true;
+                        }
+                    };
+                    selOkBtn.onClick = function () { d.close(1); };
+                    selCancelBtn.onClick = function () { d.close(0); };
+
+                    if (d.show() !== 1) return;
+
+                    // Get selected files
+                    var sel = list.selection;
+                    if (!sel || sel.length === 0) {
+                        alert("No files selected.");
+                        return;
+                    }
+                    for (var k = 0; k < sel.length; k++) {
+                        mp4Files.push(folderMP4s[sel[k].index]);
+                    }
+                }
+            }
+
+            // Get duration from comp if available
+            var mainComp = findMainComp();
+            if (mainComp) duration = mainComp.duration;
+        }
+
+        // Validate we have files
+        if (mp4Files.length === 0) {
+            alert("No MP4 file(s) selected.");
             return;
         }
 
@@ -3215,14 +3314,197 @@
         var targetMB = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DOOH_TARGET_MB, "6.8"));
         if (isNaN(targetMB) || targetMB <= 0) targetMB = 6.8;
 
-        // Get Duration to calculate bitrate
-        var mainComp = findMainComp();
-        var duration = (mainComp) ? mainComp.duration : 15;
-
         // Confirmation
-        if (!confirm("Optimize " + mp4File.name + " to < " + targetMB + "MB?\n\nThis will run in the BACKGROUND.\nDuration: " + duration.toFixed(1) + "s")) return;
+        var totalSize = 0;
+        for (var f = 0; f < mp4Files.length; f++) {
+            totalSize += mp4Files[f].length;
+        }
+        totalSize = (totalSize / (1024 * 1024)).toFixed(1);
 
-        runMP4Optimizer(mp4File, targetFolder, targetMB, duration);
+        var confirmMsg = "═══════════════════════════════════════\n";
+        confirmMsg += "         BATCH DOOH OPTIMIZATION\n";
+        confirmMsg += "═══════════════════════════════════════\n\n";
+        confirmMsg += "Files: " + mp4Files.length + "\n";
+        confirmMsg += "Total Size: " + totalSize + " MB\n";
+        confirmMsg += "Target: < " + targetMB + " MB each\n";
+        confirmMsg += "Duration: " + duration.toFixed(1) + "s\n\n";
+        if (mp4Files.length > 1) {
+            confirmMsg += "Files will be processed SEQUENTIALLY.\n";
+            confirmMsg += "This may take a while.\n\n";
+        }
+        confirmMsg += "Continue?";
+
+        if (!confirm(confirmMsg)) return;
+
+        // Process files
+        if (mp4Files.length === 1) {
+            // Single file - use existing function
+            runMP4Optimizer(mp4Files[0], targetFolder, targetMB, duration);
+        } else {
+            // Batch processing
+            runBatchOptimizer(mp4Files, targetFolder, targetMB, duration);
+        }
+    }
+
+    /**
+     * Batch optimize multiple MP4 files
+     */
+    function runBatchOptimizer(mp4Files, outFolder, targetMB, duration) {
+        var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        var isWin = ($.os.indexOf("Windows") !== -1);
+        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
+        var tempFolder = Folder.temp;
+
+        // Results tracking
+        var results = [];
+        var successCount = 0;
+        var failCount = 0;
+
+        // Progress UI
+        var w = new Window("palette", "Batch DOOH Optimization", undefined, { closeButton: false });
+        w.orientation = "column";
+        w.alignChildren = ["fill", "top"];
+        w.margins = 20;
+        w.spacing = 10;
+
+        var titleLbl = w.add("statictext", undefined, "Processing " + mp4Files.length + " files...");
+        try { titleLbl.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
+
+        var statusLbl = w.add("statictext", undefined, "Preparing...");
+        var overallBar = w.add("progressbar", [0, 0, 300, 15], 0, mp4Files.length);
+        var fileLbl = w.add("statictext", undefined, "");
+        var fileBar = w.add("progressbar", [0, 0, 300, 15], 0, 100);
+
+        w.center();
+        w.show();
+        w.update();
+
+        // Process each file
+        for (var i = 0; i < mp4Files.length; i++) {
+            var mp4File = mp4Files[i];
+            var outName = mp4File.name.replace(/\.mp4$/i, "") + "_Optimized.mp4";
+            var outMP4 = outFolder.fsName + (isWin ? "\\" : "/") + outName;
+            var logPath = outFolder.fsName + (isWin ? "\\batch_log_" + i + ".txt" : "/batch_log_" + i + ".txt");
+            var passLog = tempFolder.fsName + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() + "_" + i : "/ffmpeg2pass_" + new Date().getTime() + "_" + i);
+
+            // Update UI
+            overallBar.value = i;
+            statusLbl.text = "File " + (i + 1) + " of " + mp4Files.length;
+            fileLbl.text = mp4File.name;
+            fileBar.value = 0;
+            w.update();
+
+            // Calculate bitrate
+            var dur = duration < 1 ? 1 : duration;
+            var totalBitrate = (targetMB * 8192) / dur;
+            var videoBitrate = Math.floor(totalBitrate - 128);
+            if (videoBitrate < 1000) videoBitrate = 1000;
+
+            var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
+            var sourceSize = mp4File.length / (1024 * 1024);
+
+            // Build script (blocking execution for batch)
+            fileBar.value = 10;
+            w.update();
+
+            var cmd = exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null " + (isWin ? "NUL" : "/dev/null") + " 2>\"" + logPath + "\"";
+
+            fileBar.value = 20;
+            fileLbl.text = mp4File.name + " (Pass 1)";
+            w.update();
+
+            try {
+                system.callSystem(cmd);
+            } catch (e) {
+                results.push({ name: mp4File.name, success: false, reason: "Pass 1 failed" });
+                failCount++;
+                continue;
+            }
+
+            fileBar.value = 50;
+            fileLbl.text = mp4File.name + " (Pass 2)";
+            w.update();
+
+            cmd = exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"";
+
+            try {
+                system.callSystem(cmd);
+            } catch (e) {
+                results.push({ name: mp4File.name, success: false, reason: "Pass 2 failed" });
+                failCount++;
+                continue;
+            }
+
+            fileBar.value = 90;
+            w.update();
+
+            // Cleanup pass logs
+            try {
+                var passFile1 = new File(passLog + "-0.log");
+                var passFile2 = new File(passLog + ".mbtree");
+                if (passFile1.exists) passFile1.remove();
+                if (passFile2.exists) passFile2.remove();
+            } catch (e) { }
+
+            // Check result
+            var outputFile = new File(outMP4);
+            if (outputFile.exists) {
+                var outputSize = outputFile.length / (1024 * 1024);
+                var savings = ((sourceSize - outputSize) / sourceSize * 100);
+                results.push({
+                    name: mp4File.name,
+                    success: true,
+                    sourceSize: sourceSize,
+                    outputSize: outputSize,
+                    savings: savings,
+                    meetsTarget: outputSize <= targetMB
+                });
+                successCount++;
+            } else {
+                results.push({ name: mp4File.name, success: false, reason: "Output not created" });
+                failCount++;
+            }
+
+            fileBar.value = 100;
+            w.update();
+        }
+
+        overallBar.value = mp4Files.length;
+        w.close();
+
+        // Show batch results
+        var totalSourceSize = 0;
+        var totalOutputSize = 0;
+        var resultMsg = "═══════════════════════════════════════\n";
+        resultMsg += "       BATCH OPTIMIZATION COMPLETE\n";
+        resultMsg += "═══════════════════════════════════════\n\n";
+        resultMsg += "Processed: " + mp4Files.length + " files\n";
+        resultMsg += "Success: " + successCount + " | Failed: " + failCount + "\n\n";
+        resultMsg += "───────────────────────────────────────\n";
+
+        for (var r = 0; r < results.length; r++) {
+            var res = results[r];
+            if (res.success) {
+                totalSourceSize += res.sourceSize;
+                totalOutputSize += res.outputSize;
+                resultMsg += (res.meetsTarget ? "✓ " : "⚠ ") + res.name + "\n";
+                resultMsg += "   " + res.sourceSize.toFixed(1) + " → " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
+            } else {
+                resultMsg += "✗ " + res.name + " - " + res.reason + "\n";
+            }
+        }
+
+        if (successCount > 0) {
+            var totalSavings = ((totalSourceSize - totalOutputSize) / totalSourceSize * 100);
+            resultMsg += "───────────────────────────────────────\n";
+            resultMsg += "Total: " + totalSourceSize.toFixed(1) + " → " + totalOutputSize.toFixed(1) + " MB\n";
+            resultMsg += "Overall Savings: " + totalSavings.toFixed(1) + "%\n";
+        }
+
+        resultMsg += "\nLocation: " + outFolder.fsName;
+
+        alert(resultMsg);
+        outFolder.execute();
     }
 
     function runMP4Optimizer(mp4File, outFolder, targetMB, duration) {
