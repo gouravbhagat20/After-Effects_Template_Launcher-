@@ -3661,37 +3661,70 @@
             var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
             var sourceSize = mp4File.length / (1024 * 1024);
 
-            // Build script (blocking execution for batch)
-            fileBar.value = 10;
-            w.update();
+            // Create a temporary batch script for reliable synchronous execution
+            var batchScriptPath = tempFolder.fsName + (isWin ? "\\batch_opt_" + i + ".bat" : "/batch_opt_" + i + ".sh");
+            var batchScript = "";
 
-            var cmd = exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null " + (isWin ? "NUL" : "/dev/null") + " 2>\"" + logPath + "\"";
+            if (isWin) {
+                batchScript += "@echo off\r\n";
+                batchScript += "echo STARTED > \"" + logPath + "\"\r\n";
+                batchScript += "echo Pass 1 starting... >> \"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>>\"" + logPath + "\"\r\n";
+                batchScript += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
+                batchScript += "echo Pass 1 done >> \"" + logPath + "\"\r\n";
+                batchScript += "echo Pass 2 starting... >> \"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+                batchScript += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
+                batchScript += "echo COMPLETE >> \"" + logPath + "\"\r\n";
+            } else {
+                batchScript += "#!/bin/bash\n";
+                batchScript += "echo 'STARTED' > \"" + logPath + "\"\n";
+                batchScript += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>>\"" + logPath + "\"\n";
+                batchScript += "[ $? -ne 0 ] && echo 'PASS1_FAILED' >> \"" + logPath + "\" && exit 1\n";
+                batchScript += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+                batchScript += "[ $? -ne 0 ] && echo 'PASS2_FAILED' >> \"" + logPath + "\" && exit 1\n";
+                batchScript += "echo 'COMPLETE' >> \"" + logPath + "\"\n";
+            }
+
+            // Write the batch script
+            var scriptFile = new File(batchScriptPath);
+            scriptFile.open("w");
+            scriptFile.write(batchScript);
+            scriptFile.close();
 
             fileBar.value = 20;
             fileLbl.text = mp4File.name + " (Pass 1)";
             w.update();
 
+            // Execute the batch script synchronously
             try {
-                system.callSystem(cmd);
+                if (isWin) {
+                    system.callSystem('cmd /c "' + batchScriptPath + '"');
+                } else {
+                    system.callSystem("chmod +x \"" + batchScriptPath + "\" && \"" + batchScriptPath + "\"");
+                }
             } catch (e) {
-                results.push({ name: mp4File.name, success: false, reason: "Pass 1 failed" });
+                results.push({ name: mp4File.name, success: false, reason: "Script execution failed: " + e.toString() });
                 failCount++;
+                try { scriptFile.remove(); } catch (e2) { }
                 continue;
             }
 
-            fileBar.value = 50;
-            fileLbl.text = mp4File.name + " (Pass 2)";
+            fileBar.value = 80;
+            fileLbl.text = mp4File.name + " (Verifying)";
             w.update();
 
-            cmd = exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"";
-
-            try {
-                system.callSystem(cmd);
-            } catch (e) {
-                results.push({ name: mp4File.name, success: false, reason: "Pass 2 failed" });
-                failCount++;
-                continue;
+            // Check if the script completed successfully by reading the log
+            var logFile = new File(logPath);
+            var logContent = "";
+            if (logFile.exists) {
+                logFile.open("r");
+                logContent = logFile.read();
+                logFile.close();
             }
+
+            // Cleanup script file
+            try { scriptFile.remove(); } catch (e) { }
 
             fileBar.value = 90;
             w.update();
@@ -3704,9 +3737,21 @@
                 if (passFile2.exists) passFile2.remove();
             } catch (e) { }
 
-            // Check result
+            // Check for encoding failures in log
+            if (logContent.indexOf("PASS1_FAILED") !== -1) {
+                results.push({ name: mp4File.name, success: false, reason: "FFmpeg Pass 1 failed" });
+                failCount++;
+                continue;
+            }
+            if (logContent.indexOf("PASS2_FAILED") !== -1) {
+                results.push({ name: mp4File.name, success: false, reason: "FFmpeg Pass 2 failed" });
+                failCount++;
+                continue;
+            }
+
+            // Check result - file must exist AND have content (> 1KB)
             var outputFile = new File(outMP4);
-            if (outputFile.exists) {
+            if (logContent.indexOf("COMPLETE") !== -1 && outputFile.exists && outputFile.length > 1024) {
                 var outputSize = outputFile.length / (1024 * 1024);
                 var savings = ((sourceSize - outputSize) / sourceSize * 100);
                 results.push({
@@ -3718,6 +3763,12 @@
                     meetsTarget: outputSize <= targetMB
                 });
                 successCount++;
+            } else if (outputFile.exists && outputFile.length <= 1024) {
+                // File exists but is empty or nearly empty - encoding failed
+                results.push({ name: mp4File.name, success: false, reason: "Encoding failed (0 KB output)" });
+                failCount++;
+                // Clean up the empty file
+                try { outputFile.remove(); } catch (e) { }
             } else {
                 results.push({ name: mp4File.name, success: false, reason: "Output not created" });
                 failCount++;

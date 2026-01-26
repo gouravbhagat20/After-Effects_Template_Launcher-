@@ -245,4 +245,4 @@ Big Happy Launcher © 2026
 
 ---
 
-*Made with ❤️ for the animation community*
+*Made with ❤️ for the animators*
