@@ -3370,7 +3370,7 @@
         var findCmd = 'powershell -Command "Get-ChildItem -Path \'' + extractPath + '\' -Directory | Select-Object -First 1 -ExpandProperty FullName"';
         var extractedFolder = "";
         try {
-            extractedFolder = system.callSystem(findCmd).replace(/[\r\n]/g, "").trim();
+            extractedFolder = system.callSystem(findCmd).replace(/[\r\n]/g, "").replace(/^\s+|\s+$/g, "");
         } catch (e) {
             w.close();
             alert("Could not find extracted folder.");
@@ -3633,9 +3633,48 @@
         var fileLbl = w.add("statictext", undefined, "");
         var fileBar = w.add("progressbar", [0, 0, 300, 15], 0, 100);
 
+        // Time tracking UI
+        var timeLbl = w.add("statictext", undefined, "Elapsed: 0:00 | Remaining: Calculating...");
+        try { setTextColor(timeLbl, [0.5, 0.5, 0.5]); } catch (e) { }
+
         w.center();
         w.show();
         w.update();
+
+        // Time tracking variables
+        var batchStartTime = new Date().getTime();
+        var fileStartTimes = [];
+        var fileDurations = [];
+
+        // Helper function to format time
+        function formatTime(ms) {
+            var totalSeconds = Math.round(ms / 1000);
+            var minutes = Math.floor(totalSeconds / 60);
+            var seconds = totalSeconds % 60;
+            return minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+        }
+
+        // Helper function to update time display
+        function updateTimeDisplay(currentIndex) {
+            var elapsed = new Date().getTime() - batchStartTime;
+            var elapsedStr = formatTime(elapsed);
+
+            var remainingStr = "Calculating...";
+            if (currentIndex > 0 && fileDurations.length > 0) {
+                // Calculate average time per file
+                var totalDuration = 0;
+                for (var t = 0; t < fileDurations.length; t++) {
+                    totalDuration += fileDurations[t];
+                }
+                var avgTimePerFile = totalDuration / fileDurations.length;
+                var remainingFiles = mp4Files.length - currentIndex;
+                var estimatedRemaining = avgTimePerFile * remainingFiles;
+                remainingStr = formatTime(estimatedRemaining);
+            }
+
+            timeLbl.text = "Elapsed: " + elapsedStr + " | Remaining: ~" + remainingStr;
+            w.update();
+        }
 
         // Process each file
         for (var i = 0; i < mp4Files.length; i++) {
@@ -3645,12 +3684,42 @@
             var logPath = outFolder.fsName + (isWin ? "\\batch_log_" + i + ".txt" : "/batch_log_" + i + ".txt");
             var passLog = tempFolder.fsName + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() + "_" + i : "/ffmpeg2pass_" + new Date().getTime() + "_" + i);
 
-            // Update UI
+            // Record file start time
+            fileStartTimes[i] = new Date().getTime();
+
+            // Update UI with time estimate
             overallBar.value = i;
             statusLbl.text = "File " + (i + 1) + " of " + mp4Files.length;
             fileLbl.text = mp4File.name;
             fileBar.value = 0;
+            updateTimeDisplay(i);
             w.update();
+
+            // Check if output file already exists
+            var existingFile = new File(outMP4);
+            if (existingFile.exists) {
+                // Temporarily hide progress window for dialog
+                w.hide();
+
+                var existingSize = (existingFile.length / (1024 * 1024)).toFixed(2);
+                var overwriteChoice = confirm(
+                    "⚠️ File already exists:\n\n" +
+                    outName + "\n" +
+                    "Size: " + existingSize + " MB\n\n" +
+                    "Do you want to OVERWRITE this file?\n\n" +
+                    "Click OK to overwrite, Cancel to skip."
+                );
+
+                w.show();
+                w.update();
+
+                if (!overwriteChoice) {
+                    // User chose to skip this file
+                    results.push({ name: mp4File.name, success: false, reason: "Skipped (file exists)" });
+                    failCount++;
+                    continue;
+                }
+            }
 
             // Calculate bitrate
             var dur = duration < 1 ? 1 : duration;
@@ -3775,6 +3844,12 @@
             }
 
             fileBar.value = 100;
+
+            // Record file completion time for ETA calculation
+            var fileEndTime = new Date().getTime();
+            fileDurations.push(fileEndTime - fileStartTimes[i]);
+            updateTimeDisplay(i + 1);
+
             w.update();
         }
 
