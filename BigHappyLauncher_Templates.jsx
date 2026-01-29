@@ -3,6 +3,9 @@
   BigHappyLauncher_Templates.jsx
   After Effects ScriptUI Panel - Production Ready v1.0
   
+  CHANGELOG v2.3:
+  - Automatic FFmpeg Download: Downloads and installs FFmpeg if missing (Windows)
+  
   CHANGELOG v2.2:
   - DOOH Batch Optimization: Select multiple MP4s and optimize all at once
   - Progress Polling: Visual progress bar with real-time status updates
@@ -104,7 +107,7 @@
     // =========================================================================
 
     var CONFIG = {
-        VERSION: "1.0", // Initial public release
+        VERSION: "2.3", // Automatic FFmpeg Download
         SETTINGS: {
             SECTION: "BigHappyLauncher",
             KEYS: {
@@ -3954,7 +3957,139 @@
         outFolder.execute();
     }
 
+    /**
+     * Check if FFmpeg is available, and if not, prompt to download it (Windows only).
+     * @returns {boolean} True if FFmpeg is ready to use, false otherwise.
+     */
+    function ensureFFmpegReady() {
+        // 1. Check if path is already set and valid
+        var storedPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        if (storedPath && new File(storedPath).exists) {
+            return true;
+        }
+
+        // 2. Check if ffmpeg is in system PATH
+        var isWin = ($.os.indexOf("Windows") !== -1);
+        var checkCmd = isWin ? "where ffmpeg" : "which ffmpeg";
+        var sysPath = system.callSystem(checkCmd);
+        if (sysPath && sysPath.indexOf("ffmpeg") !== -1) {
+            return true; // Use system ffmpeg
+        }
+
+        // 3. Not found - Ask user to download
+        if (isWin) {
+            var confirmDl = confirm("FFmpeg is missing. It is required for optimization.\n\nDownload and install it automatically (~130MB)?");
+            if (confirmDl) {
+                return downloadFFmpeg();
+            }
+        } else {
+            alert("FFmpeg is missing. Please install it manually (e.g., brew install ffmpeg).");
+        }
+
+        return false;
+    }
+
+    /**
+     * Download and install FFmpeg to User Data folder (Windows Only)
+     */
+    function downloadFFmpeg() {
+        var installBase = new Folder(joinPath(Folder.userData.fsName, "BigHappyLauncher_Tools"));
+        if (!installBase.exists) installBase.create();
+
+        var zipPath = joinPath(installBase.fsName, "ffmpeg.zip");
+        var url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
+
+        // --- PROGRESS UI ---
+        var w = new Window("palette", "Downloading FFmpeg", undefined, { closeButton: false });
+        w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.spacing = 10; w.margins = 20;
+        var st = w.add("statictext", undefined, "Initializing download...", { truncate: "middle" });
+        st.preferredSize.width = 300;
+        var pb = w.add("progressbar", undefined, 0, 100);
+        pb.preferredSize.width = 300;
+        w.center(); w.show();
+
+        try {
+            // STEP 1: DOWNLOAD
+            st.text = "Downloading (approx. 130MB)...";
+            w.update();
+
+            // Use curl (blocking)
+            var curlCmd = 'curl -L -o "' + zipPath + '" "' + url + '"';
+            system.callSystem(curlCmd);
+
+            if (!new File(zipPath).exists || new File(zipPath).length < 1000) {
+                w.close();
+                alert("Download failed. Please check your internet connection.");
+                return false;
+            }
+
+            // STEP 2: EXTRACT
+            st.text = "Extracting files...";
+            pb.value = 50;
+            w.update();
+
+            // PowerShell Expand-Archive
+            // Note: This matches the folder structure inside the zip
+            var psCmd = 'powershell -command "Expand-Archive -Path \'' + zipPath + '\' -DestinationPath \'' + installBase.fsName + '\' -Force"';
+            system.callSystem(psCmd);
+
+            // STEP 3: LOCATE BINARY
+            st.text = "Configuring...";
+            pb.value = 80;
+            w.update();
+
+            // The zip usually contains a folder like "ffmpeg-6.0-essentials_build"
+            var folders = installBase.getFiles(function (f) { return f instanceof Folder && f.name.indexOf("ffmpeg") !== -1; });
+            var binPath = null;
+
+            if (folders.length > 0) {
+                // Check inside for bin/ffmpeg.exe
+                var checkBin = new File(joinPath(folders[0].fsName, "bin/ffmpeg.exe"));
+                if (checkBin.exists) {
+                    binPath = checkBin.fsName;
+                } else {
+                    // Check one level deeper just in case
+                    var innerFolders = folders[0].getFiles(function (f) { return f instanceof Folder; });
+                    for (var k = 0; k < innerFolders.length; k++) {
+                        var deeperBin = new File(joinPath(innerFolders[k].fsName, "bin/ffmpeg.exe"));
+                        if (deeperBin.exists) {
+                            binPath = deeperBin.fsName;
+                            break;
+                        }
+                    }
+
+                    if (!binPath) {
+                        // Check direct
+                        var checkDirect = new File(joinPath(folders[0].fsName, "ffmpeg.exe"));
+                        if (checkDirect.exists) binPath = checkDirect.fsName;
+                    }
+                }
+            }
+
+            // Cleanup Zip
+            new File(zipPath).remove();
+
+            w.close();
+
+            if (binPath) {
+                setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, binPath);
+                alert("FFmpeg installed successfully!\n\nLocation: " + binPath);
+                return true;
+            } else {
+                alert("FFmpeg downloaded but executable not found. Please check: " + installBase.fsName);
+                return false;
+            }
+
+        } catch (e) {
+            if (w) w.close();
+            alert("Error installing FFmpeg: " + e.toString());
+            return false;
+        }
+    }
+
     function runMP4Optimizer(mp4File, outFolder, targetMB, duration) {
+        if (!ensureFFmpegReady()) return;
+
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var isWin = ($.os.indexOf("Windows") !== -1);
         var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
@@ -5098,6 +5233,8 @@
      * This prevents crashes by using a single system.callSystem() call
      */
     function runConversion(outFolder, seq, options, dims) {
+        if (!ensureFFmpegReady()) return;
+
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var isWin = ($.os.indexOf("Windows") !== -1);
 
