@@ -4206,7 +4206,8 @@
             var batFile = new File(scriptPath);
             if (batFile.exists) batFile.execute();
         } else {
-            system.callSystem("open \"" + scriptPath + "\"");
+            // Force open with Terminal to ensure execution
+            system.callSystem("open -a Terminal \"" + scriptPath + "\"");
         }
 
         // Progress polling loop
