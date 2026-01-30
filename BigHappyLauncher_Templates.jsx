@@ -3889,13 +3889,28 @@
             if (logContent.indexOf("COMPLETE") !== -1 && outputFile.exists && outputFile.length > 1024) {
                 var outputSize = outputFile.length / (1024 * 1024);
                 var savings = ((sourceSize - outputSize) / sourceSize * 100);
+
+                // REPLACEMENT LOGIC FOR BATCH
+                var replaced = false;
+                var sourceName = mp4File.name;
+                try {
+                    if (mp4File.remove()) {
+                        if (outputFile.rename(sourceName)) {
+                            replaced = true;
+                        }
+                    }
+                } catch (e) {
+                    // If failed, we just note it but success is still true as we have an optimized file
+                }
+
                 results.push({
-                    name: mp4File.name,
+                    name: sourceName,
                     success: true,
                     sourceSize: sourceSize,
                     outputSize: outputSize,
                     savings: savings,
-                    meetsTarget: outputSize <= targetMB
+                    meetsTarget: outputSize <= targetMB,
+                    replaced: replaced
                 });
                 successCount++;
             } else if (outputFile.exists && outputFile.length <= 1024) {
@@ -3939,6 +3954,11 @@
                 totalOutputSize += res.outputSize;
                 resultMsg += (res.meetsTarget ? "✓ " : "⚠ ") + res.name + "\n";
                 resultMsg += "   " + res.sourceSize.toFixed(1) + " → " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
+                if (res.replaced) {
+                    resultMsg += "   (Replaced original)\n";
+                } else {
+                    resultMsg += "   (Original NOT replaced - check permissions)\n";
+                }
             } else {
                 resultMsg += "✗ " + res.name + " - " + res.reason + "\n";
             }
@@ -4259,20 +4279,33 @@
             return;
         }
 
-        // Enhanced Results
+        // Enhanced Results & Replacement
         var outputFile = new File(outMP4);
         if (outputFile.exists) {
             var outputSize = outputFile.length / (1024 * 1024);
             var savings = ((sourceSize - outputSize) / sourceSize * 100);
             var meetsTarget = outputSize <= targetMB;
+            var originalName = mp4File.name;
+
+            // REPLACEMENT LOGIC
+            var replaced = false;
+            try {
+                if (mp4File.remove()) {
+                    if (outputFile.rename(originalName)) {
+                        replaced = true;
+                    }
+                }
+            } catch (e) {
+                // If replacement fails, we still have the _Optimized file, which is fine, just warn
+                alert("Warning: Could not replace original file.\nError: " + e.toString());
+            }
 
             var resultMsg = "═══════════════════════════════════════\n";
             resultMsg += "        DOOH OPTIMIZATION COMPLETE\n";
             resultMsg += "═══════════════════════════════════════\n\n";
-            resultMsg += "Source:   " + mp4File.name + "\n";
+            resultMsg += "Source:   " + originalName + "\n";
             resultMsg += "          " + sourceSize.toFixed(2) + " MB\n\n";
-            resultMsg += "Output:   " + outName + "\n";
-            resultMsg += "          " + outputSize.toFixed(2) + " MB\n\n";
+            resultMsg += "Optimized: " + outputSize.toFixed(2) + " MB\n\n";
             resultMsg += "───────────────────────────────────────\n";
             resultMsg += "Target:   " + targetMB + " MB  " + (meetsTarget ? "✓ MET" : "✗ EXCEEDED") + "\n";
             resultMsg += "Savings:  " + savings.toFixed(1) + "% reduction\n";
@@ -4280,6 +4313,14 @@
             resultMsg += "Bitrate:  " + videoBitrate + " kbps\n";
             resultMsg += "Duration: " + duration.toFixed(1) + "s\n";
             resultMsg += "───────────────────────────────────────\n\n";
+
+            if (replaced) {
+                resultMsg += "✓ Source file replaced with optimized version.\n";
+            } else {
+                resultMsg += "⚠ Source file NOT replaced (permission error?)\n";
+                resultMsg += "Output: " + outName + "\n";
+            }
+
             resultMsg += "Location: " + outFolder.fsName;
 
             alert(resultMsg);
