@@ -4206,8 +4206,9 @@
             var batFile = new File(scriptPath);
             if (batFile.exists) batFile.execute();
         } else {
-            // Force open with Terminal to ensure execution
-            system.callSystem("open -a Terminal \"" + scriptPath + "\"");
+            // Force open with Terminal using AppleScript to ensure execution and focus
+            var appleScript = "osascript -e 'tell application \"Terminal\" to do script \"" + scriptPath + "\"' -e 'tell application \"Terminal\" to activate'";
+            system.callSystem(appleScript);
         }
 
         // Progress polling loop
