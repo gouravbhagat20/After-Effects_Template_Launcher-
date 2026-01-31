@@ -102,6 +102,20 @@
         return combo.replace(/[\/\\]+/g, SEP);
     }
 
+    /**
+     * Decode URI-encoded path strings (e.g., %20 -> space)
+     * ExtendScript sometimes returns URI-encoded paths on macOS
+     */
+    function decodePath(path) {
+        if (!path) return path;
+        try {
+            return decodeURI(path);
+        } catch (e) {
+            // If decoding fails, return original
+            return path;
+        }
+    }
+
     // =========================================================================
     // SECTION 1: CONFIGURATION & SETTINGS
     // =========================================================================
@@ -3745,10 +3759,12 @@
         // Process each file
         for (var i = 0; i < mp4Files.length; i++) {
             var mp4File = mp4Files[i];
-            var outName = mp4File.name.replace(/\.mp4$/i, "") + "_Optimized.mp4";
-            var outMP4 = outFolder.fsName + (isWin ? "\\" : "/") + outName;
-            var logPath = outFolder.fsName + (isWin ? "\\batch_log_" + i + ".txt" : "/batch_log_" + i + ".txt");
-            var passLog = tempFolder.fsName + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() + "_" + i : "/ffmpeg2pass_" + new Date().getTime() + "_" + i);
+            // Decode paths to fix URL-encoded characters (e.g., %20 -> space) on macOS
+            var inputPath = decodePath(mp4File.fsName);
+            var outName = decodePath(mp4File.name).replace(/\.mp4$/i, "") + "_Optimized.mp4";
+            var outMP4 = decodePath(outFolder.fsName) + (isWin ? "\\" : "/") + outName;
+            var logPath = decodePath(outFolder.fsName) + (isWin ? "\\batch_log_" + i + ".txt" : "/batch_log_" + i + ".txt");
+            var passLog = decodePath(tempFolder.fsName) + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() + "_" + i : "/ffmpeg2pass_" + new Date().getTime() + "_" + i);
 
             // Record file start time
             fileStartTimes[i] = new Date().getTime();
@@ -3804,19 +3820,19 @@
                 batchScript += "@echo off\r\n";
                 batchScript += "echo STARTED > \"" + logPath + "\"\r\n";
                 batchScript += "echo Pass 1 starting... >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>>\"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>>\"" + logPath + "\"\r\n";
                 batchScript += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
                 batchScript += "echo Pass 1 done >> \"" + logPath + "\"\r\n";
                 batchScript += "echo Pass 2 starting... >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
                 batchScript += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
                 batchScript += "echo COMPLETE >> \"" + logPath + "\"\r\n";
             } else {
                 batchScript += "#!/bin/bash\n";
                 batchScript += "echo 'STARTED' > \"" + logPath + "\"\n";
-                batchScript += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>>\"" + logPath + "\"\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>>\"" + logPath + "\"\n";
                 batchScript += "[ $? -ne 0 ] && echo 'PASS1_FAILED' >> \"" + logPath + "\" && exit 1\n";
-                batchScript += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
                 batchScript += "[ $? -ne 0 ] && echo 'PASS2_FAILED' >> \"" + logPath + "\" && exit 1\n";
                 batchScript += "echo 'COMPLETE' >> \"" + logPath + "\"\n";
             }
@@ -4115,14 +4131,17 @@
         var isWin = ($.os.indexOf("Windows") !== -1);
         var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
 
-        var outName = mp4File.name.replace(/\.mp4$/i, "") + "_Optimized.mp4";
-        var outMP4 = outFolder.fsName + (isWin ? "\\" : "/") + outName;
-        var scriptPath = outFolder.fsName + (isWin ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
-        var logPath = outFolder.fsName + (isWin ? "\\optimize_log.txt" : "/optimize_log.txt");
+        // Decode paths to fix URL-encoded characters (e.g., %20 -> space) on macOS
+        var inputPath = decodePath(mp4File.fsName);
+        var outFolderPath = decodePath(outFolder.fsName);
+        var outName = decodePath(mp4File.name).replace(/\.mp4$/i, "") + "_Optimized.mp4";
+        var outMP4 = outFolderPath + (isWin ? "\\" : "/") + outName;
+        var scriptPath = outFolderPath + (isWin ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
+        var logPath = outFolderPath + (isWin ? "\\optimize_log.txt" : "/optimize_log.txt");
 
         // FIX: Use system temp folder for pass log
         var tempFolder = Folder.temp;
-        var passLog = tempFolder.fsName + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() : "/ffmpeg2pass_" + new Date().getTime());
+        var passLog = decodePath(tempFolder.fsName) + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() : "/ffmpeg2pass_" + new Date().getTime());
 
         // Calculate bitrate
         if (duration < 1) duration = 1;
@@ -4143,11 +4162,11 @@
             script += "echo Target: " + targetMB + "MB >> \"" + logPath + "\"\r\n";
             script += "echo Bitrate: " + videoBitrate + "k >> \"" + logPath + "\"\r\n";
             script += "echo PASS1_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
             script += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "echo PASS1_DONE >> \"" + logPath + "\"\r\n";
             script += "echo PASS2_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\r\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\r\n";
             script += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "echo PASS2_DONE >> \"" + logPath + "\"\r\n";
             script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT_MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
@@ -4160,13 +4179,13 @@
         } else {
             script += "#!/bin/bash\n";
             script += "echo 'STARTED' > \"" + logPath + "\"\n";
-            script += "echo 'Source: " + mp4File.name + "' >> \"" + logPath + "\"\n";
+            script += "echo 'Source: " + outName.replace(/_Optimized\.mp4$/i, ".mp4") + "' >> \"" + logPath + "\"\n";
             script += "echo 'PASS1_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
             script += "[ $? -eq 0 ] || { echo 'PASS1_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "echo 'PASS1_DONE' >> \"" + logPath + "\"\n";
             script += "echo 'PASS2_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + mp4File.fsName + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\n";
             script += "[ $? -eq 0 ] || { echo 'PASS2_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "echo 'PASS2_DONE' >> \"" + logPath + "\"\n";
             script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT_MISSING' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
