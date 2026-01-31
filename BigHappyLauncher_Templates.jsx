@@ -117,6 +117,106 @@
     }
 
     // =========================================================================
+    // SECTION 0B: CENTRALIZED LOGGING SYSTEM
+    // =========================================================================
+
+    var LOG_LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3, SUCCESS: 4 };
+    var LOG_LEVEL_NAMES = ["DEBUG", "INFO ", "WARN ", "ERROR", "SUCCESS"];
+    var CURRENT_LOG_LEVEL = LOG_LEVELS.INFO; // Minimum level to log
+
+    /**
+     * Get the log folder path, creating it if necessary
+     */
+    function getLogFolder() {
+        var logFolder = new Folder(Folder.myDocuments.fsName + "/BigHappyLauncher_Logs");
+        if (!logFolder.exists) {
+            logFolder.create();
+        }
+        return logFolder;
+    }
+
+    /**
+     * Get today's log file path
+     */
+    function getLogFilePath() {
+        var now = new Date();
+        var dateStr = now.getFullYear() + "-" +
+            ("0" + (now.getMonth() + 1)).slice(-2) + "-" +
+            ("0" + now.getDate()).slice(-2);
+        return getLogFolder().fsName + "/" + dateStr + ".log";
+    }
+
+    /**
+     * Format timestamp for log entries
+     */
+    function formatLogTimestamp() {
+        var now = new Date();
+        return now.getFullYear() + "-" +
+            ("0" + (now.getMonth() + 1)).slice(-2) + "-" +
+            ("0" + now.getDate()).slice(-2) + " " +
+            ("0" + now.getHours()).slice(-2) + ":" +
+            ("0" + now.getMinutes()).slice(-2) + ":" +
+            ("0" + now.getSeconds()).slice(-2);
+    }
+
+    /**
+     * Centralized logging function
+     * @param {number} level - Log level (use LOG_LEVELS constants)
+     * @param {string} message - Log message
+     * @param {object} context - Optional context object for additional details
+     */
+    function log(level, message, context) {
+        if (level < CURRENT_LOG_LEVEL) return;
+
+        var levelName = LOG_LEVEL_NAMES[level] || "INFO ";
+        var timestamp = formatLogTimestamp();
+        var logLine = "[" + timestamp + "] " + levelName + "  " + message;
+
+        // Add context if provided
+        if (context) {
+            for (var key in context) {
+                if (context.hasOwnProperty(key)) {
+                    logLine += "\n    " + key + ": " + context[key];
+                }
+            }
+        }
+
+        // Write to ExtendScript console for debugging
+        $.writeln(logLine);
+
+        // Write to log file
+        try {
+            var logFile = new File(getLogFilePath());
+            logFile.open("a"); // Append mode
+            logFile.encoding = "UTF-8";
+            logFile.writeln(logLine);
+            logFile.close();
+        } catch (e) {
+            // Silent fail - don't disrupt workflow for logging errors
+            $.writeln("[LOG ERROR] Failed to write to log file: " + e.toString());
+        }
+    }
+
+    /**
+     * Convenience logging functions
+     */
+    function logInfo(message, context) { log(LOG_LEVELS.INFO, message, context); }
+    function logWarn(message, context) { log(LOG_LEVELS.WARN, message, context); }
+    function logError(message, context) { log(LOG_LEVELS.ERROR, message, context); }
+    function logSuccess(message, context) { log(LOG_LEVELS.SUCCESS, message, context); }
+    function logDebug(message, context) { log(LOG_LEVELS.DEBUG, message, context); }
+
+    /**
+     * Format duration in seconds to human readable string
+     */
+    function formatDuration(seconds) {
+        if (seconds < 60) return seconds.toFixed(1) + "s";
+        var mins = Math.floor(seconds / 60);
+        var secs = Math.floor(seconds % 60);
+        return mins + "m " + secs + "s";
+    }
+
+    // =========================================================================
     // SECTION 1: CONFIGURATION & SETTINGS
     // =========================================================================
 
@@ -1436,7 +1536,11 @@
 
         var passed = 0;
         var failed = 0;
-        var log = "Running Unit Tests (v2.1)...\n\n";
+        var output = "Running Unit Tests (v2.1)...\n\n";
+
+        // Log to centralized system
+        logInfo("Running Unit Tests...");
+        logDebug("Debug log test connection");
 
         for (var i = 0; i < tests.length; i++) {
             var t = tests[i];
@@ -1458,21 +1562,21 @@
 
             if (tPass) {
                 passed++;
-                log += "[PASS] " + t.input + "\n";
+                output += "[PASS] " + t.input + "\n";
             } else {
                 failed++;
-                log += "[FAIL] " + t.input + "\nREASON: " + failReason + "\n";
+                output += "[FAIL] " + t.input + "\nREASON: " + failReason + "\n";
             }
         }
 
-        alert(log + "\nTotal: " + tests.length + " | Passed: " + passed + " | Failed: " + failed);
+        alert(output + "\nTotal: " + tests.length + " | Passed: " + passed + " | Failed: " + failed);
     }
 
     // ===================================
     // TEST 2: COMPREHENSIVE SYSTEM CHECK
     // ===================================
     function runStressTests() {
-        var log = "Running Comprehensive System Check...\n";
+        var output = "Running Comprehensive System Check...\n";
         var passed = 0;
         var failed = 0;
 
@@ -1481,7 +1585,7 @@
                 passed++;
             } else {
                 failed++;
-                log += "[FAIL] " + name + "\n";
+                output += "[FAIL] " + name + "\n";
             }
         }
 
@@ -1550,13 +1654,17 @@
         resultMsg += "FAILED: " + failed + "\n\n";
 
         if (failed > 0) {
-            resultMsg += "Failures Details:\n" + log;
+            resultMsg += "Failures Details:\n" + output;
+            logError("System check failed", { "Failed": failed, "Total": total });
         } else {
             resultMsg += "ALL SYSTEMS GO. Logic is robust.";
+            logSuccess("System check passed", { "Total": total });
         }
 
         alert(resultMsg);
     }
+
+
 
     // =========================================================================
     // SECTION 4: TEMPLATE MANAGEMENT
@@ -3698,6 +3806,12 @@
         var successCount = 0;
         var failCount = 0;
 
+        logInfo("Starting Batch DOOH optimization", {
+            "Files": mp4Files.length,
+            "Target Size": targetMB + " MB",
+            "Duration": duration + "s"
+        });
+
         // Progress UI
         var w = new Window("palette", "Batch DOOH Optimization", undefined, { closeButton: false });
         w.orientation = "column";
@@ -3812,6 +3926,11 @@
             var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
             var sourceSize = mp4File.length / (1024 * 1024);
 
+            logInfo("Processing file " + (i + 1) + "/" + mp4Files.length + ": " + decodePath(mp4File.name), {
+                "Source Size": sourceSize.toFixed(2) + " MB",
+                "Bitrate": videoBitrate + " kbps"
+            });
+
             // Create a temporary batch script for reliable synchronous execution
             var batchScriptPath = tempFolder.fsName + (isWin ? "\\batch_opt_" + i + ".bat" : "/batch_opt_" + i + ".sh");
             var batchScript = "";
@@ -3856,6 +3975,7 @@
                     system.callSystem("chmod +x \"" + batchScriptPath + "\" && \"" + batchScriptPath + "\"");
                 }
             } catch (e) {
+                logError("Batch script execution failed", { "File": decodePath(mp4File.name), "Error": e.toString() });
                 results.push({ name: mp4File.name, success: false, reason: "Script execution failed: " + e.toString() });
                 failCount++;
                 try { scriptFile.remove(); } catch (e2) { }
@@ -3891,11 +4011,13 @@
 
             // Check for encoding failures in log
             if (logContent.indexOf("PASS1_FAILED") !== -1) {
+                logError("Batch file failed (Pass 1)", { "File": decodePath(mp4File.name) });
                 results.push({ name: mp4File.name, success: false, reason: "FFmpeg Pass 1 failed" });
                 failCount++;
                 continue;
             }
             if (logContent.indexOf("PASS2_FAILED") !== -1) {
+                logError("Batch file failed (Pass 2)", { "File": decodePath(mp4File.name) });
                 results.push({ name: mp4File.name, success: false, reason: "FFmpeg Pass 2 failed" });
                 failCount++;
                 continue;
@@ -3930,15 +4052,23 @@
                     replaced: replaced
                 });
                 successCount++;
+
+                logSuccess("File optimization complete", {
+                    "File": decodePath(sourceName),
+                    "Savings": savings.toFixed(1) + "%",
+                    "New Size": outputSize.toFixed(2) + " MB"
+                });
             } else if (outputFile.exists && outputFile.length <= 1024) {
                 // File exists but is empty or nearly empty - encoding failed
                 results.push({ name: mp4File.name, success: false, reason: "Encoding failed (0 KB output)" });
                 failCount++;
+                logError("Encoding failed (empty output)", { "File": decodePath(mp4File.name) });
                 // Clean up the empty file
                 try { outputFile.remove(); } catch (e) { }
             } else {
                 results.push({ name: mp4File.name, success: false, reason: "Output not created" });
                 failCount++;
+                logError("Output not created", { "File": decodePath(mp4File.name) });
             }
 
             fileBar.value = 100;
@@ -3953,6 +4083,12 @@
 
         overallBar.value = mp4Files.length;
         w.close();
+
+        logInfo("Batch optimization finished", {
+            "Total Files": mp4Files.length,
+            "Success": successCount,
+            "Failed": failCount
+        });
 
         // Show batch results
         var totalSourceSize = 0;
@@ -4127,6 +4263,8 @@
     function runMP4Optimizer(mp4File, outFolder, targetMB, duration) {
         if (!ensureFFmpegReady()) return;
 
+        var startTime = new Date().getTime(); // Track elapsed time
+
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var isWin = ($.os.indexOf("Windows") !== -1);
         var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
@@ -4152,6 +4290,15 @@
         var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
         var sourceSize = mp4File.length / (1024 * 1024); // MB
         var script = "";
+
+        // Log optimization start
+        logInfo("Starting DOOH optimization", {
+            "Input": decodePath(mp4File.name),
+            "Source Size": sourceSize.toFixed(2) + " MB",
+            "Target Size": targetMB + " MB",
+            "Duration": duration.toFixed(1) + "s",
+            "Bitrate": videoBitrate + " kbps"
+        });
 
         // Build script with progress markers
         if (isWin) {
@@ -4208,17 +4355,26 @@
         w.margins = 20;
         w.spacing = 10;
 
-        var titleLbl = w.add("statictext", undefined, "Optimizing: " + mp4File.name);
+        var titleLbl = w.add("statictext", undefined, "Optimizing: " + decodePath(mp4File.name));
         try { titleLbl.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
         var statusLbl = w.add("statictext", undefined, "Starting optimization...");
         var progressBar = w.add("progressbar", [0, 0, 280, 20], 0, 100);
 
+        // Enhanced detail group with elapsed time
         var detailGrp = w.add("group");
         detailGrp.orientation = "column";
         detailGrp.alignChildren = ["left", "top"];
-        var detailLbl = detailGrp.add("statictext", undefined, "Target: " + targetMB + " MB | Bitrate: " + videoBitrate + " kbps");
+        detailGrp.spacing = 4;
+
+        var sizeLbl = detailGrp.add("statictext", undefined, "Source: " + sourceSize.toFixed(1) + " MB → Target: " + targetMB + " MB");
+        setTextColor(sizeLbl, [0.5, 0.5, 0.5]);
+
+        var detailLbl = detailGrp.add("statictext", undefined, "Bitrate: " + videoBitrate + " kbps | Duration: " + duration.toFixed(1) + "s");
         setTextColor(detailLbl, [0.5, 0.5, 0.5]);
+
+        var elapsedLbl = detailGrp.add("statictext", undefined, "Elapsed: 0s");
+        setTextColor(elapsedLbl, [0.4, 0.6, 0.9]);
 
         w.center();
         w.show();
@@ -4240,6 +4396,8 @@
         var waited = 0;
         var pollInterval = 500; // ms
         var lastStatus = "";
+        var pass1Time = 0;
+        var pass2Time = 0;
 
         while (waited < maxWait) {
             $.sleep(pollInterval);
@@ -4250,29 +4408,39 @@
                 var logContent = logFile.read();
                 logFile.close();
 
+                // Update elapsed time display
+                var elapsedSecs = (new Date().getTime() - startTime) / 1000;
+                elapsedLbl.text = "Elapsed: " + formatDuration(elapsedSecs);
+
                 // Update progress based on markers
                 if (logContent.indexOf("PASS1_START") !== -1 && lastStatus !== "PASS1") {
                     lastStatus = "PASS1";
                     statusLbl.text = "Pass 1 of 2: Analyzing...";
                     progressBar.value = 20;
+                    logInfo("Pass 1 started (analysis)");
                     w.update();
                 }
                 if (logContent.indexOf("PASS1_DONE") !== -1 && lastStatus !== "PASS1_DONE") {
+                    pass1Time = (new Date().getTime() - startTime) / 1000;
                     lastStatus = "PASS1_DONE";
-                    statusLbl.text = "Pass 1 complete. Starting Pass 2...";
+                    statusLbl.text = "Pass 1 complete (" + formatDuration(pass1Time) + "). Starting Pass 2...";
                     progressBar.value = 50;
+                    logInfo("Pass 1 complete", { "Duration": formatDuration(pass1Time) });
                     w.update();
                 }
                 if (logContent.indexOf("PASS2_START") !== -1 && lastStatus !== "PASS2") {
                     lastStatus = "PASS2";
                     statusLbl.text = "Pass 2 of 2: Encoding...";
                     progressBar.value = 60;
+                    logInfo("Pass 2 started (encoding)");
                     w.update();
                 }
                 if (logContent.indexOf("PASS2_DONE") !== -1 && lastStatus !== "PASS2_DONE") {
+                    pass2Time = (new Date().getTime() - startTime) / 1000 - pass1Time;
                     lastStatus = "PASS2_DONE";
                     statusLbl.text = "Finalizing...";
                     progressBar.value = 90;
+                    logInfo("Pass 2 complete", { "Duration": formatDuration(pass2Time) });
                     w.update();
                 }
 
@@ -4290,6 +4458,7 @@
                     if (logContent.indexOf("PASS1_FAILED") !== -1) failReason = "Pass 1 encoding failed";
                     if (logContent.indexOf("PASS2_FAILED") !== -1) failReason = "Pass 2 encoding failed";
                     if (logContent.indexOf("OUTPUT_MISSING") !== -1) failReason = "Output file not created";
+                    logError("Optimization failed", { "Reason": failReason, "File": decodePath(mp4File.name) });
                     alert("Optimization FAILED!\n\nReason: " + failReason + "\n\nCheck log: " + logPath);
                     return;
                 }
@@ -4298,8 +4467,12 @@
 
         w.close();
 
+        // Calculate total elapsed time
+        var totalTime = (new Date().getTime() - startTime) / 1000;
+
         // Check if timed out
         if (waited >= maxWait) {
+            logError("Optimization timed out", { "File": decodePath(mp4File.name), "Waited": formatDuration(waited) });
             alert("Optimization timed out after 10 minutes.\n\nCheck log: " + logPath);
             return;
         }
@@ -4310,7 +4483,17 @@
             var outputSize = outputFile.length / (1024 * 1024);
             var savings = ((sourceSize - outputSize) / sourceSize * 100);
             var meetsTarget = outputSize <= targetMB;
-            var originalName = mp4File.name;
+            var originalName = decodePath(mp4File.name);
+
+            // Log success
+            logSuccess("Optimization complete", {
+                "File": originalName,
+                "Source Size": sourceSize.toFixed(2) + " MB",
+                "Output Size": outputSize.toFixed(2) + " MB",
+                "Savings": savings.toFixed(1) + "%",
+                "Target Met": meetsTarget ? "Yes" : "No",
+                "Total Time": formatDuration(totalTime)
+            });
 
             // REPLACEMENT LOGIC
             var replaced = false;
