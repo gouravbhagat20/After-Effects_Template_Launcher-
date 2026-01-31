@@ -3824,6 +3824,7 @@
             // Write the batch script
             var scriptFile = new File(batchScriptPath);
             scriptFile.open("w");
+            if (!isWin) scriptFile.lineFeed = "unix"; // Force Unix line endings on macOS
             scriptFile.write(batchScript);
             scriptFile.close();
 
@@ -4175,7 +4176,10 @@
 
         // Write Script
         var sFile = new File(scriptPath);
-        sFile.open("w"); sFile.write(script); sFile.close();
+        sFile.open("w");
+        if (!isWin) sFile.lineFeed = "unix"; // Force Unix line endings on macOS
+        sFile.write(script);
+        sFile.close();
         if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
 
         // Progress UI
