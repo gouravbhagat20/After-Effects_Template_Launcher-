@@ -2,40 +2,12 @@
 ================================================================================
   BigHappyLauncher_Templates.jsx
   After Effects ScriptUI Panel - Production Ready v1.0
-  
-  CHANGELOG v2.3:
+
+  CHANGELOG v1.0:
+  - Fixed ExtendScript IIFE execution: Safe handling of 'this' parameter to prevent
+    "does not have a value" error in After Effects
   - Automatic FFmpeg Download: Downloads and installs FFmpeg if missing (Windows)
-  
-  CHANGELOG v2.2:
-  - DOOH Batch Optimization: Select multiple MP4s and optimize all at once
-  - Progress Polling: Visual progress bar with real-time status updates
-  - Enhanced Results: Shows source/output size, savings %, bitrate, codec
-  - Smart File Picker: No project required - pick any MP4 to optimize
-  - Path Safety: checkPathLength() utility prevents Windows MAX_PATH errors
-  - JSON Robustness: try/catch wrapping with error logging
-  - Expanded Tests: 37 unit tests covering path length and JSON edge cases
-  
-  CHANGELOG v2.1:
-  - Fixed AME export: now uses app.project.renderQueue.queueInAME(true) instead
-    of unreliable BridgeTalk. Falls back to AE Render Queue if unavailable.
-  - Improved parseProjectName(): parses from END with required size pattern
-    (_<width>x<height>_V#_R#). Handles underscores in Brand/Campaign correctly.
-  - Fixed template reorder UX: Up/Down buttons now call updateStatus() and
-    updatePreview() after reordering.
-  - Corrected format claims: says "format depends on Output Module preset"
-    instead of claiming specific formats.
-  
-  CHANGELOG v2.0:
-  - Added joinPath() for cross-platform path handling (Win/Mac)
-  - Implemented robust regex-based parseProjectName()
-  - Added input validation in Add/Edit Template dialog
-  - Added Duplicate Template button
-  - Added Move Up/Down buttons for template reordering
-  - Added AME export option with fallback to AE Render Queue
-  - Added comprehensive try/catch error handling
-  - Refactored code into clear sections
-  - Fixed all hardcoded "/" path separators
-  
+
   Features:
   - Cross-platform (Windows + macOS)
   - Auto-generate template .aep files
@@ -48,6 +20,7 @@
 */
 
 (function (thisObj) {
+    thisObj = thisObj || ((typeof $ !== 'undefined' && $) ? this : null);
 
     // =========================================================================
     // STARTUP: Permission Check
@@ -5783,7 +5756,7 @@
 
     buildUI(thisObj);
 
-})(this);
+})(null);
 
 /*
 ================================================================================

@@ -199,6 +199,7 @@ Access via ⚙ button. Configure:
 
 ---
 
+
 ## Requirements
 
 - **After Effects CC 2019+**
