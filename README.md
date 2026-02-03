@@ -5,6 +5,47 @@
 
 ---
 
+## What Does This Tool Do?
+
+Big Happy Launcher is a comprehensive After Effects automation tool that streamlines your production workflow:
+
+### Core Capabilities
+
+🎯 **Template Project Creation**
+- Creates standardized After Effects projects with proper naming conventions
+- Auto-generates organized folder structures (AE files, Assets, Renders)
+- Supports multiple template types: Sunrise (750×300), InterScroller, DOOH formats
+
+📦 **DOOH Video Optimization**
+- Batch compress MP4 files to meet strict 7MB DOOH size requirements
+- Real-time progress tracking with time estimates
+- Detailed results showing file size savings and bitrate info
+- Works standalone without an open After Effects project
+
+🎬 **Post-Render Processing**
+- Converts PNG sequences to WebM (with transparency support)
+- Generates MOV files with ProRes 4444 codec
+- Creates HTML preview wrappers
+- Bundles everything into convenient ZIP files
+
+⚡ **Smart Automation**
+- Auto-detects and installs FFmpeg if missing (Windows)
+- Version and revision management (V+ / R+ buttons)
+- Asset collection and Google Drive upload integration
+- Built-in path length safety checks
+
+---
+
+## Perfect For
+
+✅ **Animators & Motion Designers** - Streamline project setup and asset management
+✅ **DOOH Advertisers** - Easily meet strict file size requirements for digital signage
+✅ **Production Studios** - Standardize naming conventions and folder structures
+✅ **Freelancers** - Manage versions and revisions with one-click buttons
+✅ **Teams** - Maintain consistent project organization across multiple people
+
+---
+
 ## Screenshots
 
 ### Main Panel
@@ -243,15 +284,17 @@ Access via ⚙ button. Configure:
 
 ## Version History
 
-| Version | Changes |
-|---------|---------|
-| **v1.0** | Initial release with full feature set |
-| | • Template management & standardized naming |
-| | • DOOH batch optimization with progress |
-| | • Auto FFmpeg download & setup |
-| | • Post-render conversion (WebM/MOV) |
-| | • Path length safety checks |
-| | • Enhanced results with file savings |
+| Version | Date | Changes |
+|---------|------|---------|
+| **v1.0** | Feb 2026 | Initial production release |
+| | | • Fixed ExtendScript IIFE execution error |
+| | | • Template management & standardized naming |
+| | | • DOOH batch optimization with progress tracking |
+| | | • Auto FFmpeg download & setup (Windows) |
+| | | • Post-render conversion (WebM/MOV/HTML) |
+| | | • Path length safety checks |
+| | | • Enhanced results with file savings metrics |
+| | | • Cross-platform compatibility (Windows/Mac) |
 
 ---
 

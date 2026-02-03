@@ -194,7 +194,7 @@
     // =========================================================================
 
     var CONFIG = {
-        VERSION: "2.3", // Automatic FFmpeg Download
+        VERSION: "1.0", // Production Release
         SETTINGS: {
             SECTION: "BigHappyLauncher",
             KEYS: {
@@ -462,8 +462,8 @@
 
             // FIX: Prevent Recursive Collection
             // Check if we are already inside a collection folder
-            if (projectFolder.name === "Collected_Files" || projectFolder.parent.name === "Collected_Files" ||
-                projectFolder.name === "_Collected" || projectFolder.parent.name === "_Collected") {
+            if (projectFolder.name === "Collected_Files" || (projectFolder.parent && projectFolder.parent.name === "Collected_Files") ||
+                projectFolder.name === "_Collected" || (projectFolder.parent && projectFolder.parent.name === "_Collected")) {
                 w.close();
                 alert("Cannot Collect a project that is already inside a 'Collected_Files' folder.\n\nPlease open the original source project and try again.");
                 return;
@@ -1130,7 +1130,7 @@
                             var fileExt = parts.pop();
                             var base = parts.join(".");
 
-                            while (destFile.exists && destFile.length !== sourceFile.length) {
+                            while (destFile.exists) {
                                 destFile = new File(joinPath(footageFolder.fsName, base + "_" + dupIdx + "." + fileExt));
                                 dupIdx++;
                             }
@@ -1509,7 +1509,7 @@
 
         var passed = 0;
         var failed = 0;
-        var output = "Running Unit Tests (v2.1)...\n\n";
+        var output = "Running Unit Tests (v1.0)...\n\n";
 
         // Log to centralized system
         logInfo("Running Unit Tests...");
@@ -2691,7 +2691,10 @@
             var suggestedName = ui.buildFilename(brand, campaign, quarter, size, version, revision, isDOOHTemplate(t.name));
             suggestedName = suggestedName.replace(/\.aep$/i, "");
 
-            var saveFile = new File(joinPath(app.project.file.parent.fsName, suggestedName + ".aep")).saveDlg("Save Project As");
+            var defaultPath = (app.project.file && app.project.file.parent) ?
+                app.project.file.parent.fsName :
+                Folder.desktop.fsName;
+            var saveFile = new File(joinPath(defaultPath, suggestedName + ".aep")).saveDlg("Save Project As");
             if (saveFile) {
                 try {
                     var savePath = saveFile.fsName.replace(/\.aep$/i, "") + ".aep";
