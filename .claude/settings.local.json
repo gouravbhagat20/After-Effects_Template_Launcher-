@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx @anthropic-ai/skills add)",
+      "Bash(claude plugin --help:*)",
+      "Bash(claude plugin install:*)",
+      "Bash(awk:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

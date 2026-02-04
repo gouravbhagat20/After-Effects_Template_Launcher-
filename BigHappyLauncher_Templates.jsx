@@ -565,7 +565,10 @@
             var brandFolder = getOrCreateNumberedFolder(pQuarter, projectFolderName);
             var pBrand = joinPath(pQuarter, brandFolder);
 
-            var pAE = joinPath(pBrand, "AE");
+            // FIX: Use unique project folder instead of shared "AE" to prevent asset merging
+            // Old: .../01.Brand/AE/ (Mixed multiple sizes)
+            // New: .../01.Brand/Brand_Campaign_300x250_V1_R1/ (Isolated)
+            var pAE = joinPath(pBrand, collectFolderName);
 
             // Define Drive Path for Shared Assets
             var driveCommonAssets = new Folder(joinPath(pAE, "_Common_Assets"));
@@ -4826,6 +4829,10 @@
 
         // Scope object to hold UI elements and data
         var tData = loadTemplates();
+
+        // DEBUG: Inspect thisObj
+        // alert("DEBUG: thisObj type = " + typeof thisObj + "\nToString: " + String(thisObj) + "\nHasAdd: " + (thisObj ? typeof thisObj.add : "null"));
+
         var tFolder = getTemplatesFolder();
 
         // [FIX P0] Ensure physical template files exist for defaults
@@ -4888,9 +4895,17 @@
         };
 
         // Initialize Panel
+        // Initialize Panel
+        // REVERT: Strict check to ensure no crashes. Logging failure to debug Ghost Window.
         if (thisObj instanceof Panel) {
             ui.w = thisObj;
         } else {
+            // Log what we rejected to debug Ghost Window issue
+            try {
+                var debugType = (thisObj) ? String(thisObj) : "null";
+                writeLog("Panel Detection Failed. thisObj: " + debugType, "WARN");
+            } catch (e) { }
+
             ui.w = new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
         }
         ui.w.orientation = "column";
@@ -5758,8 +5773,8 @@
 
 
     buildUI(thisObj);
-
-})(null);
+    // FIX: Pass 'this' explicitly for better Dockable Panel support
+})(this);
 
 /*
 ================================================================================
