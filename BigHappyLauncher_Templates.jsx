@@ -3966,7 +3966,11 @@
             var videoBitrate = Math.floor(totalBitrate - 128);
             if (videoBitrate < 1000) videoBitrate = 1000;
 
-            var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
+            // Quality settings - allow 50% headroom for peaks, larger buffer for complex scenes
+            var maxBitrate = Math.floor(videoBitrate * 1.5);
+            var bufSize = videoBitrate * 3;
+            var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
+            var qualityFlags = "-profile:v high -level 4.0 -pix_fmt yuv420p -movflags +faststart";
             var sourceSize = mp4File.length / (1024 * 1024);
 
             logInfo("Processing file " + (i + 1) + "/" + mp4Files.length + ": " + decodePath(mp4File.name), {
@@ -3982,19 +3986,19 @@
                 batchScript += "@echo off\r\n";
                 batchScript += "echo STARTED > \"" + logPath + "\"\r\n";
                 batchScript += "echo Pass 1 starting... >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>>\"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>>\"" + logPath + "\"\r\n";
                 batchScript += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
                 batchScript += "echo Pass 1 done >> \"" + logPath + "\"\r\n";
                 batchScript += "echo Pass 2 starting... >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
                 batchScript += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
                 batchScript += "echo COMPLETE >> \"" + logPath + "\"\r\n";
             } else {
                 batchScript += "#!/bin/bash\n";
                 batchScript += "echo 'STARTED' > \"" + logPath + "\"\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>>\"" + logPath + "\"\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>>\"" + logPath + "\"\n";
                 batchScript += "[ $? -ne 0 ] && echo 'PASS1_FAILED' >> \"" + logPath + "\" && exit 1\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
                 batchScript += "[ $? -ne 0 ] && echo 'PASS2_FAILED' >> \"" + logPath + "\" && exit 1\n";
                 batchScript += "echo 'COMPLETE' >> \"" + logPath + "\"\n";
             }
@@ -4330,7 +4334,12 @@
         var videoBitrate = Math.floor(totalBitrate - 128);
         if (videoBitrate < 1000) videoBitrate = 1000;
 
-        var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
+        // Quality settings - allow 50% headroom for peaks, larger buffer for complex scenes
+        var maxBitrate = Math.floor(videoBitrate * 1.5);
+        var bufSize = videoBitrate * 3; // Larger buffer = more quality flexibility
+        var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
+        // Add H.264 High profile for better quality + faststart for streaming
+        var qualityFlags = "-profile:v high -level 4.0 -pix_fmt yuv420p -movflags +faststart";
         var sourceSize = mp4File.length / (1024 * 1024); // MB
         var script = "";
 
@@ -4352,11 +4361,11 @@
             script += "echo Target: " + targetMB + "MB >> \"" + logPath + "\"\r\n";
             script += "echo Bitrate: " + videoBitrate + "k >> \"" + logPath + "\"\r\n";
             script += "echo PASS1_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>>\"" + logPath + "\"\r\n";
             script += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "echo PASS1_DONE >> \"" + logPath + "\"\r\n";
             script += "echo PASS2_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\r\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
             script += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "echo PASS2_DONE >> \"" + logPath + "\"\r\n";
             script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT_MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
@@ -4371,11 +4380,11 @@
             script += "echo 'STARTED' > \"" + logPath + "\"\n";
             script += "echo 'Source: " + outName.replace(/_Optimized\.mp4$/i, ".mp4") + "' >> \"" + logPath + "\"\n";
             script += "echo 'PASS1_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>>\"" + logPath + "\"\n";
             script += "[ $? -eq 0 ] || { echo 'PASS1_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "echo 'PASS1_DONE' >> \"" + logPath + "\"\n";
             script += "echo 'PASS2_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>> \"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
             script += "[ $? -eq 0 ] || { echo 'PASS2_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "echo 'PASS2_DONE' >> \"" + logPath + "\"\n";
             script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT_MISSING' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
