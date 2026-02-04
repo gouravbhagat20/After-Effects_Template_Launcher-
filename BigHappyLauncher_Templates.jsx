@@ -3442,11 +3442,28 @@
         if (ffmpegPath) {
             try {
                 var exe2 = '"' + ffmpegPath + '"';
-                // FFmpeg outputs duration to stderr, redirect stderr to stdout
-                var cmd2 = exe2 + ' -i "' + inputPath + '" 2>&1';
-                if (isWin) cmd2 = 'cmd /c ' + cmd2;
+                var tempOutput = Folder.temp.fsName + (isWin ? "\\ffmpeg_dur_" + new Date().getTime() + ".txt" : "/ffmpeg_dur_" + new Date().getTime() + ".txt");
 
-                var result2 = system.callSystem(cmd2);
+                // Redirect stderr to temp file (ExtendScript can't capture stderr directly)
+                var cmd2 = "";
+                if (isWin) {
+                    cmd2 = 'cmd /c ' + exe2 + ' -i "' + inputPath + '" 2> "' + tempOutput + '"';
+                } else {
+                    cmd2 = exe2 + ' -i "' + inputPath + '" 2> "' + tempOutput + '"';
+                }
+
+                system.callSystem(cmd2);
+
+                // Read the temp file
+                var tempFile = new File(tempOutput);
+                var result2 = "";
+                if (tempFile.exists) {
+                    tempFile.open("r");
+                    result2 = tempFile.read();
+                    tempFile.close();
+                    tempFile.remove();
+                }
+
                 // Parse "Duration: HH:MM:SS.ms" from output
                 var match = result2.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
                 if (match) {
