@@ -3400,13 +3400,13 @@
 
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var ffprobePath = "";
+        var isWin = ($.os.indexOf("Windows") !== -1);
 
         // FFprobe is usually in the same folder as FFmpeg
         if (ffmpegPath) {
             ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
             var probeFile = new File(ffprobePath);
             if (!probeFile.exists) {
-                // Try without extension
                 ffprobePath = ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
                 probeFile = new File(ffprobePath);
                 if (!probeFile.exists) {
@@ -3415,30 +3415,57 @@
             }
         }
 
-        var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
-        var isWin = ($.os.indexOf("Windows") !== -1);
+        var inputPath = videoFile.fsName;
+        var duration = 0;
 
-        // FFprobe command to get duration in seconds
-        var cmd = exe + ' -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + videoFile.fsName + '"';
+        // Method 1: Try FFprobe (preferred)
+        if (ffprobePath || !ffmpegPath) {
+            try {
+                var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
+                var cmd = exe + ' -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + inputPath + '"';
+                if (isWin) cmd = 'cmd /c ' + cmd;
 
-        if (isWin) {
-            cmd = 'cmd /c ' + cmd;
-        }
+                var result = system.callSystem(cmd);
+                result = result.replace(/[\r\n\s]/g, "");
+                duration = parseFloat(result);
 
-        try {
-            var result = system.callSystem(cmd);
-            // Clean up result and parse as float
-            result = result.replace(/[\r\n\s]/g, "");
-            var duration = parseFloat(result);
-
-            if (!isNaN(duration) && duration > 0) {
-                writeLog("Auto-detected duration: " + duration + "s for " + videoFile.name, "INFO");
-                return duration;
+                if (!isNaN(duration) && duration > 0) {
+                    writeLog("Auto-detected duration (ffprobe): " + duration.toFixed(2) + "s for " + videoFile.name, "INFO");
+                    return duration;
+                }
+            } catch (e) {
+                writeLog("FFprobe failed: " + e.toString(), "DEBUG");
             }
-        } catch (e) {
-            writeLog("FFprobe duration detection failed: " + e.toString(), "WARN");
         }
 
+        // Method 2: Fallback to FFmpeg -i (parse Duration: HH:MM:SS.ms from stderr)
+        if (ffmpegPath) {
+            try {
+                var exe2 = '"' + ffmpegPath + '"';
+                // FFmpeg outputs duration to stderr, redirect stderr to stdout
+                var cmd2 = exe2 + ' -i "' + inputPath + '" 2>&1';
+                if (isWin) cmd2 = 'cmd /c ' + cmd2;
+
+                var result2 = system.callSystem(cmd2);
+                // Parse "Duration: HH:MM:SS.ms" from output
+                var match = result2.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
+                if (match) {
+                    var hours = parseInt(match[1], 10);
+                    var mins = parseInt(match[2], 10);
+                    var secs = parseFloat(match[3]);
+                    duration = hours * 3600 + mins * 60 + secs;
+
+                    if (duration > 0) {
+                        writeLog("Auto-detected duration (ffmpeg): " + duration.toFixed(2) + "s for " + videoFile.name, "INFO");
+                        return duration;
+                    }
+                }
+            } catch (e) {
+                writeLog("FFmpeg duration fallback failed: " + e.toString(), "WARN");
+            }
+        }
+
+        writeLog("Could not auto-detect duration for: " + videoFile.name, "WARN");
         return 0; // Return 0 to indicate failure
     }
 
@@ -4457,7 +4484,19 @@
         }
 
         // Enhanced Results & Replacement
+        // FIX: Force folder refresh before checking file existence (Windows sometimes needs this)
+        var checkFolder = new Folder(outFolderPath);
+        if (checkFolder.exists) {
+            checkFolder.getFiles(); // Force refresh directory listing
+        }
+        $.sleep(500); // Additional buffer for FS sync
+
         var outputFile = new File(outMP4);
+
+        // DEBUG: Log exact path being checked
+        writeLog("Checking for output file: " + outMP4, "DEBUG");
+        writeLog("File exists: " + outputFile.exists, "DEBUG");
+
         if (outputFile.exists) {
             var outputSize = outputFile.length / (1024 * 1024);
             var savings = ((sourceSize - outputSize) / sourceSize * 100);
