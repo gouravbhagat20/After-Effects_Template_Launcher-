@@ -4428,7 +4428,7 @@
                     progressBar.value = 100;
                     statusLbl.text = "Complete!";
                     w.update();
-                    $.sleep(500);
+                    $.sleep(2500); // FIX: Extended delay to ensure FS catches up
                     break;
                 }
                 if (logContent.indexOf("FAILED") !== -1) {
