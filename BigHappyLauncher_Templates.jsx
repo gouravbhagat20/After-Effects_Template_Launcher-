@@ -3966,11 +3966,14 @@
             var videoBitrate = Math.floor(totalBitrate - 128);
             if (videoBitrate < 1000) videoBitrate = 1000;
 
-            // Quality settings - MAXIMUM QUALITY for animations
+            // Quality settings - ABSOLUTE MAXIMUM QUALITY
             var maxBitrate = Math.floor(videoBitrate * 2);
             var bufSize = videoBitrate * 5;
             var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
-            var qualityFlags = "-profile:v high -level 4.1 -pix_fmt yuv420p -tune animation -movflags +faststart";
+            // Advanced x264 flags for ultimate quality + sharpening
+            var advancedFlags = "-x264-params \"aq-mode=3:rc-lookahead=60:ref=5:subme=10:me=umh:trellis=2:deblock=-2,-2\"";
+            var sharpenFilter = "-vf \"unsharp=5:5:0.3:5:5:0.3\"";
+            var qualityFlags = "-profile:v high -level 4.1 -pix_fmt yuv420p -tune animation -movflags +faststart " + advancedFlags + " " + sharpenFilter;
             var presetFlag = "veryslow";
             var sourceSize = mp4File.length / (1024 * 1024);
 
@@ -4335,16 +4338,24 @@
         var videoBitrate = Math.floor(totalBitrate - 128);
         if (videoBitrate < 1000) videoBitrate = 1000;
 
-        // Quality settings - MAXIMUM QUALITY for animations
+        // Quality settings - ABSOLUTE MAXIMUM QUALITY
         // maxrate 2x = generous bitrate peaks for complex frames
         // bufsize 5x = maximum VBV buffer for quality consistency
         var maxBitrate = Math.floor(videoBitrate * 2);
         var bufSize = videoBitrate * 5;
         var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
-        // veryslow = best quality (slower encoding)
-        // tune animation = optimizes for flat colors, sharp edges, motion graphics
-        // High 4.1 = supports higher bitrates and resolutions
-        var qualityFlags = "-profile:v high -level 4.1 -pix_fmt yuv420p -tune animation -movflags +faststart";
+        // Advanced x264 flags for ultimate quality:
+        // aq-mode 3 = auto-variance adaptive quantization (best for animations)
+        // rc-lookahead 60 = analyze 60 frames ahead for optimal bit allocation
+        // refs 5 = 5 reference frames for better motion compensation
+        // subq 10 = highest quality subpixel motion estimation
+        // me_method umh = uneven multi-hex motion search (best)
+        // trellis 2 = optimal RD quantization on all modes
+        // deblock -2:-2 = stronger sharpening (keeps edges very crisp)
+        var advancedFlags = "-x264-params \"aq-mode=3:rc-lookahead=60:ref=5:subme=10:me=umh:trellis=2:deblock=-2,-2\"";
+        // unsharp filter: subtle edge enhancement (5x5 matrix, 0.3 strength)
+        var sharpenFilter = "-vf \"unsharp=5:5:0.3:5:5:0.3\"";
+        var qualityFlags = "-profile:v high -level 4.1 -pix_fmt yuv420p -tune animation -movflags +faststart " + advancedFlags + " " + sharpenFilter;
         var presetFlag = "veryslow"; // Maximum quality (encoding takes longer)
         var sourceSize = mp4File.length / (1024 * 1024); // MB
         var script = "";
