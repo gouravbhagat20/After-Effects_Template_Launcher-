@@ -3630,17 +3630,37 @@
         var targetFolder = null;
         var duration = 15; // Default duration
 
-        // Check FFmpeg first
+        // Check FFmpeg first - FULLY AUTOMATIC INSTALL
         var ffmpegOk = checkFFmpeg();
         if (!ffmpegOk) {
-            // Show FFmpeg setup dialog with auto-install option
-            var result = showFFmpegSetupDialog();
-            if (!result) return; // User cancelled or setup failed
+            // Auto-install FFmpeg silently (Windows only)
+            var isWin = ($.os.indexOf("Windows") !== -1);
+            if (isWin) {
+                var autoResult = autoInstallFFmpeg();
+                if (!autoResult) {
+                    // Auto-install failed - fallback to manual
+                    var ffmpegFile = File.openDialog("Select ffmpeg.exe", "ffmpeg.exe:ffmpeg.exe");
+                    if (ffmpegFile && ffmpegFile.exists) {
+                        saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegFile.fsName);
+                    } else {
+                        return; // User cancelled
+                    }
+                }
+            } else {
+                // Mac - try common paths first, then ask user
+                alert("FFmpeg not found. Please install via Homebrew:\\n\\nbrew install ffmpeg\\n\\nOr select the ffmpeg binary manually.");
+                var ffmpegFile = File.openDialog("Select ffmpeg binary");
+                if (ffmpegFile && ffmpegFile.exists) {
+                    saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegFile.fsName);
+                } else {
+                    return;
+                }
+            }
 
-            // Re-check after potential install
+            // Re-check after install
             ffmpegOk = checkFFmpeg();
             if (!ffmpegOk) {
-                alert("FFmpeg still not configured. Please try manual setup.");
+                alert("FFmpeg installation failed. Please try again or install manually.");
                 return;
             }
         }
