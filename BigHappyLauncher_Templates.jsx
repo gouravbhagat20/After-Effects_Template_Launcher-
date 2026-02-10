@@ -3856,7 +3856,8 @@
         });
 
         // Progress UI
-        var w = new Window("palette", "Batch DOOH Optimization", undefined, { closeButton: false });
+        var batchCancelled = false;
+        var w = new Window("palette", "Batch DOOH Optimization", undefined, { closeButton: true });
         w.orientation = "column";
         w.alignChildren = ["fill", "top"];
         w.margins = 20;
@@ -3873,6 +3874,15 @@
         // Time tracking UI
         var timeLbl = w.add("statictext", undefined, "Elapsed: 0:00 | Remaining: Calculating...");
         try { setTextColor(timeLbl, [0.5, 0.5, 0.5]); } catch (e) { }
+
+        // Cancel button
+        var cancelBtn = w.add("button", undefined, "✕  Cancel");
+        cancelBtn.alignment = ["center", "bottom"];
+        cancelBtn.onClick = function () {
+            batchCancelled = true;
+            w.close();
+        };
+        w.onClose = function () { batchCancelled = true; };
 
         w.center();
         w.show();
@@ -3915,6 +3925,11 @@
 
         // Process each file
         for (var i = 0; i < mp4Files.length; i++) {
+            // Check if user cancelled
+            if (batchCancelled) {
+                logWarn("Batch optimization cancelled by user", { "Completed": i + " of " + mp4Files.length });
+                break;
+            }
             var mp4File = mp4Files[i];
             // Decode paths to fix URL-encoded characters (e.g., %20 -> space) on macOS
             var inputPath = decodePath(mp4File.fsName);
@@ -3964,46 +3979,70 @@
             var dur = duration < 1 ? 1 : duration;
             var totalBitrate = (targetMB * 8192) / dur;
             var videoBitrate = Math.floor(totalBitrate - 128);
-            if (videoBitrate < 1000) videoBitrate = 1000;
-
-            // Quality settings - ABSOLUTE MAXIMUM QUALITY
-            var maxBitrate = Math.floor(videoBitrate * 2);
-            var bufSize = videoBitrate * 5;
-            var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
-            // Advanced x264 flags for ultimate quality + sharpening
-            var advancedFlags = "-x264-params \"aq-mode=3:rc-lookahead=60:ref=5:subme=10:me=umh:trellis=2:deblock=-2,-2\"";
-            var sharpenFilter = "-vf \"unsharp=5:5:0.3:5:5:0.3\"";
-            var qualityFlags = "-profile:v high -level 4.1 -pix_fmt yuv420p -tune animation -movflags +faststart " + advancedFlags + " " + sharpenFilter;
-            var presetFlag = "veryslow";
+            if (videoBitrate < 500) videoBitrate = 500;
             var sourceSize = mp4File.length / (1024 * 1024);
+
+            // GUARD: If source is already at or below target, skip this file
+            if (sourceSize <= targetMB) {
+                results.push({ name: mp4File.name, success: true, sourceSize: sourceSize, outputSize: sourceSize, savings: 0, meetsTarget: true, replaced: false, skipped: true });
+                successCount++;
+                logInfo("Skipped (already under target)", { "File": decodePath(mp4File.name), "Size": sourceSize.toFixed(2) + " MB" });
+                continue;
+            }
+
+            // CAP: Never encode at a higher bitrate than the source file
+            var sourceBitrate = Math.floor((sourceSize * 8192) / dur);
+            if (totalBitrate >= sourceBitrate) {
+                totalBitrate = Math.floor(sourceBitrate * 0.9);
+                videoBitrate = Math.floor(totalBitrate - 128);
+                if (videoBitrate < 500) videoBitrate = 500;
+            }
+
+            // ADAPTIVE PRESET: scale encoding effort based on file size & duration
+            var presetFlag;
+            if (sourceSize < 20 && dur < 30) {
+                presetFlag = "veryslow";
+            } else if (sourceSize < 50 && dur < 60) {
+                presetFlag = "slow";
+            } else {
+                presetFlag = "medium";
+            }
+
+            // CRF-CONSTRAINED MODE: Visually lossless with size cap
+            // CRF 18 = visually lossless for animation, maxrate prevents bloat
+            var maxBitrate = Math.floor(videoBitrate * 1.5);
+            var bufSize = videoBitrate * 3;
+            var bitrateFlags = "-crf 18 -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
+            var lookahead = dur <= 30 ? 60 : (dur <= 120 ? 40 : 30);
+            var refs = sourceSize > 50 ? 3 : 5;
+            var subme = sourceSize > 50 ? 7 : 10;
+            var advancedFlags = "-x264-params \"aq-mode=3:rc-lookahead=" + lookahead + ":ref=" + refs + ":subme=" + subme + ":me=umh:trellis=2:deblock=-1,-1\"";
+            var h264Level = (sourceSize > 50 || dur > 60) ? "5.1" : "4.1";
+            var qualityFlags = "-profile:v high -level " + h264Level + " -pix_fmt yuv420p -tune animation -movflags +faststart " + advancedFlags;
 
             logInfo("Processing file " + (i + 1) + "/" + mp4Files.length + ": " + decodePath(mp4File.name), {
                 "Source Size": sourceSize.toFixed(2) + " MB",
-                "Bitrate": videoBitrate + " kbps"
+                "Max Bitrate": maxBitrate + " kbps",
+                "Mode": "CRF 18 (visually lossless)"
             });
 
             // Create a temporary batch script for reliable synchronous execution
             var batchScriptPath = tempFolder.fsName + (isWin ? "\\batch_opt_" + i + ".bat" : "/batch_opt_" + i + ".sh");
             var batchScript = "";
 
+            // SINGLE-PASS CRF encoding (no pass 1 needed — faster + better quality)
             if (isWin) {
                 batchScript += "@echo off\r\n";
                 batchScript += "echo STARTED > \"" + logPath + "\"\r\n";
-                batchScript += "echo Pass 1 starting... >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>>\"" + logPath + "\"\r\n";
-                batchScript += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
-                batchScript += "echo Pass 1 done >> \"" + logPath + "\"\r\n";
-                batchScript += "echo Pass 2 starting... >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
-                batchScript += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
+                batchScript += "echo Encoding (CRF 18)... >> \"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+                batchScript += "if %errorlevel% neq 0 (echo ENCODE_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
                 batchScript += "echo COMPLETE >> \"" + logPath + "\"\r\n";
             } else {
                 batchScript += "#!/bin/bash\n";
                 batchScript += "echo 'STARTED' > \"" + logPath + "\"\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>>\"" + logPath + "\"\n";
-                batchScript += "[ $? -ne 0 ] && echo 'PASS1_FAILED' >> \"" + logPath + "\" && exit 1\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
-                batchScript += "[ $? -ne 0 ] && echo 'PASS2_FAILED' >> \"" + logPath + "\" && exit 1\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+                batchScript += "[ $? -ne 0 ] && echo 'ENCODE_FAILED' >> \"" + logPath + "\" && exit 1\n";
                 batchScript += "echo 'COMPLETE' >> \"" + logPath + "\"\n";
             }
 
@@ -4336,28 +4375,55 @@
         if (duration < 1) duration = 1;
         var totalBitrate = (targetMB * 8192) / duration;
         var videoBitrate = Math.floor(totalBitrate - 128);
-        if (videoBitrate < 1000) videoBitrate = 1000;
-
-        // Quality settings - ABSOLUTE MAXIMUM QUALITY
-        // maxrate 2x = generous bitrate peaks for complex frames
-        // bufsize 5x = maximum VBV buffer for quality consistency
-        var maxBitrate = Math.floor(videoBitrate * 2);
-        var bufSize = videoBitrate * 5;
-        var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
-        // Advanced x264 flags for ultimate quality:
-        // aq-mode 3 = auto-variance adaptive quantization (best for animations)
-        // rc-lookahead 60 = analyze 60 frames ahead for optimal bit allocation
-        // refs 5 = 5 reference frames for better motion compensation
-        // subq 10 = highest quality subpixel motion estimation
-        // me_method umh = uneven multi-hex motion search (best)
-        // trellis 2 = optimal RD quantization on all modes
-        // deblock -2:-2 = stronger sharpening (keeps edges very crisp)
-        var advancedFlags = "-x264-params \"aq-mode=3:rc-lookahead=60:ref=5:subme=10:me=umh:trellis=2:deblock=-2,-2\"";
-        // unsharp filter: subtle edge enhancement (5x5 matrix, 0.3 strength)
-        var sharpenFilter = "-vf \"unsharp=5:5:0.3:5:5:0.3\"";
-        var qualityFlags = "-profile:v high -level 4.1 -pix_fmt yuv420p -tune animation -movflags +faststart " + advancedFlags + " " + sharpenFilter;
-        var presetFlag = "veryslow"; // Maximum quality (encoding takes longer)
+        if (videoBitrate < 500) videoBitrate = 500;
         var sourceSize = mp4File.length / (1024 * 1024); // MB
+
+        // GUARD: If source is already at or below target, skip optimization
+        if (sourceSize <= targetMB) {
+            alert("File is already " + sourceSize.toFixed(2) + " MB (target: " + targetMB + " MB).\n\nNo optimization needed.");
+            return;
+        }
+
+        // CAP: Never encode at a higher bitrate than the source file
+        // This prevents the output from being LARGER than the input
+        var sourceBitrate = Math.floor((sourceSize * 8192) / duration);
+        if (totalBitrate >= sourceBitrate) {
+            // Target would produce a file as large or larger — use 90% of source bitrate instead
+            totalBitrate = Math.floor(sourceBitrate * 0.9);
+            videoBitrate = Math.floor(totalBitrate - 128);
+            if (videoBitrate < 500) videoBitrate = 500;
+            logWarn("Target bitrate exceeded source bitrate — capped to 90% of source", {
+                "Source Bitrate": sourceBitrate + " kbps",
+                "Capped Video Bitrate": videoBitrate + " kbps"
+            });
+        }
+
+        // ADAPTIVE PRESET: scale encoding effort based on file size & duration
+        // veryslow gives ~2-5% better quality than slow but takes 5-10x longer
+        var presetFlag;
+        if (sourceSize < 20 && duration < 30) {
+            presetFlag = "veryslow"; // Small/short clips: max quality
+        } else if (sourceSize < 50 && duration < 60) {
+            presetFlag = "slow";     // Medium files: good balance
+        } else {
+            presetFlag = "medium";   // Large files: reasonable encode time
+        }
+
+        // CRF-CONSTRAINED MODE: Visually lossless with size cap
+        // CRF 18 = visually lossless for animation, maxrate prevents bloat
+        var maxBitrate = Math.floor(videoBitrate * 1.5);
+        var bufSize = videoBitrate * 3;
+        var bitrateFlags = "-crf 18 -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
+
+        // Scale lookahead, refs, and subme for longer/larger videos
+        var lookahead = duration <= 30 ? 60 : (duration <= 120 ? 40 : 30);
+        var refs = sourceSize > 50 ? 3 : 5;
+        var subme = sourceSize > 50 ? 7 : 10;
+        var advancedFlags = "-x264-params \"aq-mode=3:rc-lookahead=" + lookahead + ":ref=" + refs + ":subme=" + subme + ":me=umh:trellis=2:deblock=-1,-1\"";
+
+        // Use level 5.1 for large files (higher max bitrate & frame size)
+        var h264Level = (sourceSize > 50 || duration > 60) ? "5.1" : "4.1";
+        var qualityFlags = "-profile:v high -level " + h264Level + " -pix_fmt yuv420p -tune animation -movflags +faststart " + advancedFlags;
         var script = "";
 
         // Log optimization start
@@ -4366,28 +4432,27 @@
             "Source Size": sourceSize.toFixed(2) + " MB",
             "Target Size": targetMB + " MB",
             "Duration": duration.toFixed(1) + "s",
-            "Bitrate": videoBitrate + " kbps"
+            "Bitrate Cap": maxBitrate + " kbps",
+            "Mode": "CRF 18 (visually lossless)",
+            "Preset": presetFlag,
+            "H264 Level": h264Level,
+            "Lookahead": lookahead
         });
 
-        // Build script with progress markers
+        // SINGLE-PASS CRF encoding (no pass 1 needed — faster + better quality)
         if (isWin) {
             script += "@echo off\r\n";
             script += "chcp 65001 >NUL\r\n";
             script += "echo STARTED > \"" + logPath + "\"\r\n";
             script += "echo Source: " + mp4File.name + " >> \"" + logPath + "\"\r\n";
             script += "echo Target: " + targetMB + "MB >> \"" + logPath + "\"\r\n";
-            script += "echo Bitrate: " + videoBitrate + "k >> \"" + logPath + "\"\r\n";
+            script += "echo Mode: CRF 18 (visually lossless) >> \"" + logPath + "\"\r\n";
             script += "echo PASS1_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>>\"" + logPath + "\"\r\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
             script += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "echo PASS1_DONE >> \"" + logPath + "\"\r\n";
-            script += "echo PASS2_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
-            script += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "echo PASS2_DONE >> \"" + logPath + "\"\r\n";
             script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT_MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
-            script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
-            script += "del \"" + passLog + ".mbtree\" 2>nul\r\n";
             script += "exit /b 0\r\n";
             script += ":ERROR\r\n";
             script += "echo FAILED >> \"" + logPath + "\"\r\n";
@@ -4397,16 +4462,11 @@
             script += "echo 'STARTED' > \"" + logPath + "\"\n";
             script += "echo 'Source: " + outName.replace(/_Optimized\.mp4$/i, ".mp4") + "' >> \"" + logPath + "\"\n";
             script += "echo 'PASS1_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>>\"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
             script += "[ $? -eq 0 ] || { echo 'PASS1_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "echo 'PASS1_DONE' >> \"" + logPath + "\"\n";
-            script += "echo 'PASS2_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
-            script += "[ $? -eq 0 ] || { echo 'PASS2_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "echo 'PASS2_DONE' >> \"" + logPath + "\"\n";
             script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT_MISSING' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
-            script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
-            script += "rm -f \"" + passLog + ".mbtree\" 2>/dev/null\n";
         }
 
         // Write Script
@@ -4418,7 +4478,8 @@
         if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
 
         // Progress UI
-        var w = new Window("palette", "DOOH Optimization", undefined, { closeButton: false });
+        var singleCancelled = false;
+        var w = new Window("palette", "DOOH Optimization", undefined, { closeButton: true });
         w.orientation = "column";
         w.alignChildren = ["fill", "top"];
         w.margins = 20;
@@ -4445,6 +4506,15 @@
         var elapsedLbl = detailGrp.add("statictext", undefined, "Elapsed: 0s");
         setTextColor(elapsedLbl, [0.4, 0.6, 0.9]);
 
+        // Cancel button
+        var cancelBtn = w.add("button", undefined, "✕  Cancel");
+        cancelBtn.alignment = ["center", "bottom"];
+        cancelBtn.onClick = function () {
+            singleCancelled = true;
+            w.close();
+        };
+        w.onClose = function () { singleCancelled = true; };
+
         w.center();
         w.show();
         w.update();
@@ -4461,7 +4531,9 @@
 
         // Progress polling loop
         var logFile = new File(logPath);
-        var maxWait = 600; // 10 minutes max
+        // ADAPTIVE TIMEOUT: base 10 min + 5 min per MB source + 2 min per sec duration
+        // Ensures large/long videos don't time out prematurely
+        var maxWait = Math.max(600, Math.round(600 + (sourceSize * 300) + (duration * 120)));
         var waited = 0;
         var pollInterval = 500; // ms
         var lastStatus = "";
@@ -4469,6 +4541,10 @@
         var pass2Time = 0;
 
         while (waited < maxWait) {
+            if (singleCancelled) {
+                logWarn("Optimization cancelled by user", { "File": decodePath(mp4File.name), "Elapsed": formatDuration(waited) });
+                break;
+            }
             $.sleep(pollInterval);
             waited += (pollInterval / 1000);
 
@@ -4542,7 +4618,7 @@
         // Check if timed out
         if (waited >= maxWait) {
             logError("Optimization timed out", { "File": decodePath(mp4File.name), "Waited": formatDuration(waited) });
-            alert("Optimization timed out after 10 minutes.\n\nCheck log: " + logPath);
+            alert("Optimization timed out after " + formatDuration(maxWait) + ".\n\nCheck log: " + logPath);
             return;
         }
 
