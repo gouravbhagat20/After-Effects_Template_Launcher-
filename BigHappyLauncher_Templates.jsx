@@ -3487,6 +3487,114 @@
     }
 
     /**
+     * Get video info (resolution + duration) using FFprobe
+     * @param {File} videoFile - The video file to analyze
+     * @returns {object} { width, height, duration, pixelCount } or defaults if detection failed
+     */
+    function getVideoInfo(videoFile) {
+        var info = { width: 0, height: 0, duration: 0, pixelCount: 0 };
+        if (!videoFile || !videoFile.exists) return info;
+
+        var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        var ffprobePath = "";
+        var isWin = ($.os.indexOf("Windows") !== -1);
+
+        // FFprobe is usually in the same folder as FFmpeg
+        if (ffmpegPath) {
+            ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
+            var probeFile = new File(ffprobePath);
+            if (!probeFile.exists) {
+                ffprobePath = ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
+                probeFile = new File(ffprobePath);
+                if (!probeFile.exists) ffprobePath = "";
+            }
+        }
+
+        var inputPath = videoFile.fsName;
+
+        // Try FFprobe to get width, height, and duration
+        try {
+            var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
+            var tempOutput = Folder.temp.fsName + (isWin ? "\\ffprobe_info_" + new Date().getTime() + ".txt" : "/ffprobe_info_" + new Date().getTime() + ".txt");
+
+            // Get width, height from video stream, duration from format
+            var cmd = exe + ' -v error -select_streams v:0 -show_entries stream=width,height -show_entries format=duration -of default=noprint_wrappers=1 "' + inputPath + '"';
+            if (isWin) {
+                cmd = 'cmd /c ' + cmd + ' > "' + tempOutput + '" 2>&1';
+            } else {
+                cmd = cmd + ' > "' + tempOutput + '" 2>&1';
+            }
+
+            system.callSystem(cmd);
+
+            // Read the output
+            var tempFile = new File(tempOutput);
+            if (tempFile.exists) {
+                tempFile.open("r");
+                var output = tempFile.read();
+                tempFile.close();
+                tempFile.remove();
+
+                // Parse key=value format: width=1920, height=1080, duration=15.0
+                var wMatch = output.match(/width=(\d+)/);
+                var hMatch = output.match(/height=(\d+)/);
+                var dMatch = output.match(/duration=([\d.]+)/);
+
+                if (wMatch) info.width = parseInt(wMatch[1], 10);
+                if (hMatch) info.height = parseInt(hMatch[1], 10);
+                if (dMatch) info.duration = parseFloat(dMatch[1]);
+                info.pixelCount = info.width * info.height;
+
+                if (info.width > 0 && info.height > 0) {
+                    logInfo("Auto-detected video info", {
+                        "File": videoFile.name,
+                        "Resolution": info.width + "x" + info.height,
+                        "Duration": info.duration.toFixed(2) + "s",
+                        "Pixels": info.pixelCount
+                    });
+                }
+            }
+        } catch (e) {
+            logWarn("FFprobe info detection failed: " + e.toString());
+        }
+
+        return info;
+    }
+
+    /**
+     * Get resolution scaling factor for bitrate caps
+     * @param {number} pixelCount - Total pixels (width * height)
+     * @returns {number} Scaling factor (0.6 for SD, 1.0 for HD, 1.4 for 2K, 2.0 for 4K)
+     */
+    function getResolutionScale(pixelCount) {
+        if (pixelCount <= 0) return 1.0; // Unknown, use baseline
+        if (pixelCount <= 921600) return 0.6;   // SD (1280x720 or less)
+        if (pixelCount <= 2073600) return 1.0;  // HD (1920x1080)
+        if (pixelCount <= 3686400) return 1.4;  // 2K (2560x1440)
+        return 2.0;                              // 4K (3840x2160+)
+    }
+
+    /**
+     * Estimate output file size for CRF 18 animation encoding
+     * @param {number} sourceSizeMB - Source file size in MB
+     * @param {number} duration - Duration in seconds
+     * @param {number} pixelCount - Total pixels
+     * @returns {number} Estimated output size in MB
+     */
+    function estimateOutputSize(sourceSizeMB, duration, pixelCount) {
+        // CRF 18 with animation tune typically achieves 30-50% of source bitrate
+        // Scale estimate by resolution: higher res = larger proportional output
+        var resScale = getResolutionScale(pixelCount);
+        var compressionRatio = 0.35 * resScale; // Base 35% of source
+        if (compressionRatio > 0.85) compressionRatio = 0.85; // Never estimate more than 85% of source
+        var estimated = sourceSizeMB * compressionRatio;
+        // Minimum floor: don't estimate below what makes sense for duration
+        var minEstimate = (duration * 0.05); // ~50kbps minimum
+        if (estimated < minEstimate) estimated = minEstimate;
+        return estimated;
+    }
+
+    /**
      * Automatically download and install FFmpeg (Windows only)
      * @returns {boolean} true if successful
      */
@@ -3803,20 +3911,50 @@
         var targetMB = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DOOH_TARGET_MB, "6.8"));
         if (isNaN(targetMB) || targetMB <= 0) targetMB = 6.8;
 
-        // Confirmation
+        // Probe each file for resolution, duration, and estimate output size
+        var fileInfos = [];
         var totalSize = 0;
+        var totalEstimated = 0;
         for (var f = 0; f < mp4Files.length; f++) {
-            totalSize += mp4Files[f].length;
+            var fInfo = getVideoInfo(mp4Files[f]);
+            var fSizeMB = mp4Files[f].length / (1024 * 1024);
+            // Use probed duration if available, else use the user-provided duration
+            var fDur = fInfo.duration > 0 ? fInfo.duration : duration;
+            // Update main duration from first file if probed
+            if (f === 0 && fInfo.duration > 0) duration = fInfo.duration;
+            var fEstimate = estimateOutputSize(fSizeMB, fDur, fInfo.pixelCount);
+            fileInfos.push({
+                file: mp4Files[f],
+                sizeMB: fSizeMB,
+                width: fInfo.width,
+                height: fInfo.height,
+                duration: fDur,
+                pixelCount: fInfo.pixelCount,
+                estimatedMB: fEstimate
+            });
+            totalSize += fSizeMB;
+            totalEstimated += fEstimate;
         }
-        totalSize = (totalSize / (1024 * 1024)).toFixed(1);
 
+        // Confirmation with per-file details
         var confirmMsg = "═══════════════════════════════════════\n";
         confirmMsg += "         BATCH DOOH OPTIMIZATION\n";
         confirmMsg += "═══════════════════════════════════════\n\n";
         confirmMsg += "Files: " + mp4Files.length + "\n";
-        confirmMsg += "Total Size: " + totalSize + " MB\n";
+        confirmMsg += "Total Size: " + totalSize.toFixed(1) + " MB\n";
         confirmMsg += "Target: < " + targetMB + " MB each\n";
-        confirmMsg += "Duration: " + duration.toFixed(1) + "s\n\n";
+        confirmMsg += "Estimated Output: ~" + totalEstimated.toFixed(1) + " MB total\n\n";
+
+        // Per-file breakdown
+        confirmMsg += "File Details:\n";
+        for (var g = 0; g < fileInfos.length; g++) {
+            var fi = fileInfos[g];
+            var resStr = (fi.width > 0 && fi.height > 0) ? fi.width + "\u00D7" + fi.height : "unknown";
+            confirmMsg += "  \u2022 " + fi.file.name + "\n";
+            confirmMsg += "    " + fi.sizeMB.toFixed(1) + " MB | " + resStr + " | " + fi.duration.toFixed(1) + "s | ~" + fi.estimatedMB.toFixed(1) + " MB est.\n";
+        }
+
+        confirmMsg += "\n";
         if (mp4Files.length > 1) {
             confirmMsg += "Files will be processed SEQUENTIALLY.\n";
             confirmMsg += "This may take a while.\n\n";
@@ -3827,18 +3965,18 @@
 
         // Process files
         if (mp4Files.length === 1) {
-            // Single file - use existing function
-            runMP4Optimizer(mp4Files[0], targetFolder, targetMB, duration);
+            // Single file - use existing function with resolution info
+            runMP4Optimizer(mp4Files[0], targetFolder, targetMB, duration, fileInfos[0].pixelCount);
         } else {
-            // Batch processing
-            runBatchOptimizer(mp4Files, targetFolder, targetMB, duration);
+            // Batch processing with resolution info
+            runBatchOptimizer(mp4Files, targetFolder, targetMB, duration, fileInfos);
         }
     }
 
     /**
      * Batch optimize multiple MP4 files
      */
-    function runBatchOptimizer(mp4Files, outFolder, targetMB, duration) {
+    function runBatchOptimizer(mp4Files, outFolder, targetMB, duration, fileInfos) {
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var isWin = ($.os.indexOf("Windows") !== -1);
         var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
@@ -4010,8 +4148,11 @@
 
             // CRF-CONSTRAINED MODE: Visually lossless with size cap
             // CRF 18 = visually lossless for animation, maxrate prevents bloat
-            var maxBitrate = Math.floor(videoBitrate * 1.5);
-            var bufSize = videoBitrate * 3;
+            // Scale bitrate cap by resolution: SD=0.6x, HD=1.0x, 2K=1.4x, 4K=2.0x
+            var filePixels = (fileInfos && fileInfos[i]) ? fileInfos[i].pixelCount : 0;
+            var resScale = getResolutionScale(filePixels);
+            var maxBitrate = Math.floor(videoBitrate * 1.5 * resScale);
+            var bufSize = Math.floor(videoBitrate * 3 * resScale);
             var bitrateFlags = "-crf 18 -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
             var lookahead = dur <= 30 ? 60 : (dur <= 120 ? 40 : 30);
             var refs = sourceSize > 50 ? 3 : 5;
@@ -4019,10 +4160,12 @@
             var advancedFlags = "-x264-params \"aq-mode=3:rc-lookahead=" + lookahead + ":ref=" + refs + ":subme=" + subme + ":me=umh:trellis=2:deblock=-1,-1\"";
             var h264Level = (sourceSize > 50 || dur > 60) ? "5.1" : "4.1";
             var qualityFlags = "-profile:v high -level " + h264Level + " -pix_fmt yuv420p -tune animation -movflags +faststart " + advancedFlags;
+            var fileRes = (fileInfos && fileInfos[i] && fileInfos[i].width > 0) ? fileInfos[i].width + "x" + fileInfos[i].height : "unknown";
 
             logInfo("Processing file " + (i + 1) + "/" + mp4Files.length + ": " + decodePath(mp4File.name), {
                 "Source Size": sourceSize.toFixed(2) + " MB",
-                "Max Bitrate": maxBitrate + " kbps",
+                "Resolution": fileRes,
+                "Max Bitrate": maxBitrate + " kbps (scale: " + resScale + "x)",
                 "Mode": "CRF 18 (visually lossless)"
             });
 
@@ -4350,7 +4493,7 @@
         }
     }
 
-    function runMP4Optimizer(mp4File, outFolder, targetMB, duration) {
+    function runMP4Optimizer(mp4File, outFolder, targetMB, duration, pixelCount) {
         if (!ensureFFmpegReady()) return;
 
         var startTime = new Date().getTime(); // Track elapsed time
@@ -4411,8 +4554,10 @@
 
         // CRF-CONSTRAINED MODE: Visually lossless with size cap
         // CRF 18 = visually lossless for animation, maxrate prevents bloat
-        var maxBitrate = Math.floor(videoBitrate * 1.5);
-        var bufSize = videoBitrate * 3;
+        // Scale bitrate cap by resolution: SD=0.6x, HD=1.0x, 2K=1.4x, 4K=2.0x
+        var resScale = getResolutionScale(pixelCount || 0);
+        var maxBitrate = Math.floor(videoBitrate * 1.5 * resScale);
+        var bufSize = Math.floor(videoBitrate * 3 * resScale);
         var bitrateFlags = "-crf 18 -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
 
         // Scale lookahead, refs, and subme for longer/larger videos
@@ -4432,7 +4577,7 @@
             "Source Size": sourceSize.toFixed(2) + " MB",
             "Target Size": targetMB + " MB",
             "Duration": duration.toFixed(1) + "s",
-            "Bitrate Cap": maxBitrate + " kbps",
+            "Bitrate Cap": maxBitrate + " kbps (scale: " + resScale + "x)",
             "Mode": "CRF 18 (visually lossless)",
             "Preset": presetFlag,
             "H264 Level": h264Level,
