@@ -1554,6 +1554,7 @@
     function runStressTests() {
         var output = "Running Comprehensive System Check...\n";
         var passed = 0;
+
         var failed = 0;
 
         function runTest(name, result) {
@@ -2907,8 +2908,18 @@
 
             var renderName = projectName + "_" + getDateString();
 
-            if (type === "sunrise" && parsed && parsed.brand) renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
-            // Add other types if needed, simplified for now to standard types
+            if (type === "sunrise" && parsed && parsed.brand) {
+                renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
+            } else if (parsed && parsed.isDOOH) {
+                // DOOH render naming: DOOH_Brand_Campaign_WxH_Date - H/V
+                var doohBrand = (parsed.campaign || "Campaign");
+                var doohSize = parsed.size || (mainComp.width + "x" + mainComp.height);
+                var doohDate = getDateString();
+                var doohOrientation = "";
+                if (mainComp.width > mainComp.height) doohOrientation = " - H";
+                else if (mainComp.height > mainComp.width) doohOrientation = " - V";
+                renderName = "DOOH_" + doohBrand + "_" + doohSize + "_" + doohDate + doohOrientation;
+            }
 
             var aeFolder = app.project.file.parent.fsName;
             var revision = (parsed && parsed.revision) ? parsed.revision : ("R" + ui.inputs.revision.text);
