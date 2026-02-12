@@ -2862,13 +2862,8 @@
                 var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
                 if (!folders) return;
 
-                // 5. Filename
-                var newFilename;
-                if (parsed.isDOOH) {
-                    newFilename = "DOOH_" + (campaign || brand) + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
-                } else {
-                    newFilename = brand + "_" + campaign + "_" + quarter + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
-                }
+                // 5. Filename (reuse buildFilename to keep naming centralised)
+                var newFilename = ui.buildFilename(brand, campaign, quarter, parsed.size, version, revision, parsed.isDOOH);
 
                 // 6. Save
                 var savePath = joinPath(folders.aeFolder, newFilename);
