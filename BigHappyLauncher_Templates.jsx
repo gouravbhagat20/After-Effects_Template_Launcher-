@@ -808,9 +808,10 @@
         return new Date().getFullYear();
     }
 
+    // Returns 0-3 (dropdown index: 0=Q1, 1=Q2, 2=Q3, 3=Q4)
     function getCurrentQuarter() {
         var month = new Date().getMonth(); // 0-11
-        return Math.floor(month / 3); // 0-3
+        return Math.floor(month / 3); // 0-3 (index for dropdown selection)
     }
 
     function folderExists(path) {
@@ -989,9 +990,12 @@
             // Write File
             var reportPath = joinPath(destFolder.fsName, "_Pack_Report.txt");
             var reportFile = new File(reportPath);
-            reportFile.open("w");
-            reportFile.write(report);
-            reportFile.close();
+            try {
+                reportFile.open("w");
+                reportFile.write(report);
+            } finally {
+                try { reportFile.close(); } catch (closeErr) { /* ensure no leak */ }
+            }
 
             writeLog("Generated Pack Report: " + reportPath, "INFO");
             return true;
@@ -2189,7 +2193,7 @@
                 } catch (e) {
                     writeLog("Failed to auto-set Sunrise PNG settings: " + e.toString(), "WARN");
                 }
-            } else if (templateType === "dooh" || templateType === "interscroller" || templateType.indexOf("dooh") !== -1 || templateType.indexOf("dooh_horizontal") !== -1 || templateType.indexOf("dooh_vertical") !== -1) {
+            } else if (templateType === "interscroller" || templateType.indexOf("dooh") !== -1) {
                 try {
                     // Force H.264 (MP4)
                     var mp4Settings = {
@@ -3027,7 +3031,7 @@
         // 1. Try Configured Path or Global Command
         var cmd = (path ? escapePath(path) : "ffmpeg") + " -version";
         var res = system.callSystem(cmd);
-        if (res.indexOf("ffmpeg version") !== -1) return true;
+        if (res && res.indexOf("ffmpeg version") !== -1) return true;
 
         // 2. Windows Auto-Detect
         if (!path && $.os.indexOf("Windows") !== -1) {
@@ -3037,10 +3041,10 @@
                 "C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe",
                 "C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe"
             ];
-            for (var i = 0; i < commonWin.length; i++) {
-                var f = new File(commonWin[i]);
-                if (f.exists) {
-                    setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, commonWin[i]);
+            for (var wi = 0; wi < commonWin.length; wi++) {
+                var wf = new File(commonWin[wi]);
+                if (wf.exists) {
+                    setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, commonWin[wi]);
                     return true;
                 }
             }
@@ -3049,13 +3053,14 @@
         // 3. If failure and no path set, try common paths (Mac)
         if (!path && $.os.indexOf("Mac") !== -1) {
             var common = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"];
-            for (var i = 0; i < common.length; i++) {
-                var f = new File(common[i]);
-                if (f.exists) {
+            for (var mi = 0; mi < common.length; mi++) {
+                var mf = new File(common[mi]);
+                if (mf.exists) {
                     // Check version to be sure
-                    var cmd2 = escapePath(common[i]) + " -version";
-                    if (system.callSystem(cmd2).indexOf("ffmpeg version") !== -1) {
-                        setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, common[i]);
+                    var cmd2 = escapePath(common[mi]) + " -version";
+                    var res2 = system.callSystem(cmd2);
+                    if (res2 && res2.indexOf("ffmpeg version") !== -1) {
+                        setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, common[mi]);
                         return true;
                     }
                 }
@@ -5444,9 +5449,9 @@
             ui.updatePreview();
 
             // SMART VERSIONING
-            var folderObj = new Folder(aeFolder);
-            // Fix 6: Safe parent check
-            var sizeFolderObj = (folderObj.parent && folderObj.parent.parent) ? folderObj.parent.parent : null;
+            var folderObj = aeFolder ? new Folder(aeFolder) : null;
+            // Fix 6: Safe parent check — guard against empty aeFolder or missing parents
+            var sizeFolderObj = (folderObj && folderObj.parent && folderObj.parent.parent) ? folderObj.parent.parent : null;
 
             if (sizeFolderObj && sizeFolderObj.exists) {
                 var currentV = parseInt(ui.inputs.version.text, 10);
