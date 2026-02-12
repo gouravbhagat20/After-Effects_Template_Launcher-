@@ -2910,14 +2910,11 @@
             if (type === "sunrise" && parsed && parsed.brand) {
                 renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") + "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
             } else if (parsed && parsed.isDOOH) {
-                // DOOH render naming: DOOH_Brand_Campaign_WxH_Date - H/V
+                // DOOH render naming: DOOH_Campaign_WxH_Date
                 var doohBrand = (parsed.campaign || "Campaign");
                 var doohSize = parsed.size || (mainComp.width + "x" + mainComp.height);
                 var doohDate = getDateString();
-                var doohOrientation = "";
-                if (mainComp.width > mainComp.height) doohOrientation = " - H";
-                else if (mainComp.height > mainComp.width) doohOrientation = " - V";
-                renderName = "DOOH_" + doohBrand + "_" + doohSize + "_" + doohDate + doohOrientation;
+                renderName = "DOOH_" + doohBrand + "_" + doohSize + "_" + doohDate;
             }
 
             var aeFolder = app.project.file.parent.fsName;
