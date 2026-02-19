@@ -437,6 +437,10 @@
         stText.preferredSize.width = 300;
         var pb = w.add("progressbar", undefined, 0, 100);
         pb.preferredSize.width = 300;
+        var collectCancelled = false;
+        var cancelCollectBtn = w.add("button", undefined, "Cancel");
+        cancelCollectBtn.preferredSize.height = 22;
+        cancelCollectBtn.onClick = function () { collectCancelled = true; };
         w.center(); w.show(); w.update();
 
         // Step-based progress tracking (more accurate than hardcoded percentages)
@@ -450,6 +454,15 @@
             stText.text = msg;
             pb.value = Math.min(pct, 100);
             w.update();
+            return !collectCancelled;
+        }
+
+        function checkCancelled(currentFile) {
+            if (!collectCancelled) return false;
+            w.close();
+            ui.setWarn("Collect cancelled.");
+            if (currentFile && currentFile.exists) { try { app.open(currentFile); } catch (e2) { } }
+            return true;
         }
 
         try {
@@ -506,6 +519,8 @@
                 }
             }
 
+            if (checkCancelled(currentFile)) return;
+
             // ==============================
             // REMOVE UNUSED FOOTAGE
             // ==============================
@@ -528,6 +543,8 @@
             // Step 3b: Save COLLECTED project to persist the asset relinks made by collectAssets
             app.project.save();
 
+            if (checkCancelled(currentFile)) return;
+
             // ==============================
             // GENERATE PACK REPORT
             // ==============================
@@ -535,6 +552,8 @@
             generatePackReport(destFolder, missingFiles);
 
             writeLog("Locally Collected: " + localAepPath, "INFO");
+
+            if (checkCancelled(currentFile)) return;
 
             // 4. UPLOAD TO DRIVE (Smart Mirroring)
             updateProgress("Connecting to Drive...", 7);
@@ -581,6 +600,8 @@
                 return;
             }
 
+            if (checkCancelled(currentFile)) return;
+
             // 5. UPLOAD SHARED ASSETS
             updateProgress("Syncing Shared Assets...", 9);
 
@@ -603,6 +624,8 @@
                 }
                 writeLog("Synced Shared Assets to: " + driveCommonAssets.fsName, "INFO");
             }
+
+            if (checkCancelled(currentFile)) return;
 
             // Project File Destination
             var driveRevisionFolder = new Folder(joinPath(pAE, collectFolderName));
@@ -1239,10 +1262,14 @@
             var data = getSetting(CONFIG.SETTINGS.KEYS.RECENT_FILES, "[]");
             var list = jsonParse(data, []);
             if (!list || !list.length) return [];
+            // Normalize legacy string entries to {path, ts} objects
+            for (var n = 0; n < list.length; n++) {
+                if (typeof list[n] === "string") list[n] = { path: list[n], ts: 0 };
+            }
             // Filter out non-existing files to keep list clean
             var cleanList = [];
             for (var i = 0; i < list.length; i++) {
-                if (fileExists(list[i])) cleanList.push(list[i]);
+                if (fileExists(list[i].path)) cleanList.push(list[i]);
             }
             if (cleanList.length !== list.length) saveRecentFiles(cleanList);
             return cleanList;
@@ -1261,13 +1288,13 @@
 
         // Remove if already exists (to move to top)
         for (var i = list.length - 1; i >= 0; i--) {
-            if (list[i].toLowerCase() === path.toLowerCase()) {
+            if (list[i].path.toLowerCase() === path.toLowerCase()) {
                 list.splice(i, 1);
             }
         }
 
-        // Add to top
-        list.unshift(path);
+        // Add to top with current timestamp
+        list.unshift({ path: path, ts: new Date().getTime() });
 
         // Limit size
         if (list.length > CONFIG.SETTINGS.MAX_RECENT_FILES) {
@@ -2741,7 +2768,20 @@
                 var year = yearMatch ? yearMatch[1] : String(getCurrentYear());
                 var quarter = parsed.quarter || (quarterMatch ? quarterMatch[1] : (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1"));
 
-                // 3. POPUP: Confirm/Edit Year & Quarter
+                // 3. Pre-compute folder data (needed for path preview before dialog)
+                var dims = parsed.size.split("x");
+                var width = parseInt(dims[0], 10);
+                var height = parseInt(dims[1], 10);
+                var templateType = getTemplateType(width, height);
+                var templateFolderName = getTemplateFolderName(width, height);
+                var sizeFolderName = templateFolderName + "_" + parsed.size;
+                var brand = parsed.brand;
+                if (parsed.isDOOH && !brand) brand = "DOOH";
+                var campaign = parsed.campaign || "";
+                var projectName = buildProjectFolderName(brand, campaign);
+                var basePath = getBaseWorkFolder();
+
+                // 4. POPUP: Confirm/Edit Year & Quarter + show path preview
                 var confirmWin = new Window("dialog", "Quick Duplicate");
                 confirmWin.add("statictext", undefined, "Confirm Target Period:");
 
@@ -2754,9 +2794,22 @@
                 var qItems = ["Q1", "Q2", "Q3", "Q4"];
                 var qInput = grp.add("dropdownlist", undefined, qItems);
                 qInput.preferredSize.width = 50;
-                // Select index based on text
                 for (var i = 0; i < qItems.length; i++) if (qItems[i] === quarter) qInput.selection = i;
                 if (!qInput.selection) qInput.selection = 0;
+
+                var previewLbl = confirmWin.add("edittext", undefined, "", { readonly: true });
+                previewLbl.preferredSize = [420, 20];
+                previewLbl.helpTip = "Destination path for the saved file";
+
+                function rPlusRefreshPreview() {
+                    var yr = yInput.text || year;
+                    var qr = qInput.selection ? qInput.selection.text : quarter;
+                    var fname = ui.buildFilename(brand, campaign, qr, parsed.size, version, revision, parsed.isDOOH);
+                    previewLbl.text = joinPath(basePath, joinPath(yr, joinPath(qr, joinPath(projectName, joinPath(sizeFolderName, joinPath(version, joinPath("AE_File", fname)))))));
+                }
+                yInput.onChanging = function () { rPlusRefreshPreview(); };
+                qInput.onChange = function () { rPlusRefreshPreview(); };
+                rPlusRefreshPreview();
 
                 var btnGrp = confirmWin.add("group");
                 btnGrp.alignment = ["center", "bottom"];
@@ -2768,22 +2821,6 @@
                 // Update values from dialog
                 year = yInput.text;
                 quarter = qInput.selection.text;
-
-                // 4. Derive Data for Folder Structure
-                var dims = parsed.size.split("x");
-                var width = parseInt(dims[0], 10);
-                var height = parseInt(dims[1], 10);
-
-                var templateType = getTemplateType(width, height);
-                var templateFolderName = getTemplateFolderName(width, height);
-                var sizeFolderName = templateFolderName + "_" + parsed.size; // e.g. Sunrise_750x300
-
-                var brand = parsed.brand;
-                if (parsed.isDOOH && !brand) brand = "DOOH"; // Fix null brand for DOOH
-
-                var campaign = parsed.campaign || "";
-                var projectName = buildProjectFolderName(brand, campaign);
-                var basePath = getBaseWorkFolder();
 
                 // 5. Create Full Folder Structure (Assets, etc.)
                 // This function automatically checks existence and creates missing folders
@@ -2836,7 +2873,20 @@
                 var year = yearMatch ? yearMatch[1] : String(getCurrentYear());
                 var quarter = parsed.quarter || (quarterMatch ? quarterMatch[1] : (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1"));
 
-                // 3. Confirm Dialog
+                // 3. Pre-compute folder data (needed for path preview before dialog)
+                var dims = parsed.size.split("x");
+                var width = parseInt(dims[0], 10);
+                var height = parseInt(dims[1], 10);
+                var templateType = getTemplateType(width, height);
+                var templateFolderName = getTemplateFolderName(width, height);
+                var sizeFolderName = templateFolderName + "_" + parsed.size;
+                var brand = parsed.brand;
+                if (parsed.isDOOH && !brand) brand = "DOOH";
+                var campaign = parsed.campaign || "";
+                var projectName = buildProjectFolderName(brand, campaign);
+                var basePath = getBaseWorkFolder();
+
+                // 4. Confirm Dialog + path preview
                 var confirmWin = new Window("dialog", "Major Version Up");
                 confirmWin.add("statictext", undefined, "Create New Version: " + version + "?");
                 confirmWin.add("statictext", undefined, "Confirm Target Period:");
@@ -2852,6 +2902,20 @@
                 for (var qi = 0; qi < qItems.length; qi++) { if (qItems[qi] === quarter) qInput.selection = qi; }
                 if (!qInput.selection) qInput.selection = 0;
 
+                var previewLbl = confirmWin.add("edittext", undefined, "", { readonly: true });
+                previewLbl.preferredSize = [420, 20];
+                previewLbl.helpTip = "Destination path for the saved file";
+
+                function vPlusRefreshPreview() {
+                    var yr = yInput.text || year;
+                    var qr = qInput.selection ? qInput.selection.text : quarter;
+                    var fname = ui.buildFilename(brand, campaign, qr, parsed.size, version, revision, parsed.isDOOH);
+                    previewLbl.text = joinPath(basePath, joinPath(yr, joinPath(qr, joinPath(projectName, joinPath(sizeFolderName, joinPath(version, joinPath("AE_File", fname)))))));
+                }
+                yInput.onChanging = function () { vPlusRefreshPreview(); };
+                qInput.onChange = function () { vPlusRefreshPreview(); };
+                vPlusRefreshPreview();
+
                 var btnGrp = confirmWin.add("group");
                 btnGrp.alignment = ["center", "bottom"];
                 var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
@@ -2861,19 +2925,6 @@
 
                 year    = yInput.text;
                 quarter = qInput.selection ? qInput.selection.text : quarter;
-
-                // 4. Structure
-                var dims = parsed.size.split("x");
-                var width = parseInt(dims[0], 10);
-                var height = parseInt(dims[1], 10);
-                var templateType = getTemplateType(width, height);
-                var templateFolderName = getTemplateFolderName(width, height);
-                var sizeFolderName = templateFolderName + "_" + parsed.size;
-                var brand = parsed.brand;
-                if (parsed.isDOOH && !brand) brand = "DOOH";
-                var campaign = parsed.campaign || "";
-                var projectName = buildProjectFolderName(brand, campaign);
-                var basePath = getBaseWorkFolder();
 
                 var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
                 if (!folders) return;
@@ -4830,6 +4881,24 @@
         setTextColor(ui.labels.status, [0.5, 0.5, 0.5]);
     }
 
+    function createProjectStatus(ui) {
+        var grp = ui.w.add("group");
+        grp.orientation = "column";
+        grp.alignChildren = ["fill", "top"];
+        grp.spacing = 2;
+        grp.margins = [8, 4, 8, 4];
+
+        ui.labels.projectName = grp.add("statictext", undefined, "No project open", { truncate: "middle" });
+        ui.labels.projectName.preferredSize.height = 16;
+        try { ui.labels.projectName.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
+        setTextColor(ui.labels.projectName, [0.6, 0.6, 0.6]);
+
+        ui.labels.projectInfo = grp.add("statictext", undefined, "Open or create a project to begin");
+        ui.labels.projectInfo.preferredSize.height = 14;
+        try { ui.labels.projectInfo.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
+        setTextColor(ui.labels.projectInfo, [0.5, 0.5, 0.5]);
+    }
+
     function createRenderSection(ui) {
         var rPanel = ui.w.add("panel", undefined, "Output");
         rPanel.orientation = "column";
@@ -4969,6 +5038,13 @@
                 return;
             }
 
+            function formatRecentDate(ts) {
+                if (!ts) return "";
+                var d2 = new Date(ts);
+                var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                return months[d2.getMonth()] + " " + d2.getDate() + ", " + d2.getFullYear();
+            }
+
             var d = new Window("dialog", "Recent Projects");
             d.orientation = "column";
             d.alignChildren = ["fill", "top"];
@@ -4976,19 +5052,24 @@
             d.margins = 15;
 
             var list = d.add("listbox", undefined, [], { multiselect: false });
-            list.preferredSize = [450, 250];
+            list.preferredSize = [500, 250];
 
             for (var i = 0; i < recent.length; i++) {
-                var f = new File(recent[i]);
+                var f = new File(recent[i].path);
                 var displayPath = (f.parent ? f.parent.name + "/" : "") + f.name;
-                var item = list.add("item", displayPath);
-                item.helpTip = f.fsName; // Full path shown on hover
+                var dateStr = formatRecentDate(recent[i].ts);
+                var item = list.add("item", displayPath + (dateStr ? "   " + dateStr : ""));
+                item.helpTip = f.fsName;
             }
 
             var btnGrp = d.add("group");
             btnGrp.alignment = ["center", "bottom"];
             var openBtn = btnGrp.add("button", undefined, "Open", { name: "ok" });
+            var removeBtn = btnGrp.add("button", undefined, "Remove");
+            removeBtn.enabled = false;
             var cancelBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
+
+            list.onChange = function () { removeBtn.enabled = !!list.selection; };
 
             list.onDoubleClick = function () {
                 openBtn.notify("onClick");
@@ -4996,11 +5077,22 @@
 
             openBtn.onClick = function () {
                 if (list.selection) {
-                    var selectedPath = recent[list.selection.index];
+                    var selectedPath = recent[list.selection.index].path;
                     d.close();
                     ui.openProject(selectedPath);
                 }
             };
+
+            removeBtn.onClick = function () {
+                if (!list.selection) return;
+                var idx = list.selection.index;
+                recent.splice(idx, 1);
+                saveRecentFiles(recent);
+                list.remove(idx);
+                removeBtn.enabled = false;
+                if (recent.length === 0) { d.close(); }
+            };
+
             cancelBtn.onClick = function () { d.close(); };
 
             d.center();
@@ -5063,6 +5155,36 @@
                     ? "Process Sunrise PNG sequence to WebM, MOV, and HTML"
                     : "Sunrise projects only (750x300) — switch template to enable";
             }
+        };
+
+        ui.updateProjectStatus = function () {
+            try {
+                if (!ui.labels.projectName || !ui.labels.projectInfo) return;
+                if (!app.project || !app.project.file) {
+                    ui.labels.projectName.text = "No project open";
+                    setTextColor(ui.labels.projectName, [0.6, 0.6, 0.6]);
+                    ui.labels.projectInfo.text = "Open or create a project to begin";
+                    setTextColor(ui.labels.projectInfo, [0.5, 0.5, 0.5]);
+                    return;
+                }
+                ui.labels.projectName.text = app.project.file.name;
+                setTextColor(ui.labels.projectName, [0.9, 0.9, 0.9]);
+
+                var mainComp = findMainComp();
+                var numComps = 0;
+                for (var i = 1; i <= app.project.items.length; i++) {
+                    if (app.project.items[i] instanceof CompItem) numComps++;
+                }
+                if (mainComp) {
+                    ui.labels.projectInfo.text = mainComp.width + "\u00d7" + mainComp.height +
+                        "  \u00b7  " + numComps + " comp" + (numComps !== 1 ? "s" : "") +
+                        "  \u00b7  " + mainComp.duration.toFixed(1) + "s @ " + Math.round(mainComp.frameRate) + "fps";
+                    setTextColor(ui.labels.projectInfo, [0.5, 0.7, 0.5]);
+                } else {
+                    ui.labels.projectInfo.text = numComps + " comp" + (numComps !== 1 ? "s" : "");
+                    setTextColor(ui.labels.projectInfo, [0.5, 0.5, 0.5]);
+                }
+            } catch (e) { }
         };
 
         ui.buildFilename = function (brand, campaign, quarter, size, version, revision, isDOOH) {
@@ -5346,6 +5468,7 @@
                 addToRecentFiles(file.fsName);
                 syncUIFromProject(ui);
                 ui.updateStatus();
+                ui.updateProjectStatus();
                 ui.updatePreview();
             } catch (e) {
                 showError("BH-2004", e.toString());
@@ -5467,6 +5590,7 @@
 
         // --- EXECUTE BUILD ---
         createHeader(ui);
+        createProjectStatus(ui);
         createMainInputs(ui);
         createPreview(ui);
         createActionButtons(ui);
@@ -5487,6 +5611,7 @@
             syncUIFromProject(ui);
         }
         ui.updateStatus();
+        ui.updateProjectStatus();
         ui.updatePreview();
 
         ui.w.onResizing = ui.w.onResize = function () { this.layout.resize(); };
