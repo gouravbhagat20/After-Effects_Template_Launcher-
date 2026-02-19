@@ -2333,10 +2333,24 @@
         convTab.margins = 10;
         convTab.spacing = 10;
 
-        // FFmpeg Path
+        // FFmpeg Path — auto-detect via where/which if nothing is stored yet
         var ffmpegGrp = convTab.add("group");
         ffmpegGrp.add("statictext", undefined, "FFmpeg Path:");
-        var ffmpegInput = ffmpegGrp.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ""));
+        var _storedFFmpeg = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        if (!_storedFFmpeg) {
+            try {
+                var _isWin = ($.os.indexOf("Windows") !== -1);
+                var _whereOut = system.callSystem(_isWin ? "where ffmpeg" : "which ffmpeg");
+                if (_whereOut) {
+                    var _firstLine = _whereOut.split("\n")[0].replace(/[\r\s]+$/g, "");
+                    if (_firstLine && new File(_firstLine).exists) {
+                        _storedFFmpeg = _firstLine;
+                        setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, _storedFFmpeg);
+                    }
+                }
+            } catch (e) { }
+        }
+        var ffmpegInput = ffmpegGrp.add("edittext", undefined, _storedFFmpeg);
         ffmpegInput.preferredSize = [300, 25];
         var browseFfmpegBtn = ffmpegGrp.add("button", undefined, "...");
         browseFfmpegBtn.preferredSize = [30, 25];
