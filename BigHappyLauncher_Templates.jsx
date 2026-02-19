@@ -116,7 +116,7 @@
         var dateStr = now.getFullYear() + "-" +
             ("0" + (now.getMonth() + 1)).slice(-2) + "-" +
             ("0" + now.getDate()).slice(-2);
-        return getLogFolder().fsName + "/" + dateStr + ".log";
+        return joinPath(getLogFolder().fsName, dateStr + ".log");
     }
 
     /**
@@ -660,24 +660,17 @@
     // =========================================================================
 
     /**
-     * Append message to log file with timestamp
+     * Legacy logging shim — delegates to the centralized log() system so all
+     * entries go to the same per-day file in BigHappyLauncher_Logs/.
      * @param {string} message - Message to log
-     * @param {string} [level] - INFO, WARN, ERROR (default: INFO)
+     * @param {string} [level] - INFO, WARN, ERROR, DEBUG (default: INFO)
      */
     function writeLog(message, level) {
-        try {
-            var f = new File(CONFIG.PATHS.LOG_FILE);
-            var timestamp = new Date().toLocaleString();
-            var logLine = "[" + timestamp + "] [" + (level || "INFO") + "] " + message;
-
-            // Append to file
-            f.open("a"); // Append mode
-            f.encoding = "UTF-8";
-            f.writeln(logLine);
-            f.close();
-        } catch (e) {
-            // Fail silently if logging fails to avoid infinite loops
-        }
+        var lvl = LOG_LEVELS.INFO;
+        if (level === "ERROR") lvl = LOG_LEVELS.ERROR;
+        else if (level === "WARN")  lvl = LOG_LEVELS.WARN;
+        else if (level === "DEBUG") lvl = LOG_LEVELS.DEBUG;
+        log(lvl, message);
     }
 
     // =========================================================================
@@ -1187,7 +1180,7 @@
     }
 
     // =========================================================================
-    // SECTION 2B.1: VALIDATION HELPERS
+    // SECTION 2C.1: VALIDATION HELPERS
     // =========================================================================
 
 
@@ -1226,7 +1219,9 @@
         var illegal = text.match(/[^a-zA-Z0-9_\-\s]/);
         if (illegal) return { isValid: false, msg: "Illegal char: '" + illegal[0] + "'" };
 
-        var reserved = ["CON", "PRN", "AUX", "NUL", "COM1", "LPT1"];
+        var reserved = ["CON", "PRN", "AUX", "NUL",
+            "COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9",
+            "LPT1","LPT2","LPT3","LPT4","LPT5","LPT6","LPT7","LPT8","LPT9"];
         var upperText = text.toUpperCase();
         for (var r = 0; r < reserved.length; r++) {
             if (reserved[r] === upperText) return { isValid: false, msg: "Reserved name" };
@@ -1499,7 +1494,7 @@
     }
 
     // =========================================================================
-    // SECTION 2B: UNIT TESTS (DEBUG)
+    // SECTION 2E: UNIT TESTS (DEBUG)
     // =========================================================================
 
     function runUnitTests() {
@@ -1971,7 +1966,7 @@
 
 
     // =========================================================================
-    // SECTION 5B: AUTO-UPDATE (LOADER GENERATOR)
+    // SECTION 4C: AUTO-UPDATE (LOADER GENERATOR)
     // =========================================================================
 
     function generateLoaderFile(sourcePath, isUrl) {
@@ -2240,10 +2235,6 @@
             return false;
         }
     }
-
-    // =========================================================================
-    // SECTION 7: BUILD UI
-    // =========================================================================
 
     // =========================================================================
     // SECTION 7: UI HELPERS & EVENTS
@@ -2785,13 +2776,8 @@
                 var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
                 if (!folders) return;
 
-                // 6. Construct New Filename (Standardized)
-                var newFilename;
-                if (parsed.isDOOH) {
-                    newFilename = "DOOH_" + (campaign || brand) + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
-                } else {
-                    newFilename = brand + "_" + campaign + "_" + quarter + "_" + parsed.size + "_" + version + "_" + revision + ".aep";
-                }
+                // 6. Construct New Filename (Standardized via central buildFilename)
+                var newFilename = ui.buildFilename(brand, campaign, quarter, parsed.size, version, revision, parsed.isDOOH);
 
                 // 7. Save in Correct Location (Inside newly verified structure)
                 var savePath = joinPath(folders.aeFolder, newFilename);
@@ -2839,9 +2825,18 @@
                 // 3. Confirm Dialog
                 var confirmWin = new Window("dialog", "Major Version Up");
                 confirmWin.add("statictext", undefined, "Create New Version: " + version + "?");
+                confirmWin.add("statictext", undefined, "Confirm Target Period:");
 
                 var grp = confirmWin.add("group");
-                grp.add("statictext", undefined, "Year: " + year + " | Quarter: " + quarter);
+                grp.orientation = "row";
+                var yInput = grp.add("edittext", undefined, year);
+                yInput.preferredSize.width = 50;
+                yInput.helpTip = "Year";
+                var qItems = ["Q1", "Q2", "Q3", "Q4"];
+                var qInput = grp.add("dropdownlist", undefined, qItems);
+                qInput.preferredSize.width = 55;
+                for (var qi = 0; qi < qItems.length; qi++) { if (qItems[qi] === quarter) qInput.selection = qi; }
+                if (!qInput.selection) qInput.selection = 0;
 
                 var btnGrp = confirmWin.add("group");
                 btnGrp.alignment = ["center", "bottom"];
@@ -2849,6 +2844,9 @@
                 var cnclBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
 
                 if (confirmWin.show() !== 1) return;
+
+                year    = yInput.text;
+                quarter = qInput.selection ? qInput.selection.text : quarter;
 
                 // 4. Structure
                 var dims = parsed.size.split("x");
@@ -2980,9 +2978,8 @@
     }
 
     // =========================================================================
-    // SECTION 8: BUILD UI
+    // SECTION 8: POST-RENDER CONVERSION HELPERS & UI ASSEMBLY
     // =========================================================================
-    // --- POST-RENDER CONVERSION HELPERS ---
 
     function escapePath(path) {
         return "\"" + path + "\"";
@@ -3028,7 +3025,20 @@
         // 1. Try Configured Path or Global Command
         var cmd = (path ? escapePath(path) : "ffmpeg") + " -version";
         var res = system.callSystem(cmd);
-        if (res && res.indexOf("ffmpeg version") !== -1) return true;
+        if (res && res.indexOf("ffmpeg version") !== -1) {
+            // If we used system PATH (no stored path), resolve and save it now
+            if (!path) {
+                var isWin2 = ($.os.indexOf("Windows") !== -1);
+                var whereRes = system.callSystem(isWin2 ? "where ffmpeg" : "which ffmpeg");
+                if (whereRes) {
+                    var resolved = whereRes.split("\n")[0].replace(/[\r\s]+$/g, "");
+                    if (resolved && new File(resolved).exists) {
+                        setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, resolved);
+                    }
+                }
+            }
+            return true;
+        }
 
         // 2. Windows Auto-Detect
         if (!path && $.os.indexOf("Windows") !== -1) {
@@ -3064,90 +3074,6 @@
             }
         }
         return false;
-    }
-
-    function downloadFFmpeg() {
-        var scriptFile = new File($.fileName);
-        var scriptDir = scriptFile.parent;
-        var binDir = new Folder(scriptDir.fsName + "/bin");
-        if (!binDir.exists) binDir.create();
-
-        var isWin = ($.os.indexOf("Windows") !== -1);
-        var confirmMsg = "FFmpeg is missing. Download it now?\n\nThis will download (~30-80MB) and install it into a 'bin' folder next to the script.\n\nA terminal window will open to show progress.";
-
-        if (!confirm(confirmMsg)) return false;
-
-        if (isWin) {
-            // WINDOWS DOWNLOADER (PowerShell)
-            var psScriptPath = scriptDir.fsName + "/install_ffmpeg.ps1";
-            var batScriptPath = scriptDir.fsName + "/install_ffmpeg.bat";
-
-            var psCode = [
-                '$ProgressPreference = "SilentlyContinue"',
-                // FIX: Force TLS 1.2 for modern HTTPS connections
-                '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12',
-                'Write-Host "Downloading FFmpeg (Please Wait)..." -ForegroundColor Cyan',
-                '$url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"',
-                '$zip = "' + scriptDir.fsName + '\\ffmpeg.zip"',
-                '$dest = "' + scriptDir.fsName + '\\ffmpeg_temp"',
-                '$final = "' + binDir.fsName + '\\ffmpeg.exe"',
-                'try {',
-                '    Invoke-WebRequest -Uri $url -OutFile $zip',
-                '    Write-Host "Extracting..." -ForegroundColor Yellow',
-                '    Expand-Archive -Path $zip -DestinationPath $dest -Force',
-                '    Write-Host "Installing..." -ForegroundColor Green',
-                '    $exe = Get-ChildItem -Path $dest -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1',
-                '    if ($exe) { Move-Item -Path $exe.FullName -Destination $final -Force }',
-                '    Write-Host "Done! You can close this window." -ForegroundColor Green',
-                '} catch {',
-                '    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red',
-                '    Read-Host "Press Enter to exit"',
-                '}',
-                'Remove-Item $zip -Force -ErrorAction SilentlyContinue',
-                'Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue',
-                'Start-Sleep -Seconds 3'
-            ].join("\r\n");
-
-            var f = new File(psScriptPath);
-            f.open("w"); f.write(psCode); f.close();
-
-            var batCode = '@echo off\r\nPowerShell -NoProfile -ExecutionPolicy Bypass -File "' + psScriptPath + '"';
-            var b = new File(batScriptPath);
-            b.open("w"); b.write(batCode); b.close();
-
-            system.callSystem('start "" "' + batScriptPath + '"');
-
-            alert("Download started!\n\nPlease wait for the terminal window to close, then run this script again.");
-            return true;
-
-        } else {
-            // MACOS DOWNLOADER (Curl)
-            var shScriptPath = scriptDir.fsName + "/install_ffmpeg.sh";
-            var shCode = [
-                '#!/bin/bash',
-                'echo "Downloading FFmpeg (Mac)..."',
-                'cd "' + scriptDir.fsName + '"',
-                'curl -L -o ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-6.0.zip"', // Stable static build
-                'echo "Extracting..."',
-                'unzip -o ffmpeg.zip',
-                'mv ffmpeg bin/ffmpeg',
-                'chmod +x bin/ffmpeg',
-                // FIX: Remove Quarantine attribute to prevent "Unverified Developer" block
-                'xattr -d com.apple.quarantine bin/ffmpeg 2>/dev/null',
-                'rm ffmpeg.zip',
-                'echo "Done! You can close this window."'
-            ].join("\n");
-
-            var s = new File(shScriptPath);
-            s.open("w"); s.write(shCode); s.close();
-            system.callSystem("chmod +x \"" + shScriptPath + "\"");
-
-            var termCmd = 'open -a Terminal "' + shScriptPath + '"';
-            system.callSystem(termCmd);
-
-            alert("Download started!\n\nPlease wait for the terminal window to close, then run this script again.");
-            return true;
-        }
     }
 
     function detectPNGSequence(folder) {
@@ -3290,6 +3216,7 @@
 
         // 3. Get Options
         var ffmpegOk = checkFFmpeg();
+        var mainComp = findMainComp();
         // Detect DOOH from project name or template type
         var projectName = app.project.file.name.replace(/\.aep$/i, "");
         var parsedName = parseProjectName(projectName);
@@ -3308,7 +3235,6 @@
         };
 
         // 4. Dimensions/FPS
-        var mainComp = findMainComp(); // Helper existing in script
         var dims = {
             width: (mainComp) ? mainComp.width : 750,
             height: (mainComp) ? mainComp.height : 300,
@@ -3319,83 +3245,19 @@
     }
 
     /**
-     * Show FFmpeg setup dialog with auto-install option
-     * @returns {boolean} true if FFmpeg is now available, false if cancelled
+     * Derive the ffprobe executable path from a known ffmpeg path.
+     * Falls back to "ffprobe" (system PATH) if path is empty or ffprobe not found.
+     * @param {string} ffmpegPath - Absolute path to ffmpeg executable
+     * @returns {string} Path to ffprobe executable
      */
-    function showFFmpegSetupDialog() {
-        var isWin = ($.os.indexOf("Windows") !== -1);
-
-        var d = new Window("dialog", "FFmpeg Setup Required");
-        d.orientation = "column";
-        d.alignChildren = ["fill", "top"];
-        d.margins = 20;
-        d.spacing = 12;
-
-        // Title
-        var titleLbl = d.add("statictext", undefined, "FFmpeg is required for DOOH optimization");
-        try { titleLbl.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
-
-        d.add("statictext", undefined, "FFmpeg is a free video compression tool.");
-
-        // Options panel
-        var optPanel = d.add("panel", undefined, "Choose Setup Method");
-        optPanel.alignChildren = ["fill", "top"];
-        optPanel.margins = 15;
-
-        // Auto install option (Windows only)
-        if (isWin) {
-            var autoGrp = optPanel.add("group");
-            autoGrp.orientation = "column";
-            autoGrp.alignChildren = ["left", "top"];
-
-            var autoBtn = autoGrp.add("button", undefined, "⚡ Auto Install (Recommended)");
-            autoBtn.preferredSize = [280, 35];
-            var autoLbl = autoGrp.add("statictext", undefined, "Downloads and configures FFmpeg automatically");
-            setTextColor(autoLbl, [0.5, 0.5, 0.5]);
-        }
-
-        // Manual option
-        var manualGrp = optPanel.add("group");
-        manualGrp.orientation = "column";
-        manualGrp.alignChildren = ["left", "top"];
-
-        var manualBtn = manualGrp.add("button", undefined, "📁 Manual Setup");
-        manualBtn.preferredSize = [280, 30];
-        var manualLbl = manualGrp.add("statictext", undefined, "I already have FFmpeg - let me set the path");
-        setTextColor(manualLbl, [0.5, 0.5, 0.5]);
-
-        // Cancel
-        var cancelBtn = d.add("button", undefined, "Cancel");
-        cancelBtn.alignment = ["center", "top"];
-
-        var result = false;
-
-        if (isWin && autoBtn) {
-            autoBtn.onClick = function () {
-                d.close();
-                result = autoInstallFFmpeg();
-            };
-        }
-
-        manualBtn.onClick = function () {
-            d.close();
-            // Open file picker for ffmpeg.exe
-            var ffmpegFile = File.openDialog("Select ffmpeg.exe", "ffmpeg.exe:ffmpeg.exe");
-            if (ffmpegFile && ffmpegFile.exists) {
-                saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegFile.fsName);
-                alert("FFmpeg path saved!\n\n" + ffmpegFile.fsName);
-                result = true;
-            }
-        };
-
-        cancelBtn.onClick = function () {
-            d.close();
-            result = false;
-        };
-
-        d.center();
-        d.show();
-        return result;
+    function getFFprobePath(ffmpegPath) {
+        if (!ffmpegPath) return "ffprobe";
+        var candidate = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
+        if (new File(candidate).exists) return candidate;
+        // Fallback: try explicit .exe variant on Windows
+        var candidateExe = ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
+        if (new File(candidateExe).exists) return candidateExe;
+        return "ffprobe"; // System PATH fallback
     }
 
     /**
@@ -3407,27 +3269,14 @@
         if (!videoFile || !videoFile.exists) return 0;
 
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
-        var ffprobePath = "";
+        var ffprobePath = getFFprobePath(ffmpegPath);
         var isWin = ($.os.indexOf("Windows") !== -1);
-
-        // FFprobe is usually in the same folder as FFmpeg
-        if (ffmpegPath) {
-            ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
-            var probeFile = new File(ffprobePath);
-            if (!probeFile.exists) {
-                ffprobePath = ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
-                probeFile = new File(ffprobePath);
-                if (!probeFile.exists) {
-                    ffprobePath = ""; // Fall back to system path
-                }
-            }
-        }
 
         var inputPath = videoFile.fsName;
         var duration = 0;
 
         // Method 1: Try FFprobe (preferred)
-        if (ffprobePath || !ffmpegPath) {
+        if (ffprobePath) {
             try {
                 var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
                 var cmd = exe + ' -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + inputPath + '"';
@@ -3504,19 +3353,8 @@
         if (!videoFile || !videoFile.exists) return info;
 
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
-        var ffprobePath = "";
+        var ffprobePath = getFFprobePath(ffmpegPath);
         var isWin = ($.os.indexOf("Windows") !== -1);
-
-        // FFprobe is usually in the same folder as FFmpeg
-        if (ffmpegPath) {
-            ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
-            var probeFile = new File(ffprobePath);
-            if (!probeFile.exists) {
-                ffprobePath = ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
-                probeFile = new File(ffprobePath);
-                if (!probeFile.exists) ffprobePath = "";
-            }
-        }
 
         var inputPath = videoFile.fsName;
 
@@ -3603,140 +3441,6 @@
     }
 
     /**
-     * Automatically download and install FFmpeg (Windows only)
-     * @returns {boolean} true if successful
-     */
-    function autoInstallFFmpeg() {
-        var installDir = "C:\\ffmpeg";
-        var ffmpegExe = installDir + "\\bin\\ffmpeg.exe";
-
-        // Check if already exists
-        var existing = new File(ffmpegExe);
-        if (existing.exists) {
-            saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegExe);
-            alert("FFmpeg found at C:\\ffmpeg\\bin\\ffmpeg.exe\n\nPath configured automatically!");
-            return true;
-        }
-
-        // Show progress
-        var w = new Window("palette", "Installing FFmpeg", undefined, { closeButton: false });
-        w.orientation = "column";
-        w.alignChildren = ["fill", "top"];
-        w.margins = 20;
-
-        var statusLbl = w.add("statictext", undefined, "Downloading FFmpeg...");
-        var progressBar = w.add("progressbar", [0, 0, 280, 20], 0, 100);
-        var detailLbl = w.add("statictext", undefined, "This may take 1-2 minutes");
-        setTextColor(detailLbl, [0.5, 0.5, 0.5]);
-
-        w.center();
-        w.show();
-        w.update();
-
-        // Download URL (essentials build - smaller)
-        var downloadUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
-        var zipPath = Folder.temp.fsName + "\\ffmpeg_download.zip";
-        var extractPath = Folder.temp.fsName + "\\ffmpeg_extract";
-
-        progressBar.value = 10;
-        statusLbl.text = "Downloading FFmpeg (60-80MB)...";
-        w.update();
-
-        // PowerShell download command
-        var downloadCmd = 'powershell -Command "try { ' +
-            '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ' +
-            'Invoke-WebRequest -Uri \'' + downloadUrl + '\' -OutFile \'' + zipPath + '\' -UseBasicParsing; ' +
-            'if (Test-Path \'' + zipPath + '\') { Write-Output \'SUCCESS\' } else { Write-Output \'FAILED\' } ' +
-            '} catch { Write-Output \'ERROR\' }"';
-
-        var downloadResult = "";
-        try {
-            downloadResult = system.callSystem(downloadCmd);
-        } catch (e) {
-            w.close();
-            alert("Download failed: " + e.toString() + "\n\nPlease try manual setup.");
-            return false;
-        }
-
-        if (downloadResult.indexOf("SUCCESS") === -1) {
-            w.close();
-            alert("Download failed. Please check your internet connection and try manual setup.");
-            return false;
-        }
-
-        progressBar.value = 50;
-        statusLbl.text = "Extracting files...";
-        w.update();
-
-        // Extract ZIP
-        var extractCmd = 'powershell -Command "Expand-Archive -Path \'' + zipPath + '\' -DestinationPath \'' + extractPath + '\' -Force"';
-        try {
-            system.callSystem(extractCmd);
-        } catch (e) {
-            w.close();
-            alert("Extraction failed: " + e.toString());
-            return false;
-        }
-
-        progressBar.value = 70;
-        statusLbl.text = "Installing to C:\\ffmpeg...";
-        w.update();
-
-        // Find the extracted folder (name varies by version)
-        var findCmd = 'powershell -Command "Get-ChildItem -Path \'' + extractPath + '\' -Directory | Select-Object -First 1 -ExpandProperty FullName"';
-        var extractedFolder = "";
-        try {
-            extractedFolder = system.callSystem(findCmd).replace(/[\r\n]/g, "").replace(/^\s+|\s+$/g, "");
-        } catch (e) {
-            w.close();
-            alert("Could not find extracted folder.");
-            return false;
-        }
-
-        // Move to C:\ffmpeg
-        var moveCmd = 'powershell -Command "if (Test-Path \'' + installDir + '\') { Remove-Item -Path \'' + installDir + '\' -Recurse -Force }; Move-Item -Path \'' + extractedFolder + '\' -Destination \'' + installDir + '\'"';
-        try {
-            system.callSystem(moveCmd);
-        } catch (e) {
-            w.close();
-            alert("Installation failed: " + e.toString() + "\n\nTry running After Effects as Administrator.");
-            return false;
-        }
-
-        progressBar.value = 90;
-        statusLbl.text = "Configuring path...";
-        w.update();
-
-        // Cleanup
-        try {
-            var zipFile = new File(zipPath);
-            if (zipFile.exists) zipFile.remove();
-            var extractFolder = new Folder(extractPath);
-            if (extractFolder.exists) extractFolder.remove();
-        } catch (e) { }
-
-        // Verify installation
-        var ffmpegFile = new File(ffmpegExe);
-        if (!ffmpegFile.exists) {
-            w.close();
-            alert("Installation completed but ffmpeg.exe not found at expected location.\n\nPlease try manual setup.");
-            return false;
-        }
-
-        // Save path to settings
-        saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegExe);
-
-        progressBar.value = 100;
-        statusLbl.text = "Complete!";
-        w.update();
-        $.sleep(500);
-        w.close();
-
-        alert("✓ FFmpeg installed successfully!\n\nPath: " + ffmpegExe + "\n\nYou can now use DOOH optimization.");
-        return true;
-    }
-
-    /**
      * Process DOOH MP4 Optimization (supports single and batch)
      * @param {object} ui - UI reference
      * @param {boolean} [forceFilePick] - If true, skip project folder detection and directly open file picker
@@ -3746,39 +3450,10 @@
         var targetFolder = null;
         var duration = 15; // Default duration
 
-        // Check FFmpeg first - FULLY AUTOMATIC INSTALL
-        var ffmpegOk = checkFFmpeg();
-        if (!ffmpegOk) {
-            // Auto-install FFmpeg silently (Windows only)
-            var isWin = ($.os.indexOf("Windows") !== -1);
-            if (isWin) {
-                var autoResult = autoInstallFFmpeg();
-                if (!autoResult) {
-                    // Auto-install failed - fallback to manual
-                    var ffmpegFile = File.openDialog("Select ffmpeg.exe", "ffmpeg.exe:ffmpeg.exe");
-                    if (ffmpegFile && ffmpegFile.exists) {
-                        saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegFile.fsName);
-                    } else {
-                        return; // User cancelled
-                    }
-                }
-            } else {
-                // Mac - try common paths first, then ask user
-                alert("FFmpeg not found. Please install via Homebrew:\\n\\nbrew install ffmpeg\\n\\nOr select the ffmpeg binary manually.");
-                var ffmpegFile = File.openDialog("Select ffmpeg binary");
-                if (ffmpegFile && ffmpegFile.exists) {
-                    saveSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, ffmpegFile.fsName);
-                } else {
-                    return;
-                }
-            }
-
-            // Re-check after install
-            ffmpegOk = checkFFmpeg();
-            if (!ffmpegOk) {
-                alert("FFmpeg installation failed. Please try again or install manually.");
-                return;
-            }
+        // Check FFmpeg — unified install flow (same path as runMP4Optimizer / runConversion)
+        if (!ensureFFmpegReady()) {
+            alert("FFmpeg is required for DOOH optimization.\n\nPlease try again or set the path manually in Settings.");
+            return;
         }
 
         // Mode 1: Direct file pick (no project open)
@@ -4382,12 +4057,19 @@
             return true;
         }
 
-        // 2. Check if ffmpeg is in system PATH
+        // 2. Check if ffmpeg is in system PATH — resolve and save the actual path
         var isWin = ($.os.indexOf("Windows") !== -1);
         var checkCmd = isWin ? "where ffmpeg" : "which ffmpeg";
         var sysPath = system.callSystem(checkCmd);
         if (sysPath && sysPath.indexOf("ffmpeg") !== -1) {
-            return true; // Use system ffmpeg
+            // Save the resolved path so the Settings dialog can display it
+            var resolvedPath = sysPath.replace(/[\r\n]+/g, "").replace(/^\s+|\s+$/g, "");
+            // "where" may return multiple lines — take only the first
+            var firstLine = resolvedPath.split("\n")[0].replace(/\r/g, "").replace(/^\s+|\s+$/g, "");
+            if (firstLine && new File(firstLine).exists) {
+                setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, firstLine);
+            }
+            return true;
         }
 
         // 3. Not found - Ask user to download
@@ -5284,8 +4966,9 @@
 
             for (var i = 0; i < recent.length; i++) {
                 var f = new File(recent[i]);
-                var item = list.add("item", f.name);
-                item.subItems[0] = f.parent.fsName; // Store path hinted if needed
+                var displayPath = (f.parent ? f.parent.name + "/" : "") + f.name;
+                var item = list.add("item", displayPath);
+                item.helpTip = f.fsName; // Full path shown on hover
             }
 
             var btnGrp = d.add("group");
@@ -5346,6 +5029,10 @@
         ui.updateStatus = function () {
             if (!ui.templates.length || !ui.dropdowns.template.selection) {
                 ui.setStatus("⚪ No templates loaded", [0.6, 0.6, 0.6]);
+                if (ui.btns.convert) {
+                    ui.btns.convert.enabled = false;
+                    ui.btns.convert.helpTip = "Sunrise projects only (750x300)";
+                }
                 return;
             }
             var t = ui.templates[ui.dropdowns.template.selection.index];
@@ -5353,6 +5040,14 @@
                 ui.setWarn("Template missing (Regenerate)");
             } else {
                 ui.setSuccess("Ready: " + t.name);
+            }
+            // Enable "OPTIMIZE SUNRISE" only when a Sunrise (750x300) template is selected
+            if (ui.btns.convert) {
+                var isSunrise = (t.width === 750 && t.height === 300);
+                ui.btns.convert.enabled = isSunrise;
+                ui.btns.convert.helpTip = isSunrise
+                    ? "Process Sunrise PNG sequence to WebM, MOV, and HTML"
+                    : "Sunrise projects only (750x300) — switch template to enable";
             }
         };
 
@@ -5792,16 +5487,8 @@
     }
 
     /**
-     * Run post-render conversion via external shell script
-     * This prevents crashes by using a single system.callSystem() call
-     */
-    /**
-     * Run post-render conversion via external shell script
-     * This prevents crashes by using a single system.callSystem() call
-     */
-    /**
-     * Run post-render conversion via external shell script
-     * This prevents crashes by using a single system.callSystem() call
+     * Run post-render conversion via external shell script.
+     * This prevents crashes by using a single system.callSystem() call.
      */
     function runConversion(outFolder, seq, options, dims) {
         if (!ensureFFmpegReady()) return;
@@ -5816,6 +5503,11 @@
         var outMov = outFolder.fsName + (isWin ? "\\output.mov" : "/output.mov");
         var outHtml = outFolder.fsName + (isWin ? "\\index.html" : "/index.html");
         var passLog = outFolder.fsName + (isWin ? "\\ffmpeg2pass" : "/ffmpeg2pass");
+
+        // Overwrite check — warn before clobbering existing output files
+        if (new File(outWebM).exists || new File(outMov).exists || new File(outHtml).exists) {
+            if (!confirm("Output files already exist in this folder (output.webm / output.mov / index.html).\n\nOverwrite?")) return;
+        }
 
         // FIX: Define isDOOH and bitrateFlags (previously undefined - would crash on DOOH WebM)
         var isDOOH = options.isDOOH || false;
@@ -6045,6 +5737,8 @@
         t2.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 11);
         setTextColor(t2, [0.4, 0.4, 0.4]);
 
+        var convertStartTime = new Date().getTime();
+
         w.center();
         w.show();
         w.update(); // Force paint
@@ -6096,6 +5790,7 @@
         if (fZip.exists) resultMsg += " • " + new File(zipPath).name + " (" + Math.round(fZip.length / 1024) + " KB)\n";
 
         resultMsg += "\nLocation: " + outFolder.fsName;
+        resultMsg += "\nTime: " + formatDuration((new Date().getTime() - convertStartTime) / 1000);
 
         try { scriptFile.remove(); } catch (e) { }
         alert(resultMsg);
