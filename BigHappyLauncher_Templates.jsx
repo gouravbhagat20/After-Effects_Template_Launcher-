@@ -584,10 +584,21 @@
             var brandFolder = getOrCreateNumberedFolder(pQuarter, projectFolderName);
             var pBrand = joinPath(pQuarter, brandFolder);
 
-            // FIX: Use unique project folder instead of shared "AE" to prevent asset merging
-            // Old: .../01.Brand/AE/ (Mixed multiple sizes)
-            // New: .../01.Brand/Brand_Campaign_300x250_V1_R1/ (Isolated)
-            var pAE = joinPath(pBrand, collectFolderName);
+            // NEW STRUCTURE:
+            // Group templates under an "AE" folder to organize different sizes/types
+            // e.g. .../01.Brand/AE/3D Sunrise/Brand_Campaign_300x250_V1_R1/
+            var templateName = ui.dropdowns.template.selection ? ui.dropdowns.template.selection.text : "Standard";
+            var templateGroup = templateName;
+
+            if (templateName.toUpperCase().indexOf("DOOH") !== -1) {
+                templateGroup = "DOOH";
+            } else if (templateName.toUpperCase().indexOf("SUNRISE") !== -1 || templateName.toUpperCase().indexOf("3D") !== -1) {
+                templateGroup = "3D Sunrise";
+            }
+
+            var pAEBase = joinPath(pBrand, "AE");
+            var pTemplateFolder = joinPath(pAEBase, templateGroup);
+            var pAE = joinPath(pTemplateFolder, collectFolderName);
 
             // Define Drive Path for Shared Assets
             var driveCommonAssets = new Folder(joinPath(pAE, "_Common_Assets"));
@@ -691,7 +702,7 @@
     function writeLog(message, level) {
         var lvl = LOG_LEVELS.INFO;
         if (level === "ERROR") lvl = LOG_LEVELS.ERROR;
-        else if (level === "WARN")  lvl = LOG_LEVELS.WARN;
+        else if (level === "WARN") lvl = LOG_LEVELS.WARN;
         else if (level === "DEBUG") lvl = LOG_LEVELS.DEBUG;
         log(lvl, message);
     }
@@ -1243,8 +1254,8 @@
         if (illegal) return { isValid: false, msg: "Illegal char: '" + illegal[0] + "'" };
 
         var reserved = ["CON", "PRN", "AUX", "NUL",
-            "COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9",
-            "LPT1","LPT2","LPT3","LPT4","LPT5","LPT6","LPT7","LPT8","LPT9"];
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"];
         var upperText = text.toUpperCase();
         for (var r = 0; r < reserved.length; r++) {
             if (reserved[r] === upperText) return { isValid: false, msg: "Reserved name" };
@@ -2923,7 +2934,7 @@
 
                 if (confirmWin.show() !== 1) return;
 
-                year    = yInput.text;
+                year = yInput.text;
                 quarter = qInput.selection ? qInput.selection.text : quarter;
 
                 var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
@@ -5041,7 +5052,7 @@
             function formatRecentDate(ts) {
                 if (!ts) return "";
                 var d2 = new Date(ts);
-                var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
                 return months[d2.getMonth()] + " " + d2.getDate() + ", " + d2.getFullYear();
             }
 
