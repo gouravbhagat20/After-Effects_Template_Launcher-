@@ -2758,18 +2758,30 @@
             }
         };
 
-        ui.btns.quickDup.onClick = function () {
+        // =================================================================
+        // SHARED: bumpAndSave — Used by both R+ and V+ buttons
+        // mode = "revision" (R+) or "version" (V+)
+        // =================================================================
+        function bumpAndSave(ui, mode) {
             if (!app.project || !app.project.file) { showError("BH-2003"); return; }
             try {
                 var currentName = app.project.file.name.replace(/\.aep$/i, "");
                 var parsed = parseProjectName(currentName);
                 if (!parsed) { alert("Cannot parse project name format."); return; }
 
-                // 1. Calculate New Revision
-                var currentRevNum = parseInt(parsed.revision.replace(/^R/i, ""), 10) || 1;
-                var newRevNum = currentRevNum + 1;
-                var revision = "R" + newRevNum;
-                var version = parsed.version || "V1";
+                // 1. Calculate New Version/Revision based on mode
+                var version, revision, newVerNum, newRevNum;
+                if (mode === "version") {
+                    var currentVerNum = parseInt(parsed.version.replace(/^V/i, ""), 10) || 1;
+                    newVerNum = currentVerNum + 1;
+                    version = "V" + newVerNum;
+                    revision = "R1"; // Reset to R1
+                } else {
+                    var currentRevNum = parseInt(parsed.revision.replace(/^R/i, ""), 10) || 1;
+                    newRevNum = currentRevNum + 1;
+                    revision = "R" + newRevNum;
+                    version = parsed.version || "V1";
+                }
 
                 // 2. Initial Guess for Year/Quarter (from path or UI)
                 var currentPath = app.project.file.parent.fsName;
@@ -2792,8 +2804,12 @@
                 var projectName = buildProjectFolderName(brand, campaign);
                 var basePath = getBaseWorkFolder();
 
-                // 4. POPUP: Confirm/Edit Year & Quarter + show path preview
-                var confirmWin = new Window("dialog", "Quick Duplicate");
+                // 4. Confirm Dialog + path preview
+                var dialogTitle = (mode === "version") ? "Major Version Up" : "Quick Duplicate";
+                var confirmWin = new Window("dialog", dialogTitle);
+                if (mode === "version") {
+                    confirmWin.add("statictext", undefined, "Create New Version: " + version + "?");
+                }
                 confirmWin.add("statictext", undefined, "Confirm Target Period:");
 
                 var grp = confirmWin.add("group");
@@ -2804,23 +2820,23 @@
 
                 var qItems = ["Q1", "Q2", "Q3", "Q4"];
                 var qInput = grp.add("dropdownlist", undefined, qItems);
-                qInput.preferredSize.width = 50;
-                for (var i = 0; i < qItems.length; i++) if (qItems[i] === quarter) qInput.selection = i;
+                qInput.preferredSize.width = (mode === "version") ? 55 : 50;
+                for (var i = 0; i < qItems.length; i++) { if (qItems[i] === quarter) qInput.selection = i; }
                 if (!qInput.selection) qInput.selection = 0;
 
                 var previewLbl = confirmWin.add("edittext", undefined, "", { readonly: true });
                 previewLbl.preferredSize = [420, 20];
                 previewLbl.helpTip = "Destination path for the saved file";
 
-                function rPlusRefreshPreview() {
+                function refreshPreview() {
                     var yr = yInput.text || year;
                     var qr = qInput.selection ? qInput.selection.text : quarter;
                     var fname = ui.buildFilename(brand, campaign, qr, parsed.size, version, revision, parsed.isDOOH);
                     previewLbl.text = joinPath(basePath, joinPath(yr, joinPath(qr, joinPath(projectName, joinPath(sizeFolderName, joinPath(version, joinPath("AE_File", fname)))))));
                 }
-                yInput.onChanging = function () { rPlusRefreshPreview(); };
-                qInput.onChange = function () { rPlusRefreshPreview(); };
-                rPlusRefreshPreview();
+                yInput.onChanging = function () { refreshPreview(); };
+                qInput.onChange = function () { refreshPreview(); };
+                refreshPreview();
 
                 var btnGrp = confirmWin.add("group");
                 btnGrp.alignment = ["center", "bottom"];
@@ -2831,10 +2847,9 @@
 
                 // Update values from dialog
                 year = yInput.text;
-                quarter = qInput.selection.text;
+                quarter = qInput.selection ? qInput.selection.text : quarter;
 
                 // 5. Create Full Folder Structure (Assets, etc.)
-                // This function automatically checks existence and creates missing folders
                 var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
                 if (!folders) return;
 
@@ -2851,118 +2866,29 @@
 
                 app.project.save(saveFile);
 
-                // Update UI and History
-                ui.inputs.revision.text = String(newRevNum);
-                ui.updatePreview();
-                addToRecentFiles(savePath); // Add standard path to recent
-
-                alert("Quick Saved!\n\nStandardized & Saved to:\n" + folders.aeFolder);
-                return; // Prevent falling through to old code
-
-            } catch (e) { showError("BH-2001", e.toString()); }
-
-        };
-
-        ui.btns.vPlus.onClick = function () {
-            if (!app.project || !app.project.file) { showError("BH-2003"); return; }
-            try {
-                var currentName = app.project.file.name.replace(/\.aep$/i, "");
-                var parsed = parseProjectName(currentName);
-                if (!parsed) { alert("Cannot parse project name format."); return; }
-
-                // 1. Calculate New Version (Bump V, Reset R)
-                var currentVerNum = parseInt(parsed.version.replace(/^V/i, ""), 10) || 1;
-                var newVerNum = currentVerNum + 1;
-                var version = "V" + newVerNum;
-                var revision = "R1"; // Reset to R1
-
-                // 2. Initial Guess for Year/Quarter
-                var currentPath = app.project.file.parent.fsName;
-                var yearMatch = currentPath.match(/[\/\\](\d{4})[\/\\]/);
-                var quarterMatch = currentPath.match(/[\/\\](Q[1-4])[\/\\]/);
-
-                var year = yearMatch ? yearMatch[1] : String(getCurrentYear());
-                var quarter = parsed.quarter || (quarterMatch ? quarterMatch[1] : (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1"));
-
-                // 3. Pre-compute folder data (needed for path preview before dialog)
-                var dims = parsed.size.split("x");
-                var width = parseInt(dims[0], 10);
-                var height = parseInt(dims[1], 10);
-                var templateType = getTemplateType(width, height);
-                var templateFolderName = getTemplateFolderName(width, height);
-                var sizeFolderName = templateFolderName + "_" + parsed.size;
-                var brand = parsed.brand;
-                if (parsed.isDOOH && !brand) brand = "DOOH";
-                var campaign = parsed.campaign || "";
-                var projectName = buildProjectFolderName(brand, campaign);
-                var basePath = getBaseWorkFolder();
-
-                // 4. Confirm Dialog + path preview
-                var confirmWin = new Window("dialog", "Major Version Up");
-                confirmWin.add("statictext", undefined, "Create New Version: " + version + "?");
-                confirmWin.add("statictext", undefined, "Confirm Target Period:");
-
-                var grp = confirmWin.add("group");
-                grp.orientation = "row";
-                var yInput = grp.add("edittext", undefined, year);
-                yInput.preferredSize.width = 50;
-                yInput.helpTip = "Year";
-                var qItems = ["Q1", "Q2", "Q3", "Q4"];
-                var qInput = grp.add("dropdownlist", undefined, qItems);
-                qInput.preferredSize.width = 55;
-                for (var qi = 0; qi < qItems.length; qi++) { if (qItems[qi] === quarter) qInput.selection = qi; }
-                if (!qInput.selection) qInput.selection = 0;
-
-                var previewLbl = confirmWin.add("edittext", undefined, "", { readonly: true });
-                previewLbl.preferredSize = [420, 20];
-                previewLbl.helpTip = "Destination path for the saved file";
-
-                function vPlusRefreshPreview() {
-                    var yr = yInput.text || year;
-                    var qr = qInput.selection ? qInput.selection.text : quarter;
-                    var fname = ui.buildFilename(brand, campaign, qr, parsed.size, version, revision, parsed.isDOOH);
-                    previewLbl.text = joinPath(basePath, joinPath(yr, joinPath(qr, joinPath(projectName, joinPath(sizeFolderName, joinPath(version, joinPath("AE_File", fname)))))));
+                // 8. Update UI and History
+                if (mode === "version") {
+                    ui.inputs.version.text = String(newVerNum);
+                    ui.inputs.revision.text = "1";
+                } else {
+                    ui.inputs.revision.text = String(newRevNum);
                 }
-                yInput.onChanging = function () { vPlusRefreshPreview(); };
-                qInput.onChange = function () { vPlusRefreshPreview(); };
-                vPlusRefreshPreview();
-
-                var btnGrp = confirmWin.add("group");
-                btnGrp.alignment = ["center", "bottom"];
-                var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
-                var cnclBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
-
-                if (confirmWin.show() !== 1) return;
-
-                year = yInput.text;
-                quarter = qInput.selection ? qInput.selection.text : quarter;
-
-                var folders = createProjectStructure(basePath, year, quarter, projectName, sizeFolderName, revision, templateType, version);
-                if (!folders) return;
-
-                // 5. Filename (reuse buildFilename to keep naming centralised)
-                var newFilename = ui.buildFilename(brand, campaign, quarter, parsed.size, version, revision, parsed.isDOOH);
-
-                // 6. Save
-                var savePath = joinPath(folders.aeFolder, newFilename);
-                var saveFile = new File(savePath);
-
-                if (saveFile.exists) {
-                    if (!confirm("File already exists:\n" + newFilename + "\n\nOverwrite?")) return;
-                }
-
-                app.project.save(saveFile);
-
-                // Update UI
-                ui.inputs.version.text = String(newVerNum);
-                ui.inputs.revision.text = "1";
                 ui.updatePreview();
                 addToRecentFiles(savePath);
 
-                alert("Version Up Successful!\n\nNew Version: " + version + "\nReset to: R1\nSaved to: " + folders.aeFolder);
+                // 9. Success Alert
+                if (mode === "version") {
+                    alert("Version Up Successful!\n\nNew Version: " + version + "\nReset to: R1\nSaved to: " + folders.aeFolder);
+                } else {
+                    alert("Quick Saved!\n\nStandardized & Saved to:\n" + folders.aeFolder);
+                }
 
             } catch (e) { showError("BH-2001", e.toString()); }
-        };
+        }
+
+        ui.btns.quickDup.onClick = function () { bumpAndSave(ui, "revision"); };
+
+        ui.btns.vPlus.onClick = function () { bumpAndSave(ui, "version"); };
 
         ui.btns.render.onClick = function () {
             if (!app.project || !app.project.file) { showError("BH-2003"); return; }
