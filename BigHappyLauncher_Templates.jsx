@@ -1,4 +1,4 @@
-/*
+﻿/*
 ================================================================================
   BigHappyLauncher_Templates.jsx
   After Effects ScriptUI Panel - Production Ready v1.0
@@ -4615,7 +4615,7 @@
         g.orientation = "row";
         g.alignChildren = ["left", "center"];
         var lbl = g.add("statictext", undefined, label);
-        lbl.preferredSize.width = 65;
+        lbl.preferredSize.width = 70;
         var inp = g.add("edittext", undefined, defaultVal);
         inp.alignment = ["fill", "center"];
         return inp;
@@ -4689,15 +4689,15 @@
         ui.mainGrp = ui.w.add("panel", undefined, "Project Details");
         ui.mainGrp.orientation = "column";
         ui.mainGrp.alignChildren = ["fill", "top"];
-        ui.mainGrp.spacing = 8;
-        ui.mainGrp.margins = 15;
+        ui.mainGrp.spacing = 6;
+        ui.mainGrp.margins = 12;
 
         // Template Dropdown
         var tmplGrp = ui.mainGrp.add("group");
         tmplGrp.orientation = "row";
         tmplGrp.alignChildren = ["left", "center"];
         var tmplLbl = tmplGrp.add("statictext", undefined, "Template:");
-        tmplLbl.preferredSize.width = 65;
+        tmplLbl.preferredSize.width = 70;
         ui.dropdowns.template = tmplGrp.add("dropdownlist", undefined, []);
         ui.dropdowns.template.alignment = ["fill", "center"];
         ui.dropdowns.template.preferredSize.height = 25;
@@ -4723,7 +4723,7 @@
         dateGrp.alignChildren = ["left", "center"];
 
         var dateIcon = dateGrp.add("statictext", undefined, "📅");
-        dateIcon.preferredSize.width = 65; // MATCH LABEL WIDTH (65px) for vertical alignment
+        dateIcon.preferredSize.width = 70; // MATCH LABEL WIDTH (70px) for vertical alignment
         dateIcon.helpTip = "Period (Quarter & Year)";
 
         ui.dropdowns.quarter = dateGrp.add("dropdownlist", undefined, ["Q1", "Q2", "Q3", "Q4"]);
@@ -4745,7 +4745,7 @@
 
         // Spacer between groups
         var spacer = metaGrp.add("group");
-        spacer.preferredSize.width = 10; // Explicit spacer
+        spacer.preferredSize.width = 5; // Tighter spacer
 
 
         // GROUP 2: Versioning (Tag Icon)
@@ -4776,7 +4776,7 @@
         baseGrp.spacing = 2; // Match group spacing above
 
         var baseIcon = baseGrp.add("statictext", undefined, "📂");
-        baseIcon.preferredSize.width = 65; // MATCH LABEL WIDTH (65px)
+        baseIcon.preferredSize.width = 70; // MATCH LABEL WIDTH (70px)
         baseIcon.helpTip = "Base Work Folder";
 
         ui.labels.basePath = baseGrp.add("edittext", undefined, getBaseWorkFolder(), { readonly: true });
@@ -4847,8 +4847,8 @@
 
         // 1. Primary Action: CREATE
         ui.btns.create = actionsGrp.add("button", undefined, "CREATE PROJECT");
-        ui.btns.create.preferredSize.height = 40;
-        try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 14); } catch (e) { }
+        ui.btns.create.preferredSize.height = 38;
+        try { ui.btns.create.graphics.font = ScriptUI.newFont("Arial", "BOLD", 13); } catch (e) { }
         ui.btns.create.helpTip = "Create a new project from the selected template";
         ui.btns.create.onClick = function () { ui.createProject(); };
 
@@ -4860,26 +4860,28 @@
 
         // Save As
         ui.btns.saveAs = toolsRow.add("button", undefined, "Save As...");
-        ui.btns.saveAs.preferredSize.height = 30;
+        ui.btns.saveAs.preferredSize.height = 28;
         ui.btns.saveAs.helpTip = "Save current project as new copy";
+        try { ui.btns.saveAs.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 11); } catch (e) { }
 
         // Versioning Group
         ui.btns.quickDup = toolsRow.add("button", undefined, "R+");
-        ui.btns.quickDup.preferredSize.height = 30;
+        ui.btns.quickDup.preferredSize.height = 28;
         ui.btns.quickDup.preferredSize.width = 40;
         ui.btns.quickDup.helpTip = "Quick Save: Increment Revision";
         try { ui.btns.quickDup.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
         ui.btns.vPlus = toolsRow.add("button", undefined, "V+");
-        ui.btns.vPlus.preferredSize.height = 30;
+        ui.btns.vPlus.preferredSize.height = 28;
         ui.btns.vPlus.preferredSize.width = 40;
         ui.btns.vPlus.helpTip = "Version Up: Increment V# & Reset to R1";
         try { ui.btns.vPlus.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
         // Collect
         ui.btns.collect = toolsRow.add("button", undefined, "☁ Collect");
-        ui.btns.collect.preferredSize.height = 30;
+        ui.btns.collect.preferredSize.height = 28;
         ui.btns.collect.helpTip = "Local Collect + Upload to Google Drive";
+        try { ui.btns.collect.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 11); } catch (e) { }
         ui.btns.collect.onClick = function () {
             collectAndUpload(ui);
         };
@@ -4888,8 +4890,8 @@
     function createTemplateManagement(ui) {
         ui.labels.status = ui.w.add("statictext", undefined, "Ready");
         ui.labels.status.alignment = ["center", "top"];
-        try { ui.labels.status.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
-        setTextColor(ui.labels.status, [0.5, 0.5, 0.5]);
+        try { ui.labels.status.graphics.font = ScriptUI.newFont("Arial", "BOLD", 10); } catch (e) { }
+        setTextColor(ui.labels.status, [0.45, 0.75, 0.45]);
     }
 
     function createProjectStatus(ui) {
@@ -4902,32 +4904,34 @@
         ui.labels.projectName = grp.add("statictext", undefined, "No project open", { truncate: "middle" });
         ui.labels.projectName.preferredSize.height = 16;
         try { ui.labels.projectName.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
-        setTextColor(ui.labels.projectName, [0.6, 0.6, 0.6]);
+        setTextColor(ui.labels.projectName, [0.75, 0.75, 0.75]);
 
         ui.labels.projectInfo = grp.add("statictext", undefined, "Open or create a project to begin");
         ui.labels.projectInfo.preferredSize.height = 14;
         try { ui.labels.projectInfo.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 10); } catch (e) { }
-        setTextColor(ui.labels.projectInfo, [0.5, 0.5, 0.5]);
+        setTextColor(ui.labels.projectInfo, [0.55, 0.55, 0.55]);
     }
 
     function createRenderSection(ui) {
         var rPanel = ui.w.add("panel", undefined, "Output");
         rPanel.orientation = "column";
         rPanel.alignChildren = ["fill", "top"];
-        rPanel.spacing = 5;
-        rPanel.margins = 10;
+        rPanel.spacing = 6;
+        rPanel.margins = 12;
 
         ui.btns.render = rPanel.add("button", undefined, "ADD TO RENDER QUEUE");
-        ui.btns.render.preferredSize.height = 30;
+        ui.btns.render.preferredSize.height = 32;
         try { ui.btns.render.graphics.font = ScriptUI.newFont("Arial", "BOLD", 11); } catch (e) { }
 
         ui.btns.convert = rPanel.add("button", undefined, "OPTIMIZE SUNRISE");
-        ui.btns.convert.preferredSize.height = 25;
+        ui.btns.convert.preferredSize.height = 28;
         ui.btns.convert.helpTip = "Process Sunrise PNG sequence to WebM, MOV, and HTML (750x300 only)";
+        try { ui.btns.convert.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 11); } catch (e) { }
 
         ui.btns.convertDOOH = rPanel.add("button", undefined, "OPTIMIZE DOOH (7MB)");
-        ui.btns.convertDOOH.preferredSize.height = 25;
+        ui.btns.convertDOOH.preferredSize.height = 28;
         ui.btns.convertDOOH.helpTip = "Strict 7MB Limit for DOOH (1080p/1920p)";
+        try { ui.btns.convertDOOH.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 11); } catch (e) { }
         try { ui.btns.convertDOOH.graphics.foregroundColor = ui.btns.convertDOOH.graphics.newPen(ui.btns.convertDOOH.graphics.PenType.SOLID_COLOR, [0.9, 0.7, 0.2], 1); } catch (e) { }
     }
 
@@ -5017,7 +5021,7 @@
         }
         ui.w.orientation = "column";
         ui.w.alignChildren = ["fill", "top"];
-        ui.w.spacing = 10;
+        ui.w.spacing = 8;
         ui.w.margins = 15;
 
 
