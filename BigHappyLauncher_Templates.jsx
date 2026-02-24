@@ -1,4 +1,4 @@
-/*
+﻿/*
 ================================================================================
   BigHappyLauncher_Templates.jsx
   After Effects ScriptUI Panel - Production Ready v1.0
@@ -42,9 +42,9 @@
 
     // Show setup dialog if permissions not enabled
     if (!checkScriptPermissions()) {
-        var setupMsg = "╔═══════════════════════════════════════════════════╗\n";
-        setupMsg += "║       BIG HAPPY LAUNCHER - FIRST TIME SETUP        ║\n";
-        setupMsg += "╚═══════════════════════════════════════════════════╝\n\n";
+        var setupMsg = "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n";
+        setupMsg += "â•‘       BIG HAPPY LAUNCHER - FIRST TIME SETUP        â•‘\n";
+        setupMsg += "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n";
         setupMsg += "Script permissions are not enabled.\n\n";
         setupMsg += "To enable:\n";
         setupMsg += "1. Go to Edit > Preferences > Scripting & Expressions\n";
@@ -67,6 +67,7 @@
     }
 
     var SEP = getSeparator();
+    var IS_WIN = ($.os.indexOf("Windows") !== -1);
 
     function joinPath(a, b) {
         if (!a) return b;
@@ -308,7 +309,7 @@
         var error = ERROR_CODES[code];
 
         // Log the error
-        writeLog("ERROR: " + code + " - " + (error ? error.msg : "Unknown Error") + (details ? " | Details: " + details : ""), "ERROR");
+        logError("ERROR: " + code + " - " + (error ? error.msg : "Unknown Error") + (details ? " | Details: " + details : ""));
 
         if (!error) {
             alert("Unknown Error\n\nCode: " + code + (details ? "\n\nDetails: " + details : ""));
@@ -316,7 +317,7 @@
         }
 
         var message = "Error " + code + "\n";
-        message += "─────────────────────\n\n";
+        message += "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n\n";
         message += error.msg + "\n\n";
         if (details) {
             message += "Details: " + details + "\n\n";
@@ -336,7 +337,7 @@
 
         // Log the warning
         if (error) {
-            writeLog("WARNING: " + code + " - " + error.msg + (details ? " | Details: " + details : ""), "WARN");
+            logWarn("WARNING: " + code + " - " + error.msg + (details ? " | Details: " + details : ""));
         }
 
         if (!error) return;
@@ -512,7 +513,7 @@
             if (missingFiles.length > 0) {
                 var preview = missingFiles.slice(0, 5).join("\n");
                 if (missingFiles.length > 5) preview += "\n... and " + (missingFiles.length - 5) + " more.";
-                var proceed = confirm("⚠️ PRE-FLIGHT WARNING\n\n" + missingFiles.length + " file(s) are MISSING:\n\n" + preview + "\n\nContinue anyway?");
+                var proceed = confirm("âš ï¸ PRE-FLIGHT WARNING\n\n" + missingFiles.length + " file(s) are MISSING:\n\n" + preview + "\n\nContinue anyway?");
                 if (!proceed) {
                     w.close();
                     return;
@@ -551,7 +552,7 @@
             updateProgress("Generating Pack Report...", 6);
             generatePackReport(destFolder, missingFiles);
 
-            writeLog("Locally Collected: " + localAepPath, "INFO");
+            logInfo("Locally Collected: " + localAepPath);
 
             if (checkCancelled(currentFile)) return;
 
@@ -633,7 +634,7 @@
                         }
                     }
                 }
-                writeLog("Synced Shared Assets to: " + driveCommonAssets.fsName, "INFO");
+                logInfo("Synced Shared Assets to: " + driveCommonAssets.fsName);
             }
 
             if (checkCancelled(currentFile)) return;
@@ -653,10 +654,10 @@
             for (var attempt = 1; attempt <= maxRetries; attempt++) {
                 if (localFile.copy(driveAepPath)) {
                     uploadSuccess = true;
-                    writeLog("Uploaded Project: " + driveAepPath, "INFO");
+                    logInfo("Uploaded Project: " + driveAepPath);
                     break;
                 } else {
-                    writeLog("Upload attempt " + attempt + " failed. Retrying...", "WARN");
+                    logWarn("Upload attempt " + attempt + " failed. Retrying...");
                     $.sleep(1000); // Wait 1 second before retry
                 }
             }
@@ -692,20 +693,6 @@
     // =========================================================================
     // SECTION 1C: LOGGING
     // =========================================================================
-
-    /**
-     * Legacy logging shim — delegates to the centralized log() system so all
-     * entries go to the same per-day file in BigHappyLauncher_Logs/.
-     * @param {string} message - Message to log
-     * @param {string} [level] - INFO, WARN, ERROR, DEBUG (default: INFO)
-     */
-    function writeLog(message, level) {
-        var lvl = LOG_LEVELS.INFO;
-        if (level === "ERROR") lvl = LOG_LEVELS.ERROR;
-        else if (level === "WARN") lvl = LOG_LEVELS.WARN;
-        else if (level === "DEBUG") lvl = LOG_LEVELS.DEBUG;
-        log(lvl, message);
-    }
 
     // =========================================================================
     // SECTION 2: UTILITIES
@@ -880,12 +867,12 @@
             var mainComp = findMainComp();
             if (mainComp) {
                 app.project.reduceProject([mainComp]);
-                writeLog("Removed unused footage (reduceProject)", "INFO");
+                logInfo("Removed unused footage (reduceProject)");
                 return true;
             }
             return false;
         } catch (e) {
-            writeLog("removeUnusedFootage failed: " + e.toString(), "WARN");
+            logWarn("removeUnusedFootage failed: " + e.toString());
             return false;
         }
     }
@@ -901,11 +888,11 @@
             for (var i = 1; i <= items.length; i++) {
                 var item = items[i];
                 if (item instanceof FootageItem && item.file && !item.file.exists) {
-                    missing.push(item.name + " → " + item.file.fsName);
+                    missing.push(item.name + " â†’ " + item.file.fsName);
                 }
             }
         } catch (e) {
-            writeLog("preFlightCheck error: " + e.toString(), "WARN");
+            logWarn("preFlightCheck error: " + e.toString());
         }
         return missing;
     }
@@ -988,7 +975,7 @@
                 report += "(None - All files found!)\n";
             } else {
                 for (var i = 0; i < missingList.length; i++) {
-                    report += "• " + missingList[i] + "\n";
+                    report += "â€¢ " + missingList[i] + "\n";
                 }
             }
 
@@ -999,7 +986,7 @@
                 report += "(No text layers found)\n";
             } else {
                 for (var j = 0; j < fonts.length; j++) {
-                    report += "• " + fonts[j] + "\n";
+                    report += "â€¢ " + fonts[j] + "\n";
                 }
             }
 
@@ -1010,7 +997,7 @@
                 report += "(No effects applied)\n";
             } else {
                 for (var k = 0; k < effects.length; k++) {
-                    report += "• " + effects[k] + "\n";
+                    report += "â€¢ " + effects[k] + "\n";
                 }
             }
 
@@ -1024,10 +1011,10 @@
                 try { reportFile.close(); } catch (closeErr) { /* ensure no leak */ }
             }
 
-            writeLog("Generated Pack Report: " + reportPath, "INFO");
+            logInfo("Generated Pack Report: " + reportPath);
             return true;
         } catch (e) {
-            writeLog("generatePackReport error: " + e.toString(), "WARN");
+            logWarn("generatePackReport error: " + e.toString());
             return false;
         }
     }
@@ -1183,7 +1170,7 @@
             return count;
         } catch (e) {
             if (w) w.close();
-            writeLog("Collection Error: " + e.toString(), "ERROR");
+            logError("Collection Error: " + e.toString());
             return 0;
         }
     }
@@ -1345,7 +1332,7 @@
             }
             return String(obj);
         } catch (e) {
-            writeLog("jsonStringify failed: " + e.toString(), "ERROR");
+            logError("jsonStringify failed: " + e.toString());
             return "null";
         }
     }
@@ -1369,7 +1356,7 @@
             try {
                 return JSON.parse(str);
             } catch (e) {
-                writeLog("jsonParse (native) failed: " + str.substring(0, 50), "WARN");
+                logWarn("jsonParse (native) failed: " + str.substring(0, 50));
                 return defaultValue;
             }
         }
@@ -1396,7 +1383,7 @@
             var result = eval("(" + str + ")");
             return result;
         } catch (e) {
-            writeLog("jsonParse (eval) failed: " + str.substring(0, 50), "WARN");
+            logWarn("jsonParse (eval) failed: " + str.substring(0, 50));
             return defaultValue;
         }
     }
@@ -1797,7 +1784,7 @@
 
             return filePath;
         } catch (e) {
-            writeLog("Failed to generate template '" + template.name + "': " + e.toString(), "ERROR");
+            logError("Failed to generate template '" + template.name + "': " + e.toString());
             showError("BH-1003", e.toString());
             return null;
         }
@@ -1832,7 +1819,7 @@
 
             var newPath = generateTemplateFile(t, folderPath);
             if (newPath) {
-                writeLog("Generated template file: " + t.name, "INFO");
+                logInfo("Generated template file: " + t.name);
                 templates[i].path = newPath;
                 generated.push(t.name);
             }
@@ -1929,7 +1916,7 @@
                 revision: revision
             };
         } catch (e) {
-            writeLog("Create Project Structure Failed: " + e.toString(), "ERROR");
+            logError("Create Project Structure Failed: " + e.toString());
             // FIX P1-5: Cleanup on exception
             for (var k = createdFolders.length - 1; k >= 0; k--) {
                 try {
@@ -1960,7 +1947,7 @@
             var files = folder.getFiles(); // Get all files/folders
             if (!files || files.length === 0) return;
 
-            writeLog("Importing Global Assets from: " + globalAssetsPath, "INFO");
+            logInfo("Importing Global Assets from: " + globalAssetsPath);
 
             // Create or Find "00_Assets" bin
             var assetsBinName = "00_Global_Assets";
@@ -1992,13 +1979,13 @@
                             imported.parentFolder = assetsBin;
                         }
                     } catch (impErr) {
-                        writeLog("Failed to import asset: " + fileObj.name, "WARN");
+                        logWarn("Failed to import asset: " + fileObj.name);
                     }
                 }
             }
 
         } catch (e) {
-            writeLog("Global Asset Import Failed: " + e.toString(), "ERROR");
+            logError("Global Asset Import Failed: " + e.toString());
         }
     }
 
@@ -2224,7 +2211,7 @@
                     }
 
                 } catch (e) {
-                    writeLog("Failed to auto-set Sunrise PNG settings: " + e.toString(), "WARN");
+                    logWarn("Failed to auto-set Sunrise PNG settings: " + e.toString());
                 }
             } else if (templateType === "interscroller" || templateType.indexOf("dooh") !== -1) {
                 try {
@@ -2353,8 +2340,8 @@
         var editBtn = tmplBtnGrp.add("button", undefined, "Edit");
         var dupBtn = tmplBtnGrp.add("button", undefined, "Dup");
         var delBtn = tmplBtnGrp.add("button", undefined, "Del");
-        var moveUpBtn = tmplBtnGrp.add("button", undefined, "▲");
-        var moveDnBtn = tmplBtnGrp.add("button", undefined, "▼");
+        var moveUpBtn = tmplBtnGrp.add("button", undefined, "â–²");
+        var moveDnBtn = tmplBtnGrp.add("button", undefined, "â–¼");
 
         moveUpBtn.preferredSize = moveDnBtn.preferredSize = [30, 25];
 
@@ -2371,14 +2358,13 @@
         convTab.margins = 10;
         convTab.spacing = 10;
 
-        // FFmpeg Path — auto-detect via where/which if nothing is stored yet
+        // FFmpeg Path â€” auto-detect via where/which if nothing is stored yet
         var ffmpegGrp = convTab.add("group");
         ffmpegGrp.add("statictext", undefined, "FFmpeg Path:");
         var _storedFFmpeg = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         if (!_storedFFmpeg) {
             try {
-                var _isWin = ($.os.indexOf("Windows") !== -1);
-                var _whereOut = system.callSystem(_isWin ? "where ffmpeg" : "which ffmpeg");
+                var _whereOut = system.callSystem(IS_WIN ? "where ffmpeg" : "which ffmpeg");
                 if (_whereOut) {
                     var _firstLine = _whereOut.split("\n")[0].replace(/[\r\s]+$/g, "");
                     if (_firstLine && new File(_firstLine).exists) {
@@ -2759,7 +2745,7 @@
         };
 
         // =================================================================
-        // SHARED: bumpAndSave — Used by both R+ and V+ buttons
+        // SHARED: bumpAndSave â€” Used by both R+ and V+ buttons
         // mode = "revision" (R+) or "version" (V+)
         // =================================================================
         function bumpAndSave(ui, mode) {
@@ -2926,7 +2912,7 @@
             var rqItem = addToRenderQueue(mainComp, outputPath, type);
             if (!rqItem) return;
 
-            writeLog("Queued render: " + renderName + " [" + type + "] -> " + outputPath, "INFO");
+            logInfo("Queued render: " + renderName + " [" + type + "] -> " + outputPath);
 
             var useAME = (getSetting(CONFIG.SETTINGS.KEYS.AME_ENABLED, "false") === "true");
             var notified = false;
@@ -2995,8 +2981,7 @@
         // 0. Portable Mode (Check Relative to Script)
         var scriptFile = new File($.fileName);
         var scriptDir = scriptFile.parent;
-        var isWin = ($.os.indexOf("Windows") !== -1);
-        var exeName = isWin ? "ffmpeg.exe" : "ffmpeg";
+        var exeName = IS_WIN ? "ffmpeg.exe" : "ffmpeg";
 
         var portablePaths = [
             scriptDir.fsName + "/" + exeName,
@@ -3012,7 +2997,7 @@
             if (f.exists) {
                 // Verify it works
                 var cmdPortable = '"' + portablePaths[i] + '" -version'; // Use simple quotes, avoid escapePath for now to be safe
-                if (isWin) cmdPortable = 'cmd /c "' + cmdPortable + '"';
+                if (IS_WIN) cmdPortable = 'cmd /c "' + cmdPortable + '"';
 
                 var resP = system.callSystem(cmdPortable);
                 if (resP && resP.toString().indexOf("ffmpeg version") !== -1) {
@@ -3030,8 +3015,7 @@
         if (res && res.indexOf("ffmpeg version") !== -1) {
             // If we used system PATH (no stored path), resolve and save it now
             if (!path) {
-                var isWin2 = ($.os.indexOf("Windows") !== -1);
-                var whereRes = system.callSystem(isWin2 ? "where ffmpeg" : "which ffmpeg");
+                var whereRes = system.callSystem(IS_WIN ? "where ffmpeg" : "which ffmpeg");
                 if (whereRes) {
                     var resolved = whereRes.split("\n")[0].replace(/[\r\s]+$/g, "");
                     if (resolved && new File(resolved).exists) {
@@ -3135,7 +3119,7 @@
 
         // FFmpeg Status
         var ffmpegColor = ffmpegRes ? [0, 0.7, 0] : [0.9, 0, 0];
-        var ffmpegText = ffmpegRes ? "✓ FFmpeg Found" : "✗ FFmpeg NOT FOUND";
+        var ffmpegText = ffmpegRes ? "âœ“ FFmpeg Found" : "âœ— FFmpeg NOT FOUND";
         var ffmpegLbl = d.add("statictext", undefined, ffmpegText);
         setTextColor(ffmpegLbl, ffmpegColor);
 
@@ -3150,7 +3134,7 @@
 
         // Warning
         d.add("statictext", undefined, "");
-        var warnLbl = d.add("statictext", undefined, "⚠ After Effects will FREEZE during conversion.");
+        var warnLbl = d.add("statictext", undefined, "âš  After Effects will FREEZE during conversion.");
         setTextColor(warnLbl, [1, 0.6, 0]);
         var warnLbl2 = d.add("statictext", undefined, "   This is normal. Please wait for completion.");
         setTextColor(warnLbl2, [0.6, 0.6, 0.6]);
@@ -3262,6 +3246,19 @@
         return "ffprobe"; // System PATH fallback
     }
 
+    /** Get quoted FFmpeg executable path for shell commands */
+    function getFFmpegExe() {
+        var p = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        return p ? '"' + p + '"' : "ffmpeg";
+    }
+
+    /** Get quoted FFprobe executable path for shell commands */
+    function getFFprobeExe() {
+        var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
+        var p = getFFprobePath(ffmpegPath);
+        return p ? '"' + p + '"' : "ffprobe";
+    }
+
     /**
      * Get video duration using FFprobe
      * @param {File} videoFile - The video file to analyze
@@ -3272,7 +3269,6 @@
 
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var ffprobePath = getFFprobePath(ffmpegPath);
-        var isWin = ($.os.indexOf("Windows") !== -1);
 
         var inputPath = videoFile.fsName;
         var duration = 0;
@@ -3280,20 +3276,20 @@
         // Method 1: Try FFprobe (preferred)
         if (ffprobePath) {
             try {
-                var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
+                var exe = getFFprobeExe();
                 var cmd = exe + ' -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + inputPath + '"';
-                if (isWin) cmd = 'cmd /c ' + cmd;
+                if (IS_WIN) cmd = 'cmd /c ' + cmd;
 
                 var result = system.callSystem(cmd);
                 result = result.replace(/[\r\n\s]/g, "");
                 duration = parseFloat(result);
 
                 if (!isNaN(duration) && duration > 0) {
-                    writeLog("Auto-detected duration (ffprobe): " + duration.toFixed(2) + "s for " + videoFile.name, "INFO");
+                    logInfo("Auto-detected duration (ffprobe): " + duration.toFixed(2) + "s for " + videoFile.name);
                     return duration;
                 }
             } catch (e) {
-                writeLog("FFprobe failed: " + e.toString(), "DEBUG");
+                logDebug("FFprobe failed: " + e.toString());
             }
         }
 
@@ -3301,11 +3297,11 @@
         if (ffmpegPath) {
             try {
                 var exe2 = '"' + ffmpegPath + '"';
-                var tempOutput = Folder.temp.fsName + (isWin ? "\\ffmpeg_dur_" + new Date().getTime() + ".txt" : "/ffmpeg_dur_" + new Date().getTime() + ".txt");
+                var tempOutput = Folder.temp.fsName + (IS_WIN ? "\\ffmpeg_dur_" + new Date().getTime() + ".txt" : "/ffmpeg_dur_" + new Date().getTime() + ".txt");
 
                 // Redirect stderr to temp file (ExtendScript can't capture stderr directly)
                 var cmd2 = "";
-                if (isWin) {
+                if (IS_WIN) {
                     cmd2 = 'cmd /c ' + exe2 + ' -i "' + inputPath + '" 2> "' + tempOutput + '"';
                 } else {
                     cmd2 = exe2 + ' -i "' + inputPath + '" 2> "' + tempOutput + '"';
@@ -3332,16 +3328,16 @@
                     duration = hours * 3600 + mins * 60 + secs;
 
                     if (duration > 0) {
-                        writeLog("Auto-detected duration (ffmpeg): " + duration.toFixed(2) + "s for " + videoFile.name, "INFO");
+                        logInfo("Auto-detected duration (ffmpeg): " + duration.toFixed(2) + "s for " + videoFile.name);
                         return duration;
                     }
                 }
             } catch (e) {
-                writeLog("FFmpeg duration fallback failed: " + e.toString(), "WARN");
+                logWarn("FFmpeg duration fallback failed: " + e.toString());
             }
         }
 
-        writeLog("Could not auto-detect duration for: " + videoFile.name, "WARN");
+        logWarn("Could not auto-detect duration for: " + videoFile.name);
         return 0; // Return 0 to indicate failure
     }
 
@@ -3356,18 +3352,17 @@
 
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var ffprobePath = getFFprobePath(ffmpegPath);
-        var isWin = ($.os.indexOf("Windows") !== -1);
 
         var inputPath = videoFile.fsName;
 
         // Try FFprobe to get width, height, and duration
         try {
-            var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
-            var tempOutput = Folder.temp.fsName + (isWin ? "\\ffprobe_info_" + new Date().getTime() + ".txt" : "/ffprobe_info_" + new Date().getTime() + ".txt");
+            var exe = getFFprobeExe();
+            var tempOutput = Folder.temp.fsName + (IS_WIN ? "\\ffprobe_info_" + new Date().getTime() + ".txt" : "/ffprobe_info_" + new Date().getTime() + ".txt");
 
             // Get width, height from video stream, duration from format
             var cmd = exe + ' -v error -select_streams v:0 -show_entries stream=width,height -show_entries format=duration -of default=noprint_wrappers=1 "' + inputPath + '"';
-            if (isWin) {
+            if (IS_WIN) {
                 cmd = 'cmd /c ' + cmd + ' > "' + tempOutput + '" 2>&1';
             } else {
                 cmd = cmd + ' > "' + tempOutput + '" 2>&1';
@@ -3443,6 +3438,19 @@
     }
 
     /**
+     * Show MP4 file picker dialog and normalize result to array.
+     * @param {string} [prompt] - Dialog prompt text
+     * @returns {Array|null} Array of File objects, or null if cancelled/empty
+     */
+    function pickMP4Files(prompt) {
+        var selectedFiles = File.openDialog(prompt || "Select MP4(s) to Optimize", "MP4 Files:*.mp4", true);
+        if (!selectedFiles) return null;
+        if (!(selectedFiles instanceof Array)) selectedFiles = [selectedFiles];
+        if (selectedFiles.length === 0) return null;
+        return selectedFiles;
+    }
+
+    /**
      * Process DOOH MP4 Optimization (supports single and batch)
      * @param {object} ui - UI reference
      * @param {boolean} [forceFilePick] - If true, skip project folder detection and directly open file picker
@@ -3452,7 +3460,7 @@
         var targetFolder = null;
         var duration = 15; // Default duration
 
-        // Check FFmpeg — unified install flow (same path as runMP4Optimizer / runConversion)
+        // Check FFmpeg â€” unified install flow (same path as runMP4Optimizer / runConversion)
         if (!ensureFFmpegReady()) {
             alert("FFmpeg is required for DOOH optimization.\n\nPlease try again or set the path manually in Settings.");
             return;
@@ -3460,16 +3468,10 @@
 
         // Mode 1: Direct file pick (no project open)
         if (forceFilePick || !app.project || !app.project.file) {
-            var selectedFiles = File.openDialog("Select MP4(s) to Optimize", "MP4 Files:*.mp4", true); // true = multiselect
-            if (!selectedFiles) return;
+            var picked = pickMP4Files("Select MP4(s) to Optimize");
+            if (!picked) return;
 
-            // Normalize to array
-            if (!(selectedFiles instanceof Array)) {
-                selectedFiles = [selectedFiles];
-            }
-
-            mp4Files = selectedFiles;
-            if (mp4Files.length === 0) return;
+            mp4Files = picked;
             targetFolder = mp4Files[0].parent;
 
             // Auto-detect duration from first file using FFprobe
@@ -3489,7 +3491,7 @@
                 durationDialog.spacing = 10;
 
                 durationDialog.add("statictext", undefined, "Selected: " + mp4Files.length + " file(s)");
-                durationDialog.add("statictext", undefined, "⚠️ Could not auto-detect duration");
+                durationDialog.add("statictext", undefined, "âš ï¸ Could not auto-detect duration");
                 durationDialog.add("statictext", undefined, "Enter video duration (seconds):");
                 durationDialog.add("statictext", undefined, "(Used to calculate optimal bitrate)");
                 var durInput = durationDialog.add("edittext", undefined, "15");
@@ -3517,21 +3519,17 @@
 
             // If no folder selected, offer file picker
             if (!targetFolder || !targetFolder.exists) {
-                var selectedFiles = File.openDialog("Select MP4(s) to Optimize", "MP4 Files:*.mp4", true);
-                if (!selectedFiles) return;
-                if (!(selectedFiles instanceof Array)) selectedFiles = [selectedFiles];
-                mp4Files = selectedFiles;
-                if (mp4Files.length === 0) return;
+                var picked = pickMP4Files("Select MP4(s) to Optimize");
+                if (!picked) return;
+                mp4Files = picked;
                 targetFolder = mp4Files[0].parent;
             } else {
                 // Search for MP4s in folder
                 var folderMP4s = detectMP4s(targetFolder);
                 if (folderMP4s.length === 0) {
-                    var selectedFiles = File.openDialog("No MP4 found in folder. Select MP4(s):", "MP4 Files:*.mp4", true);
-                    if (!selectedFiles) return;
-                    if (!(selectedFiles instanceof Array)) selectedFiles = [selectedFiles];
-                    mp4Files = selectedFiles;
-                    if (mp4Files.length === 0) return;
+                    var picked = pickMP4Files("No MP4 found in folder. Select MP4(s):");
+                    if (!picked) return;
+                    mp4Files = picked;
                     targetFolder = mp4Files[0].parent;
                 } else if (folderMP4s.length === 1) {
                     mp4Files = folderMP4s;
@@ -3622,9 +3620,9 @@
         }
 
         // Confirmation with per-file details
-        var confirmMsg = "═══════════════════════════════════════\n";
+        var confirmMsg = "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
         confirmMsg += "         BATCH DOOH OPTIMIZATION\n";
-        confirmMsg += "═══════════════════════════════════════\n\n";
+        confirmMsg += "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n";
         confirmMsg += "Files: " + mp4Files.length + "\n";
         confirmMsg += "Total Size: " + totalSize.toFixed(1) + " MB\n";
         confirmMsg += "Target: < " + targetMB + " MB each\n";
@@ -3662,9 +3660,7 @@
      * Batch optimize multiple MP4 files
      */
     function runBatchOptimizer(mp4Files, outFolder, targetMB, duration, fileInfos) {
-        var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
-        var isWin = ($.os.indexOf("Windows") !== -1);
-        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
+        var exe = getFFmpegExe();
         var tempFolder = Folder.temp;
 
         // Results tracking
@@ -3699,7 +3695,7 @@
         try { setTextColor(timeLbl, [0.5, 0.5, 0.5]); } catch (e) { }
 
         // Cancel button
-        var cancelBtn = w.add("button", undefined, "✕  Cancel");
+        var cancelBtn = w.add("button", undefined, "âœ•  Cancel");
         cancelBtn.alignment = ["center", "bottom"];
         cancelBtn.onClick = function () {
             batchCancelled = true;
@@ -3716,18 +3712,11 @@
         var fileStartTimes = [];
         var fileDurations = [];
 
-        // Helper function to format time
-        function formatTime(ms) {
-            var totalSeconds = Math.round(ms / 1000);
-            var minutes = Math.floor(totalSeconds / 60);
-            var seconds = totalSeconds % 60;
-            return minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
-        }
 
         // Helper function to update time display
         function updateTimeDisplay(currentIndex) {
             var elapsed = new Date().getTime() - batchStartTime;
-            var elapsedStr = formatTime(elapsed);
+            var elapsedStr = formatDuration(elapsed / 1000);
 
             var remainingStr = "Calculating...";
             if (currentIndex > 0 && fileDurations.length > 0) {
@@ -3739,7 +3728,7 @@
                 var avgTimePerFile = totalDuration / fileDurations.length;
                 var remainingFiles = mp4Files.length - currentIndex;
                 var estimatedRemaining = avgTimePerFile * remainingFiles;
-                remainingStr = formatTime(estimatedRemaining);
+                remainingStr = formatDuration(estimatedRemaining / 1000);
             }
 
             timeLbl.text = "Elapsed: " + elapsedStr + " | Remaining: ~" + remainingStr;
@@ -3757,9 +3746,9 @@
             // Decode paths to fix URL-encoded characters (e.g., %20 -> space) on macOS
             var inputPath = decodePath(mp4File.fsName);
             var outName = decodePath(mp4File.name).replace(/\.mp4$/i, "") + "_Optimized.mp4";
-            var outMP4 = decodePath(outFolder.fsName) + (isWin ? "\\" : "/") + outName;
-            var logPath = decodePath(outFolder.fsName) + (isWin ? "\\batch_log_" + i + ".txt" : "/batch_log_" + i + ".txt");
-            var passLog = decodePath(tempFolder.fsName) + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() + "_" + i : "/ffmpeg2pass_" + new Date().getTime() + "_" + i);
+            var outMP4 = decodePath(outFolder.fsName) + (IS_WIN ? "\\" : "/") + outName;
+            var logPath = decodePath(outFolder.fsName) + (IS_WIN ? "\\batch_log_" + i + ".txt" : "/batch_log_" + i + ".txt");
+            var passLog = decodePath(tempFolder.fsName) + (IS_WIN ? "\\ffmpeg2pass_" + new Date().getTime() + "_" + i : "/ffmpeg2pass_" + new Date().getTime() + "_" + i);
 
             // Record file start time
             fileStartTimes[i] = new Date().getTime();
@@ -3780,7 +3769,7 @@
 
                 var existingSize = (existingFile.length / (1024 * 1024)).toFixed(2);
                 var overwriteChoice = confirm(
-                    "⚠️ File already exists:\n\n" +
+                    "âš ï¸ File already exists:\n\n" +
                     outName + "\n" +
                     "Size: " + existingSize + " MB\n\n" +
                     "Do you want to OVERWRITE this file?\n\n" +
@@ -3855,11 +3844,11 @@
             });
 
             // Create a temporary batch script for reliable synchronous execution
-            var batchScriptPath = tempFolder.fsName + (isWin ? "\\batch_opt_" + i + ".bat" : "/batch_opt_" + i + ".sh");
+            var batchScriptPath = tempFolder.fsName + (IS_WIN ? "\\batch_opt_" + i + ".bat" : "/batch_opt_" + i + ".sh");
             var batchScript = "";
 
-            // SINGLE-PASS CRF encoding (no pass 1 needed — faster + better quality)
-            if (isWin) {
+            // SINGLE-PASS CRF encoding (no pass 1 needed â€” faster + better quality)
+            if (IS_WIN) {
                 batchScript += "@echo off\r\n";
                 batchScript += "echo STARTED > \"" + logPath + "\"\r\n";
                 batchScript += "echo Encoding (CRF 18)... >> \"" + logPath + "\"\r\n";
@@ -3877,7 +3866,7 @@
             // Write the batch script
             var scriptFile = new File(batchScriptPath);
             scriptFile.open("w");
-            if (!isWin) scriptFile.lineFeed = "unix"; // Force Unix line endings on macOS
+            if (!IS_WIN) scriptFile.lineFeed = "unix"; // Force Unix line endings on macOS
             scriptFile.write(batchScript);
             scriptFile.close();
 
@@ -3887,7 +3876,7 @@
 
             // Execute the batch script synchronously
             try {
-                if (isWin) {
+                if (IS_WIN) {
                     system.callSystem('cmd /c "' + batchScriptPath + '"');
                 } else {
                     system.callSystem("chmod +x \"" + batchScriptPath + "\" && \"" + batchScriptPath + "\"");
@@ -4011,34 +4000,34 @@
         // Show batch results
         var totalSourceSize = 0;
         var totalOutputSize = 0;
-        var resultMsg = "═══════════════════════════════════════\n";
+        var resultMsg = "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
         resultMsg += "       BATCH OPTIMIZATION COMPLETE\n";
-        resultMsg += "═══════════════════════════════════════\n\n";
+        resultMsg += "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n";
         resultMsg += "Processed: " + mp4Files.length + " files\n";
         resultMsg += "Success: " + successCount + " | Failed: " + failCount + "\n\n";
-        resultMsg += "───────────────────────────────────────\n";
+        resultMsg += "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
 
         for (var r = 0; r < results.length; r++) {
             var res = results[r];
             if (res.success) {
                 totalSourceSize += res.sourceSize;
                 totalOutputSize += res.outputSize;
-                resultMsg += (res.meetsTarget ? "✓ " : "⚠ ") + res.name + "\n";
-                resultMsg += "   " + res.sourceSize.toFixed(1) + " → " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
+                resultMsg += (res.meetsTarget ? "âœ“ " : "âš  ") + res.name + "\n";
+                resultMsg += "   " + res.sourceSize.toFixed(1) + " â†’ " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
                 if (res.replaced) {
                     resultMsg += "   (Replaced original)\n";
                 } else {
                     resultMsg += "   (Original NOT replaced - check permissions)\n";
                 }
             } else {
-                resultMsg += "✗ " + res.name + " - " + res.reason + "\n";
+                resultMsg += "âœ— " + res.name + " - " + res.reason + "\n";
             }
         }
 
         if (successCount > 0) {
             var totalSavings = ((totalSourceSize - totalOutputSize) / totalSourceSize * 100);
-            resultMsg += "───────────────────────────────────────\n";
-            resultMsg += "Total: " + totalSourceSize.toFixed(1) + " → " + totalOutputSize.toFixed(1) + " MB\n";
+            resultMsg += "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+            resultMsg += "Total: " + totalSourceSize.toFixed(1) + " â†’ " + totalOutputSize.toFixed(1) + " MB\n";
             resultMsg += "Overall Savings: " + totalSavings.toFixed(1) + "%\n";
         }
 
@@ -4059,14 +4048,13 @@
             return true;
         }
 
-        // 2. Check if ffmpeg is in system PATH — resolve and save the actual path
-        var isWin = ($.os.indexOf("Windows") !== -1);
-        var checkCmd = isWin ? "where ffmpeg" : "which ffmpeg";
+        // 2. Check if ffmpeg is in system PATH â€” resolve and save the actual path
+        var checkCmd = IS_WIN ? "where ffmpeg" : "which ffmpeg";
         var sysPath = system.callSystem(checkCmd);
         if (sysPath && sysPath.indexOf("ffmpeg") !== -1) {
             // Save the resolved path so the Settings dialog can display it
             var resolvedPath = sysPath.replace(/[\r\n]+/g, "").replace(/^\s+|\s+$/g, "");
-            // "where" may return multiple lines — take only the first
+            // "where" may return multiple lines â€” take only the first
             var firstLine = resolvedPath.split("\n")[0].replace(/\r/g, "").replace(/^\s+|\s+$/g, "");
             if (firstLine && new File(firstLine).exists) {
                 setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, firstLine);
@@ -4075,7 +4063,7 @@
         }
 
         // 3. Not found - Ask user to download
-        if (isWin) {
+        if (IS_WIN) {
             var confirmDl = confirm("FFmpeg is missing. It is required for optimization.\n\nDownload and install it automatically (~130MB)?");
             if (confirmDl) {
                 return downloadFFmpeg();
@@ -4190,21 +4178,19 @@
 
         var startTime = new Date().getTime(); // Track elapsed time
 
-        var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
-        var isWin = ($.os.indexOf("Windows") !== -1);
-        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
+        var exe = getFFmpegExe();
 
         // Decode paths to fix URL-encoded characters (e.g., %20 -> space) on macOS
         var inputPath = decodePath(mp4File.fsName);
         var outFolderPath = decodePath(outFolder.fsName);
         var outName = decodePath(mp4File.name).replace(/\.mp4$/i, "") + "_Optimized.mp4";
-        var outMP4 = outFolderPath + (isWin ? "\\" : "/") + outName;
-        var scriptPath = outFolderPath + (isWin ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
-        var logPath = outFolderPath + (isWin ? "\\optimize_log.txt" : "/optimize_log.txt");
+        var outMP4 = outFolderPath + (IS_WIN ? "\\" : "/") + outName;
+        var scriptPath = outFolderPath + (IS_WIN ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
+        var logPath = outFolderPath + (IS_WIN ? "\\optimize_log.txt" : "/optimize_log.txt");
 
         // FIX: Use system temp folder for pass log
         var tempFolder = Folder.temp;
-        var passLog = decodePath(tempFolder.fsName) + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() : "/ffmpeg2pass_" + new Date().getTime());
+        var passLog = decodePath(tempFolder.fsName) + (IS_WIN ? "\\ffmpeg2pass_" + new Date().getTime() : "/ffmpeg2pass_" + new Date().getTime());
 
         // Calculate bitrate
         if (duration < 1) duration = 1;
@@ -4223,11 +4209,11 @@
         // This prevents the output from being LARGER than the input
         var sourceBitrate = Math.floor((sourceSize * 8192) / duration);
         if (totalBitrate >= sourceBitrate) {
-            // Target would produce a file as large or larger — use 90% of source bitrate instead
+            // Target would produce a file as large or larger â€” use 90% of source bitrate instead
             totalBitrate = Math.floor(sourceBitrate * 0.9);
             videoBitrate = Math.floor(totalBitrate - 128);
             if (videoBitrate < 500) videoBitrate = 500;
-            logWarn("Target bitrate exceeded source bitrate — capped to 90% of source", {
+            logWarn("Target bitrate exceeded source bitrate â€” capped to 90% of source", {
                 "Source Bitrate": sourceBitrate + " kbps",
                 "Capped Video Bitrate": videoBitrate + " kbps"
             });
@@ -4276,8 +4262,8 @@
             "Lookahead": lookahead
         });
 
-        // SINGLE-PASS CRF encoding (no pass 1 needed — faster + better quality)
-        if (isWin) {
+        // SINGLE-PASS CRF encoding (no pass 1 needed â€” faster + better quality)
+        if (IS_WIN) {
             script += "@echo off\r\n";
             script += "chcp 65001 >NUL\r\n";
             script += "echo STARTED > \"" + logPath + "\"\r\n";
@@ -4309,10 +4295,10 @@
         // Write Script
         var sFile = new File(scriptPath);
         sFile.open("w");
-        if (!isWin) sFile.lineFeed = "unix"; // Force Unix line endings on macOS
+        if (!IS_WIN) sFile.lineFeed = "unix"; // Force Unix line endings on macOS
         sFile.write(script);
         sFile.close();
-        if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
+        if (!IS_WIN) system.callSystem("chmod +x \"" + scriptPath + "\"");
 
         // Progress UI
         var singleCancelled = false;
@@ -4334,7 +4320,7 @@
         detailGrp.alignChildren = ["left", "top"];
         detailGrp.spacing = 4;
 
-        var sizeLbl = detailGrp.add("statictext", undefined, "Source: " + sourceSize.toFixed(1) + " MB → Target: " + targetMB + " MB");
+        var sizeLbl = detailGrp.add("statictext", undefined, "Source: " + sourceSize.toFixed(1) + " MB â†’ Target: " + targetMB + " MB");
         setTextColor(sizeLbl, [0.5, 0.5, 0.5]);
 
         var detailLbl = detailGrp.add("statictext", undefined, "Bitrate: " + videoBitrate + " kbps | Duration: " + duration.toFixed(1) + "s");
@@ -4344,7 +4330,7 @@
         setTextColor(elapsedLbl, [0.4, 0.6, 0.9]);
 
         // Cancel button
-        var cancelBtn = w.add("button", undefined, "✕  Cancel");
+        var cancelBtn = w.add("button", undefined, "âœ•  Cancel");
         cancelBtn.alignment = ["center", "bottom"];
         cancelBtn.onClick = function () {
             singleCancelled = true;
@@ -4357,7 +4343,7 @@
         w.update();
 
         // Execute script (non-blocking)
-        if (isWin) {
+        if (IS_WIN) {
             var batFile = new File(scriptPath);
             if (batFile.exists) batFile.execute();
         } else {
@@ -4470,8 +4456,8 @@
         var outputFile = new File(outMP4);
 
         // DEBUG: Log exact path being checked
-        writeLog("Checking for output file: " + outMP4, "DEBUG");
-        writeLog("File exists: " + outputFile.exists, "DEBUG");
+        logDebug("Checking for output file: " + outMP4);
+        logDebug("File exists: " + outputFile.exists);
 
         if (outputFile.exists) {
             var outputSize = outputFile.length / (1024 * 1024);
@@ -4502,24 +4488,24 @@
                 alert("Warning: Could not replace original file.\nError: " + e.toString());
             }
 
-            var resultMsg = "═══════════════════════════════════════\n";
+            var resultMsg = "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
             resultMsg += "        DOOH OPTIMIZATION COMPLETE\n";
-            resultMsg += "═══════════════════════════════════════\n\n";
+            resultMsg += "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n";
             resultMsg += "Source:   " + originalName + "\n";
             resultMsg += "          " + sourceSize.toFixed(2) + " MB\n\n";
             resultMsg += "Optimized: " + outputSize.toFixed(2) + " MB\n\n";
-            resultMsg += "───────────────────────────────────────\n";
-            resultMsg += "Target:   " + targetMB + " MB  " + (meetsTarget ? "✓ MET" : "✗ EXCEEDED") + "\n";
+            resultMsg += "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+            resultMsg += "Target:   " + targetMB + " MB  " + (meetsTarget ? "âœ“ MET" : "âœ— EXCEEDED") + "\n";
             resultMsg += "Savings:  " + savings.toFixed(1) + "% reduction\n";
             resultMsg += "Codec:    H.264 (libx264)\n";
             resultMsg += "Bitrate:  " + videoBitrate + " kbps\n";
             resultMsg += "Duration: " + duration.toFixed(1) + "s\n";
-            resultMsg += "───────────────────────────────────────\n\n";
+            resultMsg += "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n\n";
 
             if (replaced) {
-                resultMsg += "✓ Source file replaced with optimized version.\n";
+                resultMsg += "âœ“ Source file replaced with optimized version.\n";
             } else {
-                resultMsg += "⚠ Source file NOT replaced (permission error?)\n";
+                resultMsg += "âš  Source file NOT replaced (permission error?)\n";
                 resultMsg += "Output: " + outName + "\n";
             }
 
@@ -4586,12 +4572,12 @@
         toolBar.orientation = "row";
         toolBar.spacing = 2;
 
-        ui.btns.open = toolBar.add("button", undefined, "📂");
+        ui.btns.open = toolBar.add("button", undefined, "ðŸ“‚");
         ui.btns.open.preferredSize = [30, 25];
         ui.btns.open.helpTip = "Open Project";
         ui.btns.open.onClick = function () { ui.openProject(); };
 
-        ui.btns.importBtn = toolBar.add("button", undefined, "📥");
+        ui.btns.importBtn = toolBar.add("button", undefined, "ðŸ“¥");
         ui.btns.importBtn.preferredSize = [30, 25];
         ui.btns.importBtn.helpTip = "Import & Standardize";
         // onClick assigned in createActionButtons originally, needs to be here or reassigned?
@@ -4601,12 +4587,12 @@
         // Actually, we can just assign a proxy or keep the ref clearly.
         // We will assign the click handler in the main logic block (createActionButtons section usually does logic binding).
 
-        ui.btns.recent = toolBar.add("button", undefined, "🕒");
+        ui.btns.recent = toolBar.add("button", undefined, "ðŸ•’");
         ui.btns.recent.preferredSize = [30, 25];
         ui.btns.recent.helpTip = "Recent Files";
         ui.btns.recent.onClick = function () { ui.showRecentDialog(); };
 
-        ui.btns.settings = toolBar.add("button", undefined, "⚙");
+        ui.btns.settings = toolBar.add("button", undefined, "âš™");
         ui.btns.settings.preferredSize = [30, 25];
         ui.btns.settings.helpTip = "Settings";
     }
@@ -4648,7 +4634,7 @@
         dateGrp.spacing = 2; // Tighter spacing within group
         dateGrp.alignChildren = ["left", "center"];
 
-        var dateIcon = dateGrp.add("statictext", undefined, "📅");
+        var dateIcon = dateGrp.add("statictext", undefined, "ðŸ“…");
         dateIcon.preferredSize.width = 65; // MATCH LABEL WIDTH (65px) for vertical alignment
         dateIcon.helpTip = "Period (Quarter & Year)";
 
@@ -4680,7 +4666,7 @@
         verGrp.spacing = 2; // Tighter spacing within group
         verGrp.alignChildren = ["left", "center"];
 
-        var verIcon = verGrp.add("statictext", undefined, "🏷️");
+        var verIcon = verGrp.add("statictext", undefined, "ðŸ·ï¸");
         verIcon.preferredSize.width = 25; // This is inside the row, can stay small
         verIcon.helpTip = "Versioning (V = Version, R = Revision)";
 
@@ -4701,7 +4687,7 @@
         baseGrp.alignChildren = ["left", "center"];
         baseGrp.spacing = 2; // Match group spacing above
 
-        var baseIcon = baseGrp.add("statictext", undefined, "📂");
+        var baseIcon = baseGrp.add("statictext", undefined, "ðŸ“‚");
         baseIcon.preferredSize.width = 65; // MATCH LABEL WIDTH (65px)
         baseIcon.helpTip = "Base Work Folder";
 
@@ -4743,7 +4729,7 @@
         pRow.alignChildren = ["left", "center"];
         pRow.spacing = 5;
 
-        var pIcon = pRow.add("statictext", undefined, "📂");
+        var pIcon = pRow.add("statictext", undefined, "ðŸ“‚");
         pIcon.helpTip = "Target Folder: This is where the project will be saved";
 
         ui.labels.pathPreview = pRow.add("statictext", undefined, "Path: ...", { truncate: "middle" });
@@ -4757,7 +4743,7 @@
         fRow.alignChildren = ["left", "center"];
         fRow.spacing = 5;
 
-        var fIcon = fRow.add("statictext", undefined, "📄");
+        var fIcon = fRow.add("statictext", undefined, "ðŸ“„");
         fIcon.helpTip = "Target Filename: The standardized name for your project";
 
         ui.labels.filenamePreview = fRow.add("statictext", undefined, "Filename: ...");
@@ -4803,7 +4789,7 @@
         try { ui.btns.vPlus.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
         // Collect
-        ui.btns.collect = toolsRow.add("button", undefined, "☁ Collect");
+        ui.btns.collect = toolsRow.add("button", undefined, "â˜ Collect");
         ui.btns.collect.preferredSize.height = 30;
         ui.btns.collect.helpTip = "Local Collect + Upload to Google Drive";
         ui.btns.collect.onClick = function () {
@@ -4858,7 +4844,7 @@
     }
 
     function buildUI(thisObj) {
-        writeLog("Starting BigHappyLauncher UI...", "INFO");
+        logInfo("Starting BigHappyLauncher UI...");
 
         // Scope object to hold UI elements and data
         var tData = loadTemplates();
@@ -4936,7 +4922,7 @@
             // Log what we rejected to debug Ghost Window issue
             try {
                 var debugType = (thisObj) ? String(thisObj) : "null";
-                writeLog("Panel Detection Failed. thisObj: " + debugType, "WARN");
+                logWarn("Panel Detection Failed. thisObj: " + debugType);
             } catch (e) { }
 
             ui.w = new Window("palette", "Big Happy Launcher", undefined, { resizeable: true });
@@ -5049,17 +5035,17 @@
 
         // TRAFFIC LIGHT STATUS SYSTEM
         ui.setSuccess = function (text) {
-            ui.labels.status.text = "🟢 " + text;
+            ui.labels.status.text = "ðŸŸ¢ " + text;
             setTextColor(ui.labels.status, [0.4, 0.9, 0.4]); // Bright Green
         };
 
         ui.setWarn = function (text) {
-            ui.labels.status.text = "🟡 " + text;
+            ui.labels.status.text = "ðŸŸ¡ " + text;
             setTextColor(ui.labels.status, [1, 0.9, 0.2]); // Bright Yellow
         };
 
         ui.setError = function (text) {
-            ui.labels.status.text = "🔴 " + text;
+            ui.labels.status.text = "ðŸ”´ " + text;
             setTextColor(ui.labels.status, [1, 0.4, 0.4]); // Soft Red
         };
 
@@ -5071,7 +5057,7 @@
 
         ui.updateStatus = function () {
             if (!ui.templates.length || !ui.dropdowns.template.selection) {
-                ui.setStatus("⚪ No templates loaded", [0.6, 0.6, 0.6]);
+                ui.setStatus("âšª No templates loaded", [0.6, 0.6, 0.6]);
                 if (ui.btns.convert) {
                     ui.btns.convert.enabled = false;
                     ui.btns.convert.helpTip = "Sunrise projects only (750x300)";
@@ -5090,7 +5076,7 @@
                 ui.btns.convert.enabled = isSunrise;
                 ui.btns.convert.helpTip = isSunrise
                     ? "Process Sunrise PNG sequence to WebM, MOV, and HTML"
-                    : "Sunrise projects only (750x300) — switch template to enable";
+                    : "Sunrise projects only (750x300) â€” switch template to enable";
             }
         };
 
@@ -5215,7 +5201,7 @@
 
             // SMART VERSIONING
             var folderObj = aeFolder ? new Folder(aeFolder) : null;
-            // Fix 6: Safe parent check — guard against empty aeFolder or missing parents
+            // Fix 6: Safe parent check â€” guard against empty aeFolder or missing parents
             var sizeFolderObj = (folderObj && folderObj.parent && folderObj.parent.parent) ? folderObj.parent.parent : null;
 
             if (sizeFolderObj && sizeFolderObj.exists) {
@@ -5383,7 +5369,7 @@
                     }
                 }
             } catch (e) {
-                // writeLog("Auto-detect failed: " + e.toString(), "WARN");
+                // logWarn("Auto-detect failed: " + e.toString());
             }
             return false;
         }
@@ -5514,7 +5500,7 @@
             // Trigger UI update
             ui.checkRevision();
 
-            writeLog("Imported & Standardized: " + file.fsName + " -> " + savePath + " (Assets: " + collectedCount + ")", "INFO");
+            logInfo("Imported & Standardized: " + file.fsName + " -> " + savePath + " (Assets: " + collectedCount + ")");
 
             // Auto-open the folder
             var saveFile = new File(savePath);
@@ -5570,17 +5556,16 @@
         if (!ensureFFmpegReady()) return;
 
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
-        var isWin = ($.os.indexOf("Windows") !== -1);
 
         // Output paths
-        var scriptPath = outFolder.fsName + (isWin ? "\\convert.bat" : "/convert.sh");
-        var logPath = outFolder.fsName + (isWin ? "\\convert_log.txt" : "/convert_log.txt");
-        var outWebM = outFolder.fsName + (isWin ? "\\output.webm" : "/output.webm");
-        var outMov = outFolder.fsName + (isWin ? "\\output.mov" : "/output.mov");
-        var outHtml = outFolder.fsName + (isWin ? "\\index.html" : "/index.html");
-        var passLog = outFolder.fsName + (isWin ? "\\ffmpeg2pass" : "/ffmpeg2pass");
+        var scriptPath = outFolder.fsName + (IS_WIN ? "\\convert.bat" : "/convert.sh");
+        var logPath = outFolder.fsName + (IS_WIN ? "\\convert_log.txt" : "/convert_log.txt");
+        var outWebM = outFolder.fsName + (IS_WIN ? "\\output.webm" : "/output.webm");
+        var outMov = outFolder.fsName + (IS_WIN ? "\\output.mov" : "/output.mov");
+        var outHtml = outFolder.fsName + (IS_WIN ? "\\index.html" : "/index.html");
+        var passLog = outFolder.fsName + (IS_WIN ? "\\ffmpeg2pass" : "/ffmpeg2pass");
 
-        // Overwrite check — warn before clobbering existing output files
+        // Overwrite check â€” warn before clobbering existing output files
         if (new File(outWebM).exists || new File(outMov).exists || new File(outHtml).exists) {
             if (!confirm("Output files already exist in this folder (output.webm / output.mov / index.html).\n\nOverwrite?")) return;
         }
@@ -5689,17 +5674,17 @@
         if (logFile.exists) logFile.remove();
 
         var script = "";
-        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
-        var pattern = seq.fileObj.parent.fsName + (isWin ? "\\" : "/") + seq.prefix + (isWin ? "%%0" : "%0") + seq.padding + "d.png";
+        var exe = getFFmpegExe();
+        var pattern = seq.fileObj.parent.fsName + (IS_WIN ? "\\" : "/") + seq.prefix + (IS_WIN ? "%%0" : "%0") + seq.padding + "d.png";
         var fps = dims.fps;
 
         // Zip Path
-        var zipPath = outFolder.fsName + (isWin ? "\\" : "/") + seq.prefix.replace(/_+$/, "") + "_Optimized.zip";
+        var zipPath = outFolder.fsName + (IS_WIN ? "\\" : "/") + seq.prefix.replace(/_+$/, "") + "_Optimized.zip";
 
         // =================================================================================
         // 2. CONVERSION COMMANDS
         // =================================================================================
-        if (isWin) {
+        if (IS_WIN) {
             script += "@echo off\r\n";
             script += "chcp 65001 >NUL\r\n";
             script += "echo Starting conversion... > \"" + logPath + "\"\r\n";
@@ -5790,14 +5775,14 @@
 
         // Write Script File
         scriptFile.encoding = "UTF-8";
-        scriptFile.lineFeed = isWin ? "Windows" : "Unix";
+        scriptFile.lineFeed = IS_WIN ? "Windows" : "Unix";
         scriptFile.open("w");
         scriptFile.write(script);
         scriptFile.close();
 
         // Execute
-        if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
-        writeLog("Running conversion script: " + scriptPath, "INFO");
+        if (!IS_WIN) system.callSystem("chmod +x \"" + scriptPath + "\"");
+        logInfo("Running conversion script: " + scriptPath);
 
         // Show "Busy" UI
         var w = new Window("palette", "Processing...", undefined, { closeButton: false });
@@ -5820,8 +5805,8 @@
         w.update(); // Force paint
 
         // Execute (Blocking)
-        var execCmd = isWin ? "cmd /c \"" + scriptPath + "\"" : "bash \"" + scriptPath + "\"";
-        if (!isWin) {
+        var execCmd = IS_WIN ? "cmd /c \"" + scriptPath + "\"" : "bash \"" + scriptPath + "\"";
+        if (!IS_WIN) {
             // Safe execution for Mac
             var safePath = scriptPath.replace(/"/g, '\\"');
             execCmd = 'osascript -e \'do shell script "/bin/bash \\"' + safePath + '\\""\'';
@@ -5850,8 +5835,8 @@
             if (logContent.indexOf("ZIP: SUCCESS") !== -1) successCount++;
         }
 
-        var resultMsg = "═══════════════════════════════\n   POST-RENDER COMPLETE\n═══════════════════════════════\n\n";
-        resultMsg += (successCount > 0 ? "✓ " + successCount + " successful\n" : "") + (failedItems.length > 0 ? "✗ Failed: " + failedItems.join(", ") : "");
+        var resultMsg = "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n   POST-RENDER COMPLETE\nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n";
+        resultMsg += (successCount > 0 ? "âœ“ " + successCount + " successful\n" : "") + (failedItems.length > 0 ? "âœ— Failed: " + failedItems.join(", ") : "");
 
         // Detailed file listing
         resultMsg += "\nOutput Files:\n";
@@ -5860,10 +5845,10 @@
         var fHtml = new File(outHtml);
         var fZip = new File(zipPath);
 
-        if (fWebM.exists) resultMsg += " • output.webm (" + Math.round(fWebM.length / 1024) + " KB)\n";
-        if (fMov.exists) resultMsg += " • output.mov (" + Math.round(fMov.length / 1024) + " KB)\n";
-        if (fHtml.exists) resultMsg += " • index.html (" + Math.round(fHtml.length / 1024) + " KB)\n";
-        if (fZip.exists) resultMsg += " • " + new File(zipPath).name + " (" + Math.round(fZip.length / 1024) + " KB)\n";
+        if (fWebM.exists) resultMsg += " â€¢ output.webm (" + Math.round(fWebM.length / 1024) + " KB)\n";
+        if (fMov.exists) resultMsg += " â€¢ output.mov (" + Math.round(fMov.length / 1024) + " KB)\n";
+        if (fHtml.exists) resultMsg += " â€¢ index.html (" + Math.round(fHtml.length / 1024) + " KB)\n";
+        if (fZip.exists) resultMsg += " â€¢ " + new File(zipPath).name + " (" + Math.round(fZip.length / 1024) + " KB)\n";
 
         resultMsg += "\nLocation: " + outFolder.fsName;
         resultMsg += "\nTime: " + formatDuration((new Date().getTime() - convertStartTime) / 1000);
@@ -5911,3 +5896,5 @@ B) For Script (run once):
 
 ================================================================================
 */
+
+
