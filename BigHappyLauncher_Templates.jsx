@@ -3905,14 +3905,10 @@
                 presetFlag = "medium";
             }
 
-            // CRF-CONSTRAINED MODE: Visually lossless with size cap
-            // CRF 18 = visually lossless for animation, maxrate prevents bloat
-            // Scale bitrate cap by resolution: SD=0.6x, HD=1.0x, 2K=1.4x, 4K=2.0x
-            var filePixels = (fileInfos && fileInfos[i]) ? fileInfos[i].pixelCount : 0;
-            var resScale = getResolutionScale(filePixels);
-            var maxBitrate = Math.floor(videoBitrate * 1.5 * resScale);
-            var bufSize = Math.floor(videoBitrate * 3 * resScale);
-            var bitrateFlags = "-crf 18 -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
+            // 2-PASS VBR MODE: Guarantees target size while maximizing quality
+            var maxBitrate = Math.floor(videoBitrate * 1.5);
+            var bufSize = Math.floor(videoBitrate * 3);
+            var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
             var lookahead = dur <= 30 ? 60 : (dur <= 120 ? 40 : 30);
             var refs = sourceSize > 50 ? 3 : 5;
             var subme = sourceSize > 50 ? 7 : 10;
@@ -3932,19 +3928,30 @@
             var batchScriptPath = tempFolder.fsName + (isWin ? "\\batch_opt_" + i + ".bat" : "/batch_opt_" + i + ".sh");
             var batchScript = "";
 
-            // SINGLE-PASS CRF encoding (no pass 1 needed — faster + better quality)
+            // 2-PASS VBR encoding
             if (isWin) {
                 batchScript += "@echo off\r\n";
                 batchScript += "echo STARTED > \"" + logPath + "\"\r\n";
-                batchScript += "echo Encoding (CRF 18)... >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
-                batchScript += "if %errorlevel% neq 0 (echo ENCODE_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
+                batchScript += "echo PASS1_START >> \"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f mp4 NUL 2>>\"" + logPath + "\"\r\n";
+                batchScript += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
+                batchScript += "echo PASS1_DONE >> \"" + logPath + "\"\r\n";
+                batchScript += "echo PASS2_START >> \"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+                batchScript += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
+                batchScript += "echo PASS2_DONE >> \"" + logPath + "\"\r\n";
                 batchScript += "echo COMPLETE >> \"" + logPath + "\"\r\n";
             } else {
                 batchScript += "#!/bin/bash\n";
                 batchScript += "echo 'STARTED' > \"" + logPath + "\"\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
-                batchScript += "[ $? -ne 0 ] && echo 'ENCODE_FAILED' >> \"" + logPath + "\" && exit 1\n";
+                batchScript += "echo 'PASS1_START' >> \"" + logPath + "\"\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f mp4 /dev/null 2>>\"" + logPath + "\"\n";
+                batchScript += "[ $? -ne 0 ] && echo 'PASS1_FAILED' >> \"" + logPath + "\" && exit 1\n";
+                batchScript += "echo 'PASS1_DONE' >> \"" + logPath + "\"\n";
+                batchScript += "echo 'PASS2_START' >> \"" + logPath + "\"\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+                batchScript += "[ $? -ne 0 ] && echo 'PASS2_FAILED' >> \"" + logPath + "\" && exit 1\n";
+                batchScript += "echo 'PASS2_DONE' >> \"" + logPath + "\"\n";
                 batchScript += "echo 'COMPLETE' >> \"" + logPath + "\"\n";
             }
 
@@ -4318,13 +4325,10 @@
             presetFlag = "medium";   // Large files: reasonable encode time
         }
 
-        // CRF-CONSTRAINED MODE: Visually lossless with size cap
-        // CRF 18 = visually lossless for animation, maxrate prevents bloat
-        // Scale bitrate cap by resolution: SD=0.6x, HD=1.0x, 2K=1.4x, 4K=2.0x
-        var resScale = getResolutionScale(pixelCount || 0);
-        var maxBitrate = Math.floor(videoBitrate * 1.5 * resScale);
-        var bufSize = Math.floor(videoBitrate * 3 * resScale);
-        var bitrateFlags = "-crf 18 -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
+        // 2-PASS VBR MODE: Guarantees target size while maximizing quality
+        var maxBitrate = Math.floor(videoBitrate * 1.5);
+        var bufSize = Math.floor(videoBitrate * 3);
+        var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
 
         // Scale lookahead, refs, and subme for longer/larger videos
         var lookahead = duration <= 30 ? 60 : (duration <= 120 ? 40 : 30);
@@ -4350,20 +4354,25 @@
             "Lookahead": lookahead
         });
 
-        // SINGLE-PASS CRF encoding (no pass 1 needed — faster + better quality)
+        // 2-PASS VBR encoding (Best quality for strict size targets)
         if (isWin) {
             script += "@echo off\r\n";
             script += "chcp 65001 >NUL\r\n";
             script += "echo STARTED > \"" + logPath + "\"\r\n";
             script += "echo Source: " + mp4File.name + " >> \"" + logPath + "\"\r\n";
             script += "echo Target: " + targetMB + "MB >> \"" + logPath + "\"\r\n";
-            script += "echo Mode: CRF 18 (visually lossless) >> \"" + logPath + "\"\r\n";
+            script += "echo Mode: 2-Pass VBR (High Quality) >> \"" + logPath + "\"\r\n";
             script += "echo PASS1_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f mp4 NUL 2>>\"" + logPath + "\"\r\n";
             script += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "echo PASS1_DONE >> \"" + logPath + "\"\r\n";
+            script += "echo PASS2_START >> \"" + logPath + "\"\r\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+            script += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "echo PASS2_DONE >> \"" + logPath + "\"\r\n";
             script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT_MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
+            script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
+            script += "del \"" + passLog + "-0.log.mbtree\" 2>nul\r\n";
             script += "exit /b 0\r\n";
             script += ":ERROR\r\n";
             script += "echo FAILED >> \"" + logPath + "\"\r\n";
@@ -4373,11 +4382,16 @@
             script += "echo 'STARTED' > \"" + logPath + "\"\n";
             script += "echo 'Source: " + outName.replace(/_Optimized\.mp4$/i, ".mp4") + "' >> \"" + logPath + "\"\n";
             script += "echo 'PASS1_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f mp4 /dev/null 2>>\"" + logPath + "\"\n";
             script += "[ $? -eq 0 ] || { echo 'PASS1_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "echo 'PASS1_DONE' >> \"" + logPath + "\"\n";
+            script += "echo 'PASS2_START' >> \"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+            script += "[ $? -eq 0 ] || { echo 'PASS2_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "echo 'PASS2_DONE' >> \"" + logPath + "\"\n";
             script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT_MISSING' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
+            script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
+            script += "rm -f \"" + passLog + "-0.log.mbtree\" 2>/dev/null\n";
         }
 
         // Write Script
