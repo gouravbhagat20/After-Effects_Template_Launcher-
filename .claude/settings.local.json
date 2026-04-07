@@ -5,7 +5,8 @@
       "Bash(claude plugin --help:*)",
       "Bash(claude plugin install:*)",
       "Bash(awk:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git -C \"c:\\\\Work\\\\Animate CC\\\\Scripts_Tools\\\\After-Effects_Template_Launcher-\" log --oneline -20)"
     ]
   }
 }

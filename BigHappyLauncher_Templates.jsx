@@ -1,4 +1,4 @@
-﻿/*
+/*
 ================================================================================
   BigHappyLauncher_Templates.jsx
   After Effects ScriptUI Panel - Production Ready v1.0
@@ -227,10 +227,10 @@
         },
         DEFAULTS: {
             TEMPLATES: [
-                { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "" },
-                { name: "InterScroller", width: 880, height: 1912, fps: 24, duration: 15, path: "" },
-                { name: "DOOH Horizontal", width: 1920, height: 1080, fps: 29.97, duration: 15, path: "" },
-                { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "" }
+                { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\Sunrise_750x300.aep" },
+                { name: "InterScroller", width: 880, height: 1912, fps: 24, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\InterScroller_880x1912_.aep" },
+                { name: "DOOH Horizontal", width: 1920, height: 1080, fps: 29.97, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\Dooh-Horizontal_1920x1080.aep" },
+                { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\Dooh-Vertical_1080X1920.aep" }
             ]
         },
         LIMITS: {
@@ -559,12 +559,12 @@
             updateProgress("Connecting to Drive...", 7);
 
             var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
-            var quarter = "Q1";
+            var quarter = "Q" + (getCurrentQuarter() + 1);
             var projectFolderName = "Brand_Project"; // Fallback
 
             // Try to derive better structure from parsed data or current UI
             if (parsed) {
-                quarter = parsed.quarter || (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q1");
+                quarter = parsed.quarter || (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q" + (getCurrentQuarter() + 1));
 
                 var bName = parsed.brand;
                 var cName = parsed.campaign;
