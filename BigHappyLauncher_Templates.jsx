@@ -559,13 +559,13 @@
             updateProgress("Connecting to Drive...", 7);
 
             var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
-            var quarter = "Q" + (getCurrentQuarter() + 1);
+            // Always use current quarter from UI dropdown (defaults to current date quarter)
+            // Never use parsed.quarter from filename — it reflects creation time, not filing time
+            var quarter = ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : ("Q" + (getCurrentQuarter() + 1));
             var projectFolderName = "Brand_Project"; // Fallback
 
             // Try to derive better structure from parsed data or current UI
             if (parsed) {
-                quarter = parsed.quarter || (ui.dropdowns.quarter.selection ? ui.dropdowns.quarter.selection.text : "Q" + (getCurrentQuarter() + 1));
-
                 var bName = parsed.brand;
                 var cName = parsed.campaign;
                 if (parsed.isDOOH && bName === "DOOH") {
