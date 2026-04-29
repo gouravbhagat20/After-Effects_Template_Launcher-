@@ -5815,26 +5815,25 @@
 
             if (options.mov) {
                 script += "echo [2/3] Converting to MOV (High Quality)... >> \"" + logPath + "\"\r\n";
-                // CRF 24 = Better Quality
-                var cmdHevc = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx265 -pix_fmt yuva444p10le -x265-params alpha=1 -crf 24 -preset slow -tag:v hvc1 \"" + outMov + "\" 2>> \"" + logPath + "\"";
-                var cmdH264 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx264 -pix_fmt yuv420p -crf 18 -preset slow \"" + outMov + "\" 2>> \"" + logPath + "\"";
-                script += "(" + cmdHevc + ") || (echo HEVC_FAILED_TRYING_H264 >> \"" + logPath + "\" && " + cmdH264 + ")\r\n";
-                script += "if exist \"" + outMov + "\" (echo MOV: SUCCESS >> \"" + logPath + "\") else (echo MOV: FAILED >> \"" + logPath + "\")\r\n";
+                // Windows MOV fallback chain: HEVC (alpha) -> ProRes 4444 (alpha) -> H.264 (no alpha)
+                var cmdHevc = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx265 -pix_fmt yuva444p10le -x265-params alpha=1 -crf 24 -preset slow -tag:v hvc1 \"" + outMov + "\" 2>>\"" + logPath + "\"";
+                var cmdProRes = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le -vendor apl0 \"" + outMov + "\" 2>>\"" + logPath + "\"";
+                var cmdH264 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx264 -pix_fmt yuv420p -crf 18 -preset slow \"" + outMov + "\" 2>>\"" + logPath + "\"";
+                script += "(" + cmdHevc + ") || (echo HEVC_FAILED_TRYING_PRORES >> \"" + logPath + "\" && " + cmdProRes + ") || (echo PRORES_FAILED_TRYING_H264 >> \"" + logPath + "\" && " + cmdH264 + ")\r\n";
+                script += "if not exist \"" + outMov + "\" (echo MOV: FAILED >> \"" + logPath + "\") else (for %%F in (\"" + outMov + "\") do if %%~zF GTR 0 (echo MOV: SUCCESS >> \"" + logPath + "\") else (echo MOV: FAILED >> \"" + logPath + "\"))\r\n";
             }
 
             // HTML is already written, no embedding step needed
 
             if (options.zip) {
                 script += "echo [4/4] Creating ZIP... >> \"" + logPath + "\"\r\n";
-                var files = [];
-                if (options.html) files.push("'" + outHtml + "'");
-                if (options.webm) files.push("'" + outWebM + "'");
-                if (options.mov) files.push("'" + outMov + "'");
-
-                if (files.length > 0) {
-                    script += "powershell -Command \"Compress-Archive -Path " + files.join(",") + " -DestinationPath '" + zipPath + "' -Force\" 2>> \"" + logPath + "\"\r\n";
-                    script += "if exist \"" + zipPath + "\" (echo ZIP: SUCCESS >> \"" + logPath + "\") else (echo ZIP: FAILED >> \"" + logPath + "\")\r\n";
-                }
+                var psCmd = "$f=@();";
+                if (options.html) psCmd += "if(Test-Path '" + outHtml + "'){$f+='" + outHtml + "'};";
+                if (options.webm) psCmd += "if((Get-Item '" + outWebM + "' -EA SilentlyContinue).Length -gt 0){$f+='" + outWebM + "'};";
+                if (options.mov) psCmd += "if((Get-Item '" + outMov + "' -EA SilentlyContinue).Length -gt 0){$f+='" + outMov + "'};";
+                psCmd += "if($f.Count -gt 0){Compress-Archive -Path $f -DestinationPath '" + zipPath + "' -Force}";
+                script += "powershell -Command \"" + psCmd + "\" 2>> \"" + logPath + "\"\r\n";
+                script += "if exist \"" + zipPath + "\" (echo ZIP: SUCCESS >> \"" + logPath + "\") else (echo ZIP: FAILED >> \"" + logPath + "\")\r\n";
             }
             script += "echo CONVERSION_COMPLETE >> \"" + logPath + "\"\r\n";
 
@@ -5855,27 +5854,35 @@
                     script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
                 }
 
-                script += "[ -f \"" + outWebM + "\" ] && echo 'WebM: SUCCESS' >> \"" + logPath + "\" || echo 'WebM: FAILED' >> \"" + logPath + "\"\n";
+                script += "[ -s \"" + outWebM + "\" ] && echo 'WebM: SUCCESS' >> \"" + logPath + "\" || echo 'WebM: FAILED' >> \"" + logPath + "\"\n";
                 script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
             }
 
             if (options.mov) {
-                script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx265 -pix_fmt yuva444p10le -x265-params alpha=1 -crf 24 -preset slow -tag:v hvc1 \"" + outMov + "\" 2>> \"" + logPath + "\"\n";
-                script += "[ -f \"" + outMov + "\" ] && echo 'MOV: SUCCESS' >> \"" + logPath + "\" || echo 'MOV: FAILED' >> \"" + logPath + "\"\n";
+                // macOS MOV fallback chain: ProRes 4444 (alpha, widely supported) -> QTRLE (alpha, universal)
+                script += "echo '[2/3] Converting to MOV (ProRes 4444 + Alpha)...' >> \"" + logPath + "\"\n";
+                var macProRes = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le -vendor apl0 \"" + outMov + "\"";
+                var macQtrle = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v qtrle -pix_fmt argb \"" + outMov + "\"";
+                script += macProRes + " 2>>\"" + logPath + "\"\n";
+                script += "if [ ! -s \"" + outMov + "\" ]; then\n";
+                script += "  echo 'PRORES_FAILED_TRYING_QTRLE' >> \"" + logPath + "\"\n";
+                script += "  " + macQtrle + " 2>>\"" + logPath + "\"\n";
+                script += "fi\n";
+                script += "[ -s \"" + outMov + "\" ] && echo 'MOV: SUCCESS' >> \"" + logPath + "\" || echo 'MOV: FAILED' >> \"" + logPath + "\"\n";
             }
 
             // HTML is already written
 
             if (options.zip) {
                 script += "echo '[4/4] Zip...' >> \"" + logPath + "\"\n";
-                var zipFiles = [];
-                if (options.html) zipFiles.push("\"" + outHtml + "\"");
-                if (options.webm) zipFiles.push("\"" + outWebM + "\"");
-                if (options.mov) zipFiles.push("\"" + outMov + "\"");
-                if (zipFiles.length > 0) {
-                    script += "zip -j \"" + zipPath + "\" " + zipFiles.join(" ") + " 2>> \"" + logPath + "\"\n";
-                    script += "[ -f \"" + zipPath + "\" ] && echo 'ZIP: SUCCESS' >> \"" + logPath + "\" || echo 'ZIP: FAILED' >> \"" + logPath + "\"\n";
-                }
+                script += "ZIPFILES=()\n";
+                if (options.html) script += "[ -f \"" + outHtml + "\" ] && ZIPFILES+=(\"" + outHtml + "\")\n";
+                if (options.webm) script += "[ -s \"" + outWebM + "\" ] && ZIPFILES+=(\"" + outWebM + "\")\n";
+                if (options.mov) script += "[ -s \"" + outMov + "\" ] && ZIPFILES+=(\"" + outMov + "\")\n";
+                script += "if [ ${#ZIPFILES[@]} -gt 0 ]; then\n";
+                script += "  zip -j \"" + zipPath + "\" \"${ZIPFILES[@]}\" 2>> \"" + logPath + "\"\n";
+                script += "fi\n";
+                script += "[ -s \"" + zipPath + "\" ] && echo 'ZIP: SUCCESS' >> \"" + logPath + "\" || echo 'ZIP: FAILED' >> \"" + logPath + "\"\n";
             }
             script += "echo 'CONVERSION_COMPLETE' >> \"" + logPath + "\"\n";
         }
@@ -5942,21 +5949,22 @@
             if (logContent.indexOf("ZIP: SUCCESS") !== -1) successCount++;
         }
 
-        var resultMsg = "═══════════════════════════════\n   POST-RENDER COMPLETE\n═══════════════════════════════\n\n";
-        resultMsg += (successCount > 0 ? "✓ " + successCount + " successful\n" : "") + (failedItems.length > 0 ? "✗ Failed: " + failedItems.join(", ") : "");
-
-        // Detailed file listing
-        resultMsg += "\nOutput Files:\n";
         var fWebM = new File(outWebM);
         var fMov = new File(outMov);
         var fHtml = new File(outHtml);
         var fZip = new File(zipPath);
 
-        if (fWebM.exists) resultMsg += " • output.webm (" + Math.round(fWebM.length / 1024) + " KB)\n";
-        if (fMov.exists) resultMsg += " • output.mov (" + Math.round(fMov.length / 1024) + " KB)\n";
-        if (fHtml.exists) resultMsg += " • index.html (" + Math.round(fHtml.length / 1024) + " KB)\n";
-        if (fZip.exists) resultMsg += " • " + new File(zipPath).name + " (" + Math.round(fZip.length / 1024) + " KB)\n";
+        var fileListMsg = "\nOutput Files:\n";
+        if (fWebM.exists && fWebM.length > 0) fileListMsg += " • output.webm (" + Math.round(fWebM.length / 1024) + " KB)\n";
+        else if (options.webm) { fileListMsg += " ✗ output.webm FAILED (0 bytes)\n"; failedItems.push("WebM"); }
+        if (fMov.exists && fMov.length > 0) fileListMsg += " • output.mov (" + Math.round(fMov.length / 1024) + " KB)\n";
+        else if (options.mov) { fileListMsg += " ✗ output.mov FAILED (0 bytes)\n"; failedItems.push("MOV"); if (fMov.exists) try { fMov.remove(); } catch (e) { } }
+        if (fHtml.exists) fileListMsg += " • index.html (" + Math.round(fHtml.length / 1024) + " KB)\n";
+        if (fZip.exists && fZip.length > 0) fileListMsg += " • " + new File(zipPath).name + " (" + Math.round(fZip.length / 1024) + " KB)\n";
 
+        var resultMsg = "═══════════════════════════════\n   POST-RENDER COMPLETE\n═══════════════════════════════\n\n";
+        resultMsg += (successCount > 0 ? "✓ " + successCount + " successful\n" : "") + (failedItems.length > 0 ? "✗ Failed: " + failedItems.join(", ") + "\n" : "");
+        resultMsg += fileListMsg;
         resultMsg += "\nLocation: " + outFolder.fsName;
         resultMsg += "\nTime: " + formatDuration((new Date().getTime() - convertStartTime) / 1000);
 
