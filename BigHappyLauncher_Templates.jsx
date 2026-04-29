@@ -4125,8 +4125,22 @@
 
         resultMsg += "\nLocation: " + outFolder.fsName;
 
-        alert(resultMsg);
-        outFolder.execute();
+        var dlgBatch = new Window("dialog", "Batch Optimization Complete");
+        dlgBatch.orientation = "column";
+        dlgBatch.alignChildren = ["fill", "top"];
+        dlgBatch.margins = 20;
+        dlgBatch.spacing = 10;
+        var msgBatch = dlgBatch.add("statictext", undefined, resultMsg, { multiline: true });
+        msgBatch.preferredSize.width = 420;
+        var btnsBatch = dlgBatch.add("group");
+        btnsBatch.alignment = "center";
+        btnsBatch.spacing = 10;
+        var openBatchBtn = btnsBatch.add("button", undefined, "Open Folder");
+        var okBatchBtn = btnsBatch.add("button", undefined, "OK");
+        okBatchBtn.active = true;
+        openBatchBtn.onClick = function () { outFolder.execute(); dlgBatch.close(); };
+        okBatchBtn.onClick = function () { dlgBatch.close(); };
+        dlgBatch.show();
     }
 
     /**
@@ -4613,10 +4627,22 @@
 
             resultMsg += "Location: " + outFolder.fsName;
 
-            alert(resultMsg);
-
-            // Open folder
-            outFolder.execute();
+            var dlgSingle = new Window("dialog", "DOOH Optimization Complete");
+            dlgSingle.orientation = "column";
+            dlgSingle.alignChildren = ["fill", "top"];
+            dlgSingle.margins = 20;
+            dlgSingle.spacing = 10;
+            var msgSingle = dlgSingle.add("statictext", undefined, resultMsg, { multiline: true });
+            msgSingle.preferredSize.width = 380;
+            var btnsSingle = dlgSingle.add("group");
+            btnsSingle.alignment = "center";
+            btnsSingle.spacing = 10;
+            var openSingleBtn = btnsSingle.add("button", undefined, "Open Folder");
+            var okSingleBtn = btnsSingle.add("button", undefined, "OK");
+            okSingleBtn.active = true;
+            openSingleBtn.onClick = function () { outFolder.execute(); dlgSingle.close(); };
+            okSingleBtn.onClick = function () { dlgSingle.close(); };
+            dlgSingle.show();
         } else {
             alert("Output file not found.\n\nExpected: " + outMP4 + "\n\nCheck log: " + logPath);
         }
@@ -5725,35 +5751,37 @@
                 '          if (!resp.ok) throw new Error("File not found or blocked: " + resp.statusText);\n' +
                 '          const blob = await resp.blob();\n' +
                 '\n' +
-                '          const input = new Input({\n' +
-                '            source: new BlobSource(blob),\n' +
-                '            formats: [WEBM],\n' +
-                '          });\n' +
+                '          while (true) {\n' +
+                '            const input = new Input({\n' +
+                '              source: new BlobSource(blob),\n' +
+                '              formats: [WEBM],\n' +
+                '            });\n' +
                 '\n' +
-                '          const videoTrack = await input.getPrimaryVideoTrack();\n' +
-                '          if (!videoTrack) return;\n' +
+                '            const videoTrack = await input.getPrimaryVideoTrack();\n' +
+                '            if (!videoTrack) break;\n' +
                 '\n' +
-                '          const decodable = await videoTrack.canDecode();\n' +
-                '          if (!decodable) return;\n' +
+                '            const decodable = await videoTrack.canDecode();\n' +
+                '            if (!decodable) break;\n' +
                 '\n' +
-                '          const sink = new VideoSampleSink(videoTrack);\n' +
-                '          let firstTimestamp = null;\n' +
-                '          let startWallClock = null;\n' +
+                '            const sink = new VideoSampleSink(videoTrack);\n' +
+                '            let firstTimestamp = null;\n' +
+                '            let startWallClock = null;\n' +
                 '\n' +
-                '          for await (const sample of sink.samples()) {\n' +
-                '            try {\n' +
-                '              if (firstTimestamp === null) {\n' +
-                '                firstTimestamp = sample.timestamp;\n' +
-                '                startWallClock = performance.now();\n' +
+                '            for await (const sample of sink.samples()) {\n' +
+                '              try {\n' +
+                '                if (firstTimestamp === null) {\n' +
+                '                  firstTimestamp = sample.timestamp;\n' +
+                '                  startWallClock = performance.now();\n' +
+                '                }\n' +
+                '                const targetTime = startWallClock + (sample.timestamp - firstTimestamp) * 1000;\n' +
+                '                const delay = targetTime - performance.now();\n' +
+                '                if (delay > 0) await new Promise((r) => setTimeout(r, delay));\n' +
+                '\n' +
+                '                ctx.clearRect(0, 0, canvas.width, canvas.height);\n' +
+                '                sample.drawWithFit(ctx, { fit: "cover" });\n' +
+                '              } finally {\n' +
+                '                sample.close();\n' +
                 '              }\n' +
-                '              const targetTime = startWallClock + (sample.timestamp - firstTimestamp) * 1000;\n' +
-                '              const delay = targetTime - performance.now();\n' +
-                '              if (delay > 0) await new Promise((r) => setTimeout(r, delay));\n' +
-                '\n' +
-                '              ctx.clearRect(0, 0, canvas.width, canvas.height);\n' +
-                '              sample.drawWithFit(ctx, { fit: "cover" });\n' +
-                '            } finally {\n' +
-                '              sample.close();\n' +
                 '            }\n' +
                 '          }\n' +
                 '        } catch (e) {\n' +
@@ -5809,7 +5837,7 @@
                     script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
                 }
 
-                script += "if exist \"" + outWebM + "\" (echo WebM: SUCCESS >> \"" + logPath + "\") else (echo WebM: FAILED >> \"" + logPath + "\")\r\n";
+                script += "if not exist \"" + outWebM + "\" (echo WebM: FAILED >> \"" + logPath + "\") else (for %%F in (\"" + outWebM + "\") do if %%~zF GTR 0 (echo WebM: SUCCESS >> \"" + logPath + "\") else (echo WebM: FAILED >> \"" + logPath + "\"))\r\n";
                 script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
             }
 
@@ -5828,12 +5856,12 @@
             if (options.zip) {
                 script += "echo [4/4] Creating ZIP... >> \"" + logPath + "\"\r\n";
                 var psCmd = "$f=@();";
-                if (options.html) psCmd += "if(Test-Path '" + outHtml + "'){$f+='" + outHtml + "'};";
+                if (options.html) psCmd += "if((Get-Item '" + outHtml + "' -EA SilentlyContinue).Length -gt 0){$f+='" + outHtml + "'};";
                 if (options.webm) psCmd += "if((Get-Item '" + outWebM + "' -EA SilentlyContinue).Length -gt 0){$f+='" + outWebM + "'};";
                 if (options.mov) psCmd += "if((Get-Item '" + outMov + "' -EA SilentlyContinue).Length -gt 0){$f+='" + outMov + "'};";
                 psCmd += "if($f.Count -gt 0){Compress-Archive -Path $f -DestinationPath '" + zipPath + "' -Force}";
                 script += "powershell -Command \"" + psCmd + "\" 2>> \"" + logPath + "\"\r\n";
-                script += "if exist \"" + zipPath + "\" (echo ZIP: SUCCESS >> \"" + logPath + "\") else (echo ZIP: FAILED >> \"" + logPath + "\")\r\n";
+                script += "if not exist \"" + zipPath + "\" (echo ZIP: FAILED >> \"" + logPath + "\") else (for %%F in (\"" + zipPath + "\") do if %%~zF GTR 0 (echo ZIP: SUCCESS >> \"" + logPath + "\") else (echo ZIP: FAILED >> \"" + logPath + "\"))\r\n";
             }
             script += "echo CONVERSION_COMPLETE >> \"" + logPath + "\"\r\n";
 
@@ -5876,7 +5904,7 @@
             if (options.zip) {
                 script += "echo '[4/4] Zip...' >> \"" + logPath + "\"\n";
                 script += "ZIPFILES=()\n";
-                if (options.html) script += "[ -f \"" + outHtml + "\" ] && ZIPFILES+=(\"" + outHtml + "\")\n";
+                if (options.html) script += "[ -s \"" + outHtml + "\" ] && ZIPFILES+=(\"" + outHtml + "\")\n";
                 if (options.webm) script += "[ -s \"" + outWebM + "\" ] && ZIPFILES+=(\"" + outWebM + "\")\n";
                 if (options.mov) script += "[ -s \"" + outMov + "\" ] && ZIPFILES+=(\"" + outMov + "\")\n";
                 script += "if [ ${#ZIPFILES[@]} -gt 0 ]; then\n";
@@ -5945,7 +5973,7 @@
             logFile.close();
             if (logContent.indexOf("WebM: SUCCESS") !== -1) successCount++;
             if (logContent.indexOf("MOV: SUCCESS") !== -1) successCount++;
-            if (options.html && new File(outHtml).exists) successCount++;
+            if (options.html && new File(outHtml).exists && new File(outHtml).length > 0) successCount++;
             if (logContent.indexOf("ZIP: SUCCESS") !== -1) successCount++;
         }
 
@@ -5959,7 +5987,8 @@
         else if (options.webm) { fileListMsg += " ✗ output.webm FAILED (0 bytes)\n"; failedItems.push("WebM"); }
         if (fMov.exists && fMov.length > 0) fileListMsg += " • output.mov (" + Math.round(fMov.length / 1024) + " KB)\n";
         else if (options.mov) { fileListMsg += " ✗ output.mov FAILED (0 bytes)\n"; failedItems.push("MOV"); if (fMov.exists) try { fMov.remove(); } catch (e) { } }
-        if (fHtml.exists) fileListMsg += " • index.html (" + Math.round(fHtml.length / 1024) + " KB)\n";
+        if (fHtml.exists && fHtml.length > 0) fileListMsg += " • index.html (" + Math.round(fHtml.length / 1024) + " KB)\n";
+        else if (options.html) { fileListMsg += " ✗ index.html FAILED (0 bytes)\n"; failedItems.push("HTML"); }
         if (fZip.exists && fZip.length > 0) fileListMsg += " • " + new File(zipPath).name + " (" + Math.round(fZip.length / 1024) + " KB)\n";
 
         var resultMsg = "═══════════════════════════════\n   POST-RENDER COMPLETE\n═══════════════════════════════\n\n";
@@ -5969,7 +5998,23 @@
         resultMsg += "\nTime: " + formatDuration((new Date().getTime() - convertStartTime) / 1000);
 
         try { scriptFile.remove(); } catch (e) { }
-        alert(resultMsg);
+
+        var dlg = new Window("dialog", "Post-Render Complete");
+        dlg.orientation = "column";
+        dlg.alignChildren = ["fill", "top"];
+        dlg.margins = 20;
+        dlg.spacing = 10;
+        var msgText = dlg.add("statictext", undefined, resultMsg, { multiline: true });
+        msgText.preferredSize.width = 380;
+        var btnGroup = dlg.add("group");
+        btnGroup.alignment = "center";
+        btnGroup.spacing = 10;
+        var openFolderBtn = btnGroup.add("button", undefined, "Open Folder");
+        var okBtn = btnGroup.add("button", undefined, "OK");
+        okBtn.active = true;
+        openFolderBtn.onClick = function () { outFolder.execute(); dlg.close(); };
+        okBtn.onClick = function () { dlg.close(); };
+        dlg.show();
 
     }
 

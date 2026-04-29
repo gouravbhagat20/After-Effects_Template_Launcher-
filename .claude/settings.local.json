@@ -6,7 +6,8 @@
       "Bash(claude plugin install:*)",
       "Bash(awk:*)",
       "Bash(git add:*)",
-      "Bash(git -C \"c:\\\\Work\\\\Animate CC\\\\Scripts_Tools\\\\After-Effects_Template_Launcher-\" log --oneline -20)"
+      "Bash(git -C \"c:\\\\Work\\\\Animate CC\\\\Scripts_Tools\\\\After-Effects_Template_Launcher-\" log --oneline -20)",
+      "Bash(git -C /Users/juneja/Downloads/scrpits/After-Effects_Template_Launcher- diff HEAD BigHappyLauncher_Templates.jsx)"
     ]
   }
 }
