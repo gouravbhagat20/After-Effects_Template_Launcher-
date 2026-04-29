@@ -4125,20 +4125,18 @@
 
         resultMsg += "\nLocation: " + outFolder.fsName;
 
+        outFolder.execute();
         var dlgBatch = new Window("dialog", "Batch Optimization Complete");
         dlgBatch.orientation = "column";
         dlgBatch.alignChildren = ["fill", "top"];
         dlgBatch.margins = 20;
         dlgBatch.spacing = 10;
-        var msgBatch = dlgBatch.add("statictext", undefined, resultMsg, { multiline: true });
-        msgBatch.preferredSize.width = 420;
+        var msgBatch = dlgBatch.add("edittext", [0, 0, 420, 240], resultMsg, { multiline: true, readonly: true, scrollable: true });
         var btnsBatch = dlgBatch.add("group");
         btnsBatch.alignment = "center";
         btnsBatch.spacing = 10;
-        var openBatchBtn = btnsBatch.add("button", undefined, "Open Folder");
         var okBatchBtn = btnsBatch.add("button", undefined, "OK");
         okBatchBtn.active = true;
-        openBatchBtn.onClick = function () { outFolder.execute(); dlgBatch.close(); };
         okBatchBtn.onClick = function () { dlgBatch.close(); };
         dlgBatch.show();
     }
@@ -4627,20 +4625,18 @@
 
             resultMsg += "Location: " + outFolder.fsName;
 
+            outFolder.execute();
             var dlgSingle = new Window("dialog", "DOOH Optimization Complete");
             dlgSingle.orientation = "column";
             dlgSingle.alignChildren = ["fill", "top"];
             dlgSingle.margins = 20;
             dlgSingle.spacing = 10;
-            var msgSingle = dlgSingle.add("statictext", undefined, resultMsg, { multiline: true });
-            msgSingle.preferredSize.width = 380;
+            var msgSingle = dlgSingle.add("edittext", [0, 0, 380, 220], resultMsg, { multiline: true, readonly: true, scrollable: true });
             var btnsSingle = dlgSingle.add("group");
             btnsSingle.alignment = "center";
             btnsSingle.spacing = 10;
-            var openSingleBtn = btnsSingle.add("button", undefined, "Open Folder");
             var okSingleBtn = btnsSingle.add("button", undefined, "OK");
             okSingleBtn.active = true;
-            openSingleBtn.onClick = function () { outFolder.execute(); dlgSingle.close(); };
             okSingleBtn.onClick = function () { dlgSingle.close(); };
             dlgSingle.show();
         } else {
@@ -5999,20 +5995,18 @@
 
         try { scriptFile.remove(); } catch (e) { }
 
+        outFolder.execute();
         var dlg = new Window("dialog", "Post-Render Complete");
         dlg.orientation = "column";
         dlg.alignChildren = ["fill", "top"];
         dlg.margins = 20;
         dlg.spacing = 10;
-        var msgText = dlg.add("statictext", undefined, resultMsg, { multiline: true });
-        msgText.preferredSize.width = 380;
+        var msgText = dlg.add("edittext", [0, 0, 380, 220], resultMsg, { multiline: true, readonly: true, scrollable: true });
         var btnGroup = dlg.add("group");
         btnGroup.alignment = "center";
         btnGroup.spacing = 10;
-        var openFolderBtn = btnGroup.add("button", undefined, "Open Folder");
         var okBtn = btnGroup.add("button", undefined, "OK");
         okBtn.active = true;
-        openFolderBtn.onClick = function () { outFolder.execute(); dlg.close(); };
         okBtn.onClick = function () { dlg.close(); };
         dlg.show();
 
