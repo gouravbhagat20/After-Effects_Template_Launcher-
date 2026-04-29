@@ -4351,6 +4351,7 @@
         // Use level 5.1 for large files (higher max bitrate & frame size)
         var h264Level = (sourceSize > 50 || duration > 60) ? "5.1" : "4.1";
         var qualityFlags = "-profile:v high -level " + h264Level + " -pix_fmt yuv420p -tune animation -movflags +faststart " + advancedFlags;
+        var resScale = getResolutionScale(pixelCount);
         var script = "";
 
         // Log optimization start
