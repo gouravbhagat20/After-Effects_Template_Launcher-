@@ -2394,8 +2394,40 @@
         browseFfmpegBtn.preferredSize = [30, 25];
         browseFfmpegBtn.onClick = function () {
             var f = File.openDialog("Select FFmpeg Executable");
-            if (f) ffmpegInput.text = f.fsName;
+            if (f) { ffmpegInput.text = f.fsName; refreshFFmpegVersion(f.fsName); }
         };
+
+        // FFmpeg version display
+        var ffVerGrp = convTab.add("group");
+        ffVerGrp.margins = [0, 0, 0, 4];
+        ffVerGrp.spacing = 6;
+        var ffVerLabel = ffVerGrp.add("statictext", undefined, "Version:");
+        try { setTextColor(ffVerLabel, [0.5, 0.5, 0.5]); } catch (e) {}
+        var ffmpegVerLbl = ffVerGrp.add("statictext", undefined, "checking...");
+        ffmpegVerLbl.preferredSize.width = 260;
+
+        function refreshFFmpegVersion(exePath) {
+            if (!exePath) { ffmpegVerLbl.text = "—"; return; }
+            try {
+                var _isWinVer = ($.os.indexOf("Windows") !== -1);
+                var cmd = _isWinVer ? ("\"" + exePath + "\" -version") : ("\"" + exePath + "\" -version 2>&1");
+                var raw = system.callSystem(cmd);
+                var firstLine = raw ? raw.split(/[\r\n]/)[0] : "";
+                var m = firstLine.match(/version\s+(\S+)/);
+                if (m) {
+                    ffmpegVerLbl.text = m[1];
+                    try { setTextColor(ffmpegVerLbl, [0.3, 0.75, 0.3]); } catch (e) {}
+                } else {
+                    ffmpegVerLbl.text = "unknown";
+                    try { setTextColor(ffmpegVerLbl, [0.5, 0.5, 0.5]); } catch (e) {}
+                }
+            } catch (e) {
+                ffmpegVerLbl.text = "not found";
+                try { setTextColor(ffmpegVerLbl, [0.8, 0.3, 0.3]); } catch (e) {}
+            }
+        }
+
+        refreshFFmpegVersion(_storedFFmpeg);
 
         // Options
         var webmCheck = convTab.add("checkbox", undefined, "Convert to WebM (VP9 + Alpha)");
@@ -4167,14 +4199,30 @@
             return true;
         }
 
-        // 3. Not found - Ask user to download
+        // 3. Check common macOS install locations (Homebrew Apple Silicon, Intel, MacPorts)
+        if (!isWin) {
+            var commonPaths = [
+                "/opt/homebrew/bin/ffmpeg",
+                "/usr/local/bin/ffmpeg",
+                "/opt/local/bin/ffmpeg",
+                "/usr/bin/ffmpeg"
+            ];
+            for (var cp = 0; cp < commonPaths.length; cp++) {
+                if (new File(commonPaths[cp]).exists) {
+                    setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, commonPaths[cp]);
+                    return true;
+                }
+            }
+        }
+
+        // 4. Not found - Ask user to download
         if (isWin) {
             var confirmDl = confirm("FFmpeg is missing. It is required for optimization.\n\nDownload and install it automatically (~130MB)?");
             if (confirmDl) {
                 return downloadFFmpeg();
             }
         } else {
-            alert("FFmpeg is missing. Please install it manually (e.g., brew install ffmpeg).");
+            return promptFFmpegInstallMac();
         }
 
         return false;
@@ -4273,6 +4321,116 @@
 
         } catch (e) {
             if (w) w.close();
+            alert("Error installing FFmpeg: " + e.toString());
+            return false;
+        }
+    }
+
+    function promptFFmpegInstallMac() {
+        var hasBrew = false;
+        try {
+            var brewOut = system.callSystem("which brew 2>/dev/null");
+            hasBrew = (brewOut && brewOut.indexOf("brew") !== -1);
+        } catch (e) {}
+
+        var choice = 0;
+        var dlg = new Window("dialog", "FFmpeg Not Found");
+        dlg.orientation = "column";
+        dlg.alignChildren = ["fill", "top"];
+        dlg.margins = 20;
+        dlg.spacing = 10;
+        dlg.add("statictext", undefined, "FFmpeg is required but was not found on this system.");
+        dlg.add("statictext", undefined, "How would you like to install it?");
+
+        var btnGrp = dlg.add("group");
+        btnGrp.orientation = "column";
+        btnGrp.alignChildren = ["fill", "top"];
+        btnGrp.spacing = 6;
+        btnGrp.margins = [0, 8, 0, 0];
+
+        if (hasBrew) {
+            var brewBtn = btnGrp.add("button", undefined, "Install via Homebrew  (recommended)");
+            brewBtn.onClick = function () { choice = 1; dlg.close(); };
+        }
+
+        var dlBtn = btnGrp.add("button", undefined, "Download Static Build  (~80 MB)");
+        dlBtn.onClick = function () { choice = 2; dlg.close(); };
+
+        var cancelBtn = btnGrp.add("button", undefined, "Cancel");
+        cancelBtn.onClick = function () { choice = 0; dlg.close(); };
+
+        dlg.show();
+
+        if (choice === 1) {
+            var as = "osascript -e 'tell application \"Terminal\" to do script \"brew install ffmpeg\"' -e 'tell application \"Terminal\" to activate'";
+            system.callSystem(as);
+            alert("Homebrew is installing FFmpeg in Terminal.\n\nWhen the install finishes, run your conversion again — FFmpeg will be detected automatically.");
+            return false;
+        } else if (choice === 2) {
+            return downloadFFmpegMac();
+        }
+        return false;
+    }
+
+    function downloadFFmpegMac() {
+        var installBase = new Folder(joinPath(Folder.userData.fsName, "BigHappyLauncher_Tools"));
+        if (!installBase.exists) installBase.create();
+
+        var zipPath = joinPath(installBase.fsName, "ffmpeg_mac.zip");
+        var url = "https://evermeet.cx/ffmpeg/get/zip";
+
+        var w = new Window("palette", "Downloading FFmpeg", undefined, { closeButton: false });
+        w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.spacing = 10; w.margins = 20;
+        var st = w.add("statictext", undefined, "Downloading FFmpeg (~80 MB) — please wait...");
+        st.preferredSize.width = 320;
+        var pb = w.add("progressbar", undefined, 0, 100);
+        pb.preferredSize.width = 320;
+        w.center(); w.show(); w.update();
+
+        try {
+            system.callSystem('curl -L --max-time 300 -o "' + zipPath + '" "' + url + '"');
+
+            if (!new File(zipPath).exists || new File(zipPath).length < 1000) {
+                w.close();
+                alert("Download failed. Check your internet connection, or install manually:\n  brew install ffmpeg");
+                return false;
+            }
+
+            st.text = "Extracting...";
+            pb.value = 70;
+            w.update();
+
+            system.callSystem('unzip -o "' + zipPath + '" -d "' + installBase.fsName + '"');
+            system.callSystem('chmod +x "' + installBase.fsName + '/ffmpeg" 2>/dev/null');
+            new File(zipPath).remove();
+
+            pb.value = 100;
+            w.close();
+
+            // Locate the extracted binary (may be at root or inside a subfolder)
+            var binPath = null;
+            var rootBin = new File(installBase.fsName + "/ffmpeg");
+            if (rootBin.exists) {
+                binPath = rootBin.fsName;
+            } else {
+                var subFolders = installBase.getFiles(function (f) { return f instanceof Folder; });
+                for (var sf = 0; sf < subFolders.length; sf++) {
+                    var nested = new File(subFolders[sf].fsName + "/ffmpeg");
+                    if (nested.exists) { binPath = nested.fsName; break; }
+                }
+            }
+
+            if (binPath) {
+                setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, binPath);
+                alert("FFmpeg installed successfully!\n\nLocation: " + binPath);
+                return true;
+            } else {
+                alert("FFmpeg downloaded but executable not found.\nCheck: " + installBase.fsName);
+                return false;
+            }
+
+        } catch (e) {
+            try { w.close(); } catch (ex) {}
             alert("Error installing FFmpeg: " + e.toString());
             return false;
         }
