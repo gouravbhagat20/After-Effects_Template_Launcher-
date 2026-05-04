@@ -3403,33 +3403,18 @@
             }
         }
 
-        // Method 2: Fallback to FFmpeg -i (parse Duration: HH:MM:SS.ms from stderr)
+        // Method 2: Fallback to FFmpeg -i (merge stderr→stdout via 2>&1, pipe through findstr)
         if (ffmpegPath) {
             try {
-                var exe2 = '"' + ffmpegPath + '"';
-                var tempOutput = Folder.temp.fsName + (isWin ? "\\ffmpeg_dur_" + new Date().getTime() + ".txt" : "/ffmpeg_dur_" + new Date().getTime() + ".txt");
-
-                // Redirect stderr to temp file (ExtendScript can't capture stderr directly)
-                var cmd2 = "";
-                if (isWin) {
-                    cmd2 = 'cmd /c ' + exe2 + ' -i "' + inputPath + '" 2> "' + tempOutput + '"';
-                } else {
-                    cmd2 = exe2 + ' -i "' + inputPath + '" 2> "' + tempOutput + '"';
-                }
-
-                system.callSystem(cmd2);
-
-                // Read the temp file
-                var tempFile = new File(tempOutput);
                 var result2 = "";
-                if (tempFile.exists) {
-                    tempFile.open("r");
-                    result2 = tempFile.read();
-                    tempFile.close();
-                    tempFile.remove();
+                if (isWin) {
+                    // Wrap exe+args in outer quotes so cmd /c handles inner quoted paths correctly
+                    var cmd2 = 'cmd /c ""' + ffmpegPath + '" -nostdin -i "' + inputPath + '" 2>&1 | findstr /C:"Duration:""';
+                    result2 = system.callSystem(cmd2);
+                } else {
+                    result2 = system.callSystem('"' + ffmpegPath + '" -i "' + inputPath + '" 2>&1 | grep Duration');
                 }
 
-                // Parse "Duration: HH:MM:SS.ms" from output
                 var match = result2.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
                 if (match) {
                     var hours = parseInt(match[1], 10);
@@ -3582,32 +3567,11 @@
             var detectedDuration = getVideoDuration(mp4Files[0]);
 
             if (detectedDuration > 0) {
-                // Duration auto-detected successfully
                 duration = detectedDuration;
-                // Show brief confirmation
-                // (Optional: could skip this alert for faster workflow)
             } else {
-                // FFprobe failed - fall back to manual input
-                var durationDialog = new Window("dialog", "Video Duration");
-                durationDialog.orientation = "column";
-                durationDialog.alignChildren = ["fill", "top"];
-                durationDialog.margins = 15;
-                durationDialog.spacing = 10;
-
-                durationDialog.add("statictext", undefined, "Selected: " + mp4Files.length + " file(s)");
-                durationDialog.add("statictext", undefined, "⚠️ Could not auto-detect duration");
-                durationDialog.add("statictext", undefined, "Enter video duration (seconds):");
-                durationDialog.add("statictext", undefined, "(Used to calculate optimal bitrate)");
-                var durInput = durationDialog.add("edittext", undefined, "15");
-                durInput.preferredSize.width = 100;
-
-                var btnGrp = durationDialog.add("group");
-                btnGrp.alignment = ["center", "top"];
-                var okBtn = btnGrp.add("button", undefined, "OK", { name: "ok" });
-                var cancelBtn = btnGrp.add("button", undefined, "Cancel", { name: "cancel" });
-
-                if (durationDialog.show() !== 1) return;
-                duration = parseFloat(durInput.text) || 15;
+                // Detection failed — DOOH clips are always 15s, use as silent default
+                duration = 15;
+                logWarn("Duration auto-detect failed, defaulting to 15s", { "File": mp4Files[0].name });
             }
 
         } else {
@@ -3832,6 +3796,7 @@
 
         // Helper function to update time display
         function updateTimeDisplay(currentIndex) {
+            if (batchCancelled) return;
             var elapsed = new Date().getTime() - batchStartTime;
             var elapsedStr = formatTime(elapsed);
 
@@ -3865,8 +3830,6 @@
             var outName = decodePath(mp4File.name).replace(/\.mp4$/i, "") + "_Optimized.mp4";
             var outMP4 = decodePath(outFolder.fsName) + (isWin ? "\\" : "/") + outName;
             var logPath = decodePath(outFolder.fsName) + (isWin ? "\\batch_log_" + i + ".txt" : "/batch_log_" + i + ".txt");
-            var passLog = decodePath(tempFolder.fsName) + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() + "_" + i : "/ffmpeg2pass_" + new Date().getTime() + "_" + i);
-
             // Record file start time
             fileStartTimes[i] = new Date().getTime();
 
@@ -3893,8 +3856,7 @@
                     "Click OK to overwrite, Cancel to skip."
                 );
 
-                w.show();
-                w.update();
+                if (!batchCancelled) { w.show(); w.update(); }
 
                 if (!overwriteChoice) {
                     // User chose to skip this file
@@ -3927,20 +3889,16 @@
                 if (videoBitrate < 500) videoBitrate = 500;
             }
 
-            // ADAPTIVE PRESET: scale encoding effort based on file size & duration
-            var presetFlag;
-            if (sourceSize < 20 && dur < 30) {
-                presetFlag = "veryslow";
-            } else if (sourceSize < 50 && dur < 60) {
-                presetFlag = "slow";
-            } else {
-                presetFlag = "medium";
-            }
+            // PRESET: always use medium for DOOH size-targeting.
+            // veryslow/slow take 15-120 min on 1080x1920 — not worth 2-5% quality gain.
+            var presetFlag = "medium";
 
-            // 2-PASS VBR MODE: Guarantees target size while maximizing quality
-            var maxBitrate = Math.floor(videoBitrate * 1.5);
-            var bufSize = Math.floor(videoBitrate * 3);
-            var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
+            // CRF-CONSTRAINED MODE: Fast single-pass, quality-capped at CRF 18 with bitrate ceiling
+            var filePixels = (fileInfos && fileInfos[i]) ? fileInfos[i].pixelCount : 0;
+            var resScale = getResolutionScale(filePixels);
+            var maxBitrate = Math.floor(videoBitrate * 1.5 * resScale);
+            var bufSize = Math.floor(videoBitrate * 3 * resScale);
+            var bitrateFlags = "-crf 18 -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
             var lookahead = dur <= 30 ? 60 : (dur <= 120 ? 40 : 30);
             var refs = sourceSize > 50 ? 3 : 5;
             var subme = sourceSize > 50 ? 7 : 10;
@@ -3952,72 +3910,62 @@
             logInfo("Processing file " + (i + 1) + "/" + mp4Files.length + ": " + decodePath(mp4File.name), {
                 "Source Size": sourceSize.toFixed(2) + " MB",
                 "Resolution": fileRes,
-                "Max Bitrate": maxBitrate + " kbps (scale: " + resScale + "x)",
-                "Mode": "CRF 18 (visually lossless)"
+                "Max Bitrate": maxBitrate + " kbps",
+                "Mode": "CRF 18"
             });
 
-            // Create a temporary batch script for reliable synchronous execution
+            // Create a temporary batch script — always in tempFolder (no spaces in path).
+            // outFolder can be "C:\Work\Animate CC\..." and cmd /c "path with spaces" fails.
             var batchScriptPath = tempFolder.fsName + (isWin ? "\\batch_opt_" + i + ".bat" : "/batch_opt_" + i + ".sh");
             var batchScript = "";
 
-            // 2-PASS VBR encoding
+            // CRF single-pass encoding
             if (isWin) {
                 batchScript += "@echo off\r\n";
+                batchScript += "chcp 65001 >NUL\r\n";
                 batchScript += "echo STARTED > \"" + logPath + "\"\r\n";
-                batchScript += "echo PASS1_START >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f mp4 NUL 2>>\"" + logPath + "\"\r\n";
-                batchScript += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
-                batchScript += "echo PASS1_DONE >> \"" + logPath + "\"\r\n";
-                batchScript += "echo PASS2_START >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
-                batchScript += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
-                batchScript += "echo PASS2_DONE >> \"" + logPath + "\"\r\n";
+                batchScript += "echo Encoding (CRF 18)... >> \"" + logPath + "\"\r\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+                batchScript += "if %errorlevel% neq 0 (echo ENCODE_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
                 batchScript += "echo COMPLETE >> \"" + logPath + "\"\r\n";
             } else {
                 batchScript += "#!/bin/bash\n";
                 batchScript += "echo 'STARTED' > \"" + logPath + "\"\n";
-                batchScript += "echo 'PASS1_START' >> \"" + logPath + "\"\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f mp4 /dev/null 2>>\"" + logPath + "\"\n";
-                batchScript += "[ $? -ne 0 ] && echo 'PASS1_FAILED' >> \"" + logPath + "\" && exit 1\n";
-                batchScript += "echo 'PASS1_DONE' >> \"" + logPath + "\"\n";
-                batchScript += "echo 'PASS2_START' >> \"" + logPath + "\"\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
-                batchScript += "[ $? -ne 0 ] && echo 'PASS2_FAILED' >> \"" + logPath + "\" && exit 1\n";
-                batchScript += "echo 'PASS2_DONE' >> \"" + logPath + "\"\n";
+                batchScript += "echo 'Encoding (CRF 18)...' >> \"" + logPath + "\"\n";
+                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+                batchScript += "[ $? -ne 0 ] && echo 'ENCODE_FAILED' >> \"" + logPath + "\" && exit 1\n";
                 batchScript += "echo 'COMPLETE' >> \"" + logPath + "\"\n";
             }
 
             // Write the batch script
             var scriptFile = new File(batchScriptPath);
-            scriptFile.open("w");
+            var scriptOpened = scriptFile.open("w");
             if (!isWin) scriptFile.lineFeed = "unix"; // Force Unix line endings on macOS
             scriptFile.write(batchScript);
             scriptFile.close();
 
-            fileBar.value = 20;
-            fileLbl.text = mp4File.name + " (Pass 1)";
-            w.update();
-
-            // Execute the batch script synchronously
-            try {
-                if (isWin) {
-                    system.callSystem('cmd /c "' + batchScriptPath + '"');
-                } else {
-                    system.callSystem("chmod +x \"" + batchScriptPath + "\" && \"" + batchScriptPath + "\"");
-                }
-            } catch (e) {
-                logError("Batch script execution failed", { "File": decodePath(mp4File.name), "Error": e.toString() });
-                results.push({ name: mp4File.name, success: false, reason: "Script execution failed: " + e.toString() });
+            // Verify script was actually written before trying to run it
+            var verifyScript = new File(batchScriptPath);
+            if (!scriptOpened || !verifyScript.exists) {
+                logError("Failed to write batch script", { "Path": batchScriptPath, "File": decodePath(mp4File.name) });
+                results.push({ name: mp4File.name, success: false, reason: "Could not write batch script (check folder permissions)" });
                 failCount++;
-                try { scriptFile.remove(); } catch (e2) { }
                 continue;
             }
 
-            fileBar.value = 80;
-            fileLbl.text = mp4File.name + " (Verifying)";
+            fileBar.value = 20;
+            fileLbl.text = mp4File.name + " (Encoding - do not close AE...)";
             w.update();
 
-            // Check if the script completed successfully by reading the log
+            // Run batch synchronously — system.callSystem blocks until FFmpeg finishes.
+            // tempFolder path has no spaces so cmd /c "path" works correctly.
+            if (isWin) {
+                system.callSystem('cmd /c "' + batchScriptPath + '"');
+            } else {
+                system.callSystem("chmod +x \"" + batchScriptPath + "\" && \"" + batchScriptPath + "\"");
+            }
+
+            // Read log once after completion
             var logFile = new File(logPath);
             var logContent = "";
             if (logFile.exists) {
@@ -4026,30 +3974,25 @@
                 logFile.close();
             }
 
-            // Cleanup script file
+            // Cleanup script and log files
             try { scriptFile.remove(); } catch (e) { }
+            try { logFile.remove(); } catch (e) { }
+
+            // Check for launch failure (no log created at all)
+            if (!logContent) {
+                logError("Batch script produced no log", { "File": decodePath(mp4File.name), "Script": batchScriptPath });
+                results.push({ name: mp4File.name, success: false, reason: "FFmpeg did not start (no log produced — check FFmpeg path in Settings)" });
+                failCount++;
+                continue;
+            }
 
             fileBar.value = 90;
             w.update();
 
-            // Cleanup pass logs
-            try {
-                var passFile1 = new File(passLog + "-0.log");
-                var passFile2 = new File(passLog + ".mbtree");
-                if (passFile1.exists) passFile1.remove();
-                if (passFile2.exists) passFile2.remove();
-            } catch (e) { }
-
             // Check for encoding failures in log
-            if (logContent.indexOf("PASS1_FAILED") !== -1) {
-                logError("Batch file failed (Pass 1)", { "File": decodePath(mp4File.name) });
-                results.push({ name: mp4File.name, success: false, reason: "FFmpeg Pass 1 failed" });
-                failCount++;
-                continue;
-            }
-            if (logContent.indexOf("PASS2_FAILED") !== -1) {
-                logError("Batch file failed (Pass 2)", { "File": decodePath(mp4File.name) });
-                results.push({ name: mp4File.name, success: false, reason: "FFmpeg Pass 2 failed" });
+            if (logContent.indexOf("ENCODE_FAILED") !== -1) {
+                logError("Batch file failed (Encode)", { "File": decodePath(mp4File.name) });
+                results.push({ name: mp4File.name, success: false, reason: "FFmpeg encoding failed" });
                 failCount++;
                 continue;
             }
@@ -4112,8 +4055,10 @@
             w.update();
         }
 
-        overallBar.value = mp4Files.length;
-        w.close();
+        if (!batchCancelled) {
+            overallBar.value = mp4Files.length;
+            w.close();
+        }
 
         logInfo("Batch optimization finished", {
             "Total Files": mp4Files.length,
@@ -4450,13 +4395,11 @@
         var outFolderPath = decodePath(outFolder.fsName);
         var outName = decodePath(mp4File.name).replace(/\.mp4$/i, "") + "_Optimized.mp4";
         var outMP4 = outFolderPath + (isWin ? "\\" : "/") + outName;
-        var scriptPath = outFolderPath + (isWin ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
-        var logPath = outFolderPath + (isWin ? "\\optimize_log.txt" : "/optimize_log.txt");
-
-        // FIX: Use system temp folder for pass log
+        // Use tempFolder — outFolderPath can have spaces ("C:\Work\Animate CC\...")
+        // and cmd /c "path with spaces" fails. tempFolder has no spaces.
         var tempFolder = Folder.temp;
-        var passLog = decodePath(tempFolder.fsName) + (isWin ? "\\ffmpeg2pass_" + new Date().getTime() : "/ffmpeg2pass_" + new Date().getTime());
-
+        var scriptPath = tempFolder.fsName + (isWin ? "\\optimize_dooh.bat" : "/optimize_dooh.sh");
+        var logPath = tempFolder.fsName + (isWin ? "\\optimize_log.txt" : "/optimize_log.txt");
         // Calculate bitrate
         if (duration < 1) duration = 1;
         var totalBitrate = (targetMB * 8192) / duration;
@@ -4484,21 +4427,14 @@
             });
         }
 
-        // ADAPTIVE PRESET: scale encoding effort based on file size & duration
-        // veryslow gives ~2-5% better quality than slow but takes 5-10x longer
-        var presetFlag;
-        if (sourceSize < 20 && duration < 30) {
-            presetFlag = "veryslow"; // Small/short clips: max quality
-        } else if (sourceSize < 50 && duration < 60) {
-            presetFlag = "slow";     // Medium files: good balance
-        } else {
-            presetFlag = "medium";   // Large files: reasonable encode time
-        }
+        // PRESET: always use medium for DOOH size-targeting.
+        // veryslow/slow take 15-120 min on 1080x1920 — not worth 2-5% quality gain.
+        var presetFlag = "medium";
 
-        // 2-PASS VBR MODE: Guarantees target size while maximizing quality
+        // CRF-CONSTRAINED MODE: Fast single-pass, quality-capped at CRF 18 with bitrate ceiling
         var maxBitrate = Math.floor(videoBitrate * 1.5);
         var bufSize = Math.floor(videoBitrate * 3);
-        var bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
+        var bitrateFlags = "-crf 18 -maxrate " + maxBitrate + "k -bufsize " + bufSize + "k";
 
         // Scale lookahead, refs, and subme for longer/larger videos
         var lookahead = duration <= 30 ? 60 : (duration <= 120 ? 40 : 30);
@@ -4518,32 +4454,25 @@
             "Source Size": sourceSize.toFixed(2) + " MB",
             "Target Size": targetMB + " MB",
             "Duration": duration.toFixed(1) + "s",
-            "Bitrate Cap": maxBitrate + " kbps (scale: " + resScale + "x)",
-            "Mode": "CRF 18 (visually lossless)",
+            "Bitrate Cap": maxBitrate + " kbps",
+            "Mode": "CRF 18",
             "Preset": presetFlag,
             "H264 Level": h264Level,
             "Lookahead": lookahead
         });
 
-        // 2-PASS VBR encoding (Best quality for strict size targets)
+        // CRF single-pass encoding
         if (isWin) {
             script += "@echo off\r\n";
             script += "chcp 65001 >NUL\r\n";
             script += "echo STARTED > \"" + logPath + "\"\r\n";
             script += "echo Source: " + mp4File.name + " >> \"" + logPath + "\"\r\n";
             script += "echo Target: " + targetMB + "MB >> \"" + logPath + "\"\r\n";
-            script += "echo Mode: 2-Pass VBR (High Quality) >> \"" + logPath + "\"\r\n";
-            script += "echo PASS1_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f mp4 NUL 2>>\"" + logPath + "\"\r\n";
-            script += "if %errorlevel% neq 0 (echo PASS1_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
-            script += "echo PASS1_DONE >> \"" + logPath + "\"\r\n";
-            script += "echo PASS2_START >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
-            script += "if %errorlevel% neq 0 (echo PASS2_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
-            script += "echo PASS2_DONE >> \"" + logPath + "\"\r\n";
+            script += "echo Mode: CRF 18 >> \"" + logPath + "\"\r\n";
+            script += "echo Encoding... >> \"" + logPath + "\"\r\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
+            script += "if %errorlevel% neq 0 (echo ENCODE_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
             script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT_MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
-            script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
-            script += "del \"" + passLog + "-0.log.mbtree\" 2>nul\r\n";
             script += "exit /b 0\r\n";
             script += ":ERROR\r\n";
             script += "echo FAILED >> \"" + logPath + "\"\r\n";
@@ -4552,17 +4481,10 @@
             script += "#!/bin/bash\n";
             script += "echo 'STARTED' > \"" + logPath + "\"\n";
             script += "echo 'Source: " + outName.replace(/_Optimized\.mp4$/i, ".mp4") + "' >> \"" + logPath + "\"\n";
-            script += "echo 'PASS1_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 1 -passlogfile \"" + passLog + "\" -an -f mp4 /dev/null 2>>\"" + logPath + "\"\n";
-            script += "[ $? -eq 0 ] || { echo 'PASS1_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
-            script += "echo 'PASS1_DONE' >> \"" + logPath + "\"\n";
-            script += "echo 'PASS2_START' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -pass 2 -passlogfile \"" + passLog + "\" -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
-            script += "[ $? -eq 0 ] || { echo 'PASS2_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
-            script += "echo 'PASS2_DONE' >> \"" + logPath + "\"\n";
+            script += "echo 'Encoding...' >> \"" + logPath + "\"\n";
+            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
+            script += "[ $? -eq 0 ] || { echo 'ENCODE_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
             script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT_MISSING' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
-            script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
-            script += "rm -f \"" + passLog + "-0.log.mbtree\" 2>/dev/null\n";
         }
 
         // Write Script
@@ -4574,7 +4496,6 @@
         if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
 
         // Progress UI
-        var singleCancelled = false;
         var w = new Window("palette", "DOOH Optimization", undefined, { closeButton: true });
         w.orientation = "column";
         w.alignChildren = ["fill", "top"];
@@ -4585,9 +4506,10 @@
         try { titleLbl.graphics.font = ScriptUI.newFont("Arial", "BOLD", 12); } catch (e) { }
 
         var statusLbl = w.add("statictext", undefined, "Starting optimization...");
-        var progressBar = w.add("progressbar", [0, 0, 280, 20], 0, 100);
 
-        // Enhanced detail group with elapsed time
+        var progressBar = w.add("progressbar", [0, 0, 300, 15], 0, 100);
+
+        // Detail group
         var detailGrp = w.add("group");
         detailGrp.orientation = "column";
         detailGrp.alignChildren = ["left", "top"];
@@ -4599,122 +4521,59 @@
         var detailLbl = detailGrp.add("statictext", undefined, "Bitrate: " + videoBitrate + " kbps | Duration: " + duration.toFixed(1) + "s");
         setTextColor(detailLbl, [0.5, 0.5, 0.5]);
 
-        var elapsedLbl = detailGrp.add("statictext", undefined, "Elapsed: 0s");
-        setTextColor(elapsedLbl, [0.4, 0.6, 0.9]);
-
-        // Cancel button
+        // Cancel button (no-op while synchronous — kept for UX consistency)
         var cancelBtn = w.add("button", undefined, "✕  Cancel");
         cancelBtn.alignment = ["center", "bottom"];
         cancelBtn.onClick = function () {
-            singleCancelled = true;
             w.close();
         };
-        w.onClose = function () { singleCancelled = true; };
+        w.onClose = function () { };
 
         w.center();
         w.show();
         w.update();
 
-        // Execute script (non-blocking)
+        // Run synchronously — tempFolder has no spaces so cmd /c "path" works.
+        statusLbl.text = "Encoding (do not close AE)...";
+        progressBar.value = 30;
+        w.update();
+
         if (isWin) {
-            var batFile = new File(scriptPath);
-            if (batFile.exists) batFile.execute();
+            system.callSystem('cmd /c "' + scriptPath + '"');
         } else {
-            // Force open with Terminal using AppleScript to ensure execution and focus
-            var appleScript = "osascript -e 'tell application \"Terminal\" to do script \"" + scriptPath + "\"' -e 'tell application \"Terminal\" to activate'";
-            system.callSystem(appleScript);
+            system.callSystem("chmod +x \"" + scriptPath + "\" && \"" + scriptPath + "\"");
         }
 
-        // Progress polling loop
-        var logFile = new File(logPath);
-        // ADAPTIVE TIMEOUT: base 10 min + 5 min per MB source + 2 min per sec duration
-        // Ensures large/long videos don't time out prematurely
-        var maxWait = Math.max(600, Math.round(600 + (sourceSize * 300) + (duration * 120)));
-        var waited = 0;
-        var pollInterval = 500; // ms
-        var lastStatus = "";
-        var pass1Time = 0;
-        var pass2Time = 0;
-
-        while (waited < maxWait) {
-            if (singleCancelled) {
-                logWarn("Optimization cancelled by user", { "File": decodePath(mp4File.name), "Elapsed": formatDuration(waited) });
-                break;
-            }
-            $.sleep(pollInterval);
-            waited += (pollInterval / 1000);
-
-            if (logFile.exists) {
-                logFile.open("r");
-                var logContent = logFile.read();
-                logFile.close();
-
-                // Update elapsed time display
-                var elapsedSecs = (new Date().getTime() - startTime) / 1000;
-                elapsedLbl.text = "Elapsed: " + formatDuration(elapsedSecs);
-
-                // Update progress based on markers
-                if (logContent.indexOf("PASS1_START") !== -1 && lastStatus !== "PASS1") {
-                    lastStatus = "PASS1";
-                    statusLbl.text = "Pass 1 of 2: Analyzing...";
-                    progressBar.value = 20;
-                    logInfo("Pass 1 started (analysis)");
-                    w.update();
-                }
-                if (logContent.indexOf("PASS1_DONE") !== -1 && lastStatus !== "PASS1_DONE") {
-                    pass1Time = (new Date().getTime() - startTime) / 1000;
-                    lastStatus = "PASS1_DONE";
-                    statusLbl.text = "Pass 1 complete (" + formatDuration(pass1Time) + "). Starting Pass 2...";
-                    progressBar.value = 50;
-                    logInfo("Pass 1 complete", { "Duration": formatDuration(pass1Time) });
-                    w.update();
-                }
-                if (logContent.indexOf("PASS2_START") !== -1 && lastStatus !== "PASS2") {
-                    lastStatus = "PASS2";
-                    statusLbl.text = "Pass 2 of 2: Encoding...";
-                    progressBar.value = 60;
-                    logInfo("Pass 2 started (encoding)");
-                    w.update();
-                }
-                if (logContent.indexOf("PASS2_DONE") !== -1 && lastStatus !== "PASS2_DONE") {
-                    pass2Time = (new Date().getTime() - startTime) / 1000 - pass1Time;
-                    lastStatus = "PASS2_DONE";
-                    statusLbl.text = "Finalizing...";
-                    progressBar.value = 90;
-                    logInfo("Pass 2 complete", { "Duration": formatDuration(pass2Time) });
-                    w.update();
-                }
-
-                // Check for completion
-                if (logContent.indexOf("SUCCESS") !== -1) {
-                    progressBar.value = 100;
-                    statusLbl.text = "Complete!";
-                    w.update();
-                    $.sleep(2500); // FIX: Extended delay to ensure FS catches up
-                    break;
-                }
-                if (logContent.indexOf("FAILED") !== -1) {
-                    w.close();
-                    var failReason = "Unknown";
-                    if (logContent.indexOf("PASS1_FAILED") !== -1) failReason = "Pass 1 encoding failed";
-                    if (logContent.indexOf("PASS2_FAILED") !== -1) failReason = "Pass 2 encoding failed";
-                    if (logContent.indexOf("OUTPUT_MISSING") !== -1) failReason = "Output file not created";
-                    logError("Optimization failed", { "Reason": failReason, "File": decodePath(mp4File.name) });
-                    alert("Optimization FAILED!\n\nReason: " + failReason + "\n\nCheck log: " + logPath);
-                    return;
-                }
-            }
-        }
-
+        progressBar.value = 100;
+        statusLbl.text = "Done.";
+        w.update();
         w.close();
 
         // Calculate total elapsed time
         var totalTime = (new Date().getTime() - startTime) / 1000;
 
-        // Check if timed out
-        if (waited >= maxWait) {
-            logError("Optimization timed out", { "File": decodePath(mp4File.name), "Waited": formatDuration(waited) });
-            alert("Optimization timed out after " + formatDuration(maxWait) + ".\n\nCheck log: " + logPath);
+        // Read log once after completion
+        var logFile = new File(logPath);
+        var logContent = "";
+        if (logFile.exists) {
+            logFile.open("r");
+            logContent = logFile.read();
+            logFile.close();
+            try { logFile.remove(); } catch (e) { }
+        }
+
+        if (!logContent) {
+            logError("Optimizer produced no log", { "File": decodePath(mp4File.name) });
+            alert("Optimization FAILED!\n\nFFmpeg did not start. Check FFmpeg path in Settings.");
+            return;
+        }
+
+        if (logContent.indexOf("FAILED") !== -1) {
+            var failReason = "Unknown";
+            if (logContent.indexOf("ENCODE_FAILED") !== -1) failReason = "FFmpeg encoding failed";
+            if (logContent.indexOf("OUTPUT_MISSING") !== -1) failReason = "Output file not created";
+            logError("Optimization failed", { "Reason": failReason, "File": decodePath(mp4File.name) });
+            alert("Optimization FAILED!\n\nReason: " + failReason);
             return;
         }
 
