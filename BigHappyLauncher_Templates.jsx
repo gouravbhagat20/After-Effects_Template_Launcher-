@@ -3796,7 +3796,6 @@
 
         // Helper function to update time display
         function updateTimeDisplay(currentIndex) {
-            if (batchCancelled) return;
             var elapsed = new Date().getTime() - batchStartTime;
             var elapsedStr = formatTime(elapsed);
 
@@ -3856,7 +3855,8 @@
                     "Click OK to overwrite, Cancel to skip."
                 );
 
-                if (!batchCancelled) { w.show(); w.update(); }
+                w.show();
+                w.update();
 
                 if (!overwriteChoice) {
                     // User chose to skip this file
@@ -4055,10 +4055,8 @@
             w.update();
         }
 
-        if (!batchCancelled) {
-            overallBar.value = mp4Files.length;
-            w.close();
-        }
+        overallBar.value = mp4Files.length;
+        w.close();
 
         logInfo("Batch optimization finished", {
             "Total Files": mp4Files.length,
@@ -4525,9 +4523,8 @@
         var cancelBtn = w.add("button", undefined, "✕  Cancel");
         cancelBtn.alignment = ["center", "bottom"];
         cancelBtn.onClick = function () {
-            w.close();
+            w.hide();
         };
-        w.onClose = function () { };
 
         w.center();
         w.show();
@@ -4547,7 +4544,7 @@
         progressBar.value = 100;
         statusLbl.text = "Done.";
         w.update();
-        w.close();
+        w.hide();
 
         // Calculate total elapsed time
         var totalTime = (new Date().getTime() - startTime) / 1000;
@@ -5974,7 +5971,7 @@
             alert("Error executing conversion script:\n" + e.toString());
         }
 
-        w.close();
+        w.hide();
 
         $.sleep(2000); // 2 seconds delay
 
