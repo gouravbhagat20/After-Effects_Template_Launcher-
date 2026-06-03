@@ -99,7 +99,8 @@ Compress MP4 files to meet DOOH size requirements (< 7MB).
 - Auto-detects video duration and resolution via FFprobe
 - Real-time progress bar with per-file ETA
 - Enhanced results: file size, savings %, bitrate info
-- Works without a project open
+- Works standalone (with or without a project open)
+- **Auto-replaces original files** with the optimized ones (safely releases file locks held by the Render Queue or FootageItems, and automatically re-links them in the AE project)
 - **Auto-installs FFmpeg** if not found (Windows & macOS)
 
 **How to use:**
@@ -297,6 +298,7 @@ Access via the ⚙ button. Configure:
 | | | • Fixed FFmpeg stdin hang (`-nostdin`) causing AE UI freeze during optimization |
 | | | • Fixed palette progress windows not closing after processing (`w.hide()`) |
 | | | • Fixed batch progress window re-appearing on cancel |
+| | | • Auto-replace original videos with optimized version (re-linking any affected footage items in the project automatically) |
 | | | • FFmpeg version display in Settings dialog |
 | | | • Auto-install FFmpeg support on macOS |
 | | | • DOOH encoding upgraded to CRF-constrained mode with resolution-aware bitrate |
