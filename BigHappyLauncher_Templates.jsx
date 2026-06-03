@@ -3773,9 +3773,12 @@
         cancelBtn.alignment = ["center", "bottom"];
         cancelBtn.onClick = function () {
             batchCancelled = true;
-            w.close();
+            w.hide();
         };
-        w.onClose = function () { batchCancelled = true; };
+        w.onClose = function () {
+            batchCancelled = true;
+            return true;
+        };
 
         w.center();
         w.show();
@@ -4056,7 +4059,17 @@
         }
 
         overallBar.value = mp4Files.length;
-        w.close();
+        
+        try {
+            w.hide();
+        } catch (e) {
+            logError("Error hiding batch progress window: " + e.toString());
+        }
+        try {
+            w.close();
+        } catch (e) {
+            logError("Error closing batch progress window: " + e.toString());
+        }
 
         logInfo("Batch optimization finished", {
             "Total Files": mp4Files.length,
@@ -4065,55 +4078,71 @@
         });
 
         // Show batch results
-        var totalSourceSize = 0;
-        var totalOutputSize = 0;
-        var resultMsg = "═══════════════════════════════════════\n";
-        resultMsg += "       BATCH OPTIMIZATION COMPLETE\n";
-        resultMsg += "═══════════════════════════════════════\n\n";
-        resultMsg += "Processed: " + mp4Files.length + " files\n";
-        resultMsg += "Success: " + successCount + " | Failed: " + failCount + "\n\n";
-        resultMsg += "───────────────────────────────────────\n";
-
-        for (var r = 0; r < results.length; r++) {
-            var res = results[r];
-            if (res.success) {
-                totalSourceSize += res.sourceSize;
-                totalOutputSize += res.outputSize;
-                resultMsg += (res.meetsTarget ? "✓ " : "⚠ ") + res.name + "\n";
-                resultMsg += "   " + res.sourceSize.toFixed(1) + " → " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
-                if (res.replaced) {
-                    resultMsg += "   (Replaced original)\n";
-                } else {
-                    resultMsg += "   (Original NOT replaced - check permissions)\n";
-                }
-            } else {
-                resultMsg += "✗ " + res.name + " - " + res.reason + "\n";
-            }
-        }
-
-        if (successCount > 0) {
-            var totalSavings = ((totalSourceSize - totalOutputSize) / totalSourceSize * 100);
+        var resultMsg = "";
+        try {
+            var totalSourceSize = 0;
+            var totalOutputSize = 0;
+            resultMsg = "═══════════════════════════════════════\n";
+            resultMsg += "       BATCH OPTIMIZATION COMPLETE\n";
+            resultMsg += "═══════════════════════════════════════\n\n";
+            resultMsg += "Processed: " + mp4Files.length + " files\n";
+            resultMsg += "Success: " + successCount + " | Failed: " + failCount + "\n\n";
             resultMsg += "───────────────────────────────────────\n";
-            resultMsg += "Total: " + totalSourceSize.toFixed(1) + " → " + totalOutputSize.toFixed(1) + " MB\n";
-            resultMsg += "Overall Savings: " + totalSavings.toFixed(1) + "%\n";
+
+            for (var r = 0; r < results.length; r++) {
+                var res = results[r];
+                if (res.success) {
+                    totalSourceSize += res.sourceSize;
+                    totalOutputSize += res.outputSize;
+                    resultMsg += (res.meetsTarget ? "✓ " : "⚠ ") + res.name + "\n";
+                    resultMsg += "   " + res.sourceSize.toFixed(1) + " → " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
+                    if (res.replaced) {
+                        resultMsg += "   (Replaced original)\n";
+                    } else {
+                        resultMsg += "   (Original NOT replaced - check permissions)\n";
+                    }
+                } else {
+                    resultMsg += "✗ " + res.name + " - " + res.reason + "\n";
+                }
+            }
+
+            if (successCount > 0) {
+                var totalSavings = ((totalSourceSize - totalOutputSize) / totalSourceSize * 100);
+                resultMsg += "───────────────────────────────────────\n";
+                resultMsg += "Total: " + totalSourceSize.toFixed(1) + " → " + totalOutputSize.toFixed(1) + " MB\n";
+                resultMsg += "Overall Savings: " + totalSavings.toFixed(1) + "%\n";
+            }
+
+            resultMsg += "\nLocation: " + outFolder.fsName;
+        } catch (err) {
+            logError("Error building batch results message: " + err.toString());
+            resultMsg = "Batch optimization completed.\nSuccess: " + successCount + " | Failed: " + failCount + "\nLocation: " + outFolder.fsName;
         }
 
-        resultMsg += "\nLocation: " + outFolder.fsName;
+        try {
+            outFolder.execute();
+        } catch (e) {
+            logWarn("Could not auto-open folder: " + e.toString());
+        }
 
-        outFolder.execute();
-        var dlgBatch = new Window("dialog", "Batch Optimization Complete");
-        dlgBatch.orientation = "column";
-        dlgBatch.alignChildren = ["fill", "top"];
-        dlgBatch.margins = 20;
-        dlgBatch.spacing = 10;
-        var msgBatch = dlgBatch.add("edittext", [0, 0, 420, 240], resultMsg, { multiline: true, readonly: true, scrollable: true });
-        var btnsBatch = dlgBatch.add("group");
-        btnsBatch.alignment = "center";
-        btnsBatch.spacing = 10;
-        var okBatchBtn = btnsBatch.add("button", undefined, "OK");
-        okBatchBtn.active = true;
-        okBatchBtn.onClick = function () { dlgBatch.close(); };
-        dlgBatch.show();
+        try {
+            var dlgBatch = new Window("dialog", "Batch Optimization Complete");
+            dlgBatch.orientation = "column";
+            dlgBatch.alignChildren = ["fill", "top"];
+            dlgBatch.margins = 20;
+            dlgBatch.spacing = 10;
+            var msgBatch = dlgBatch.add("edittext", [0, 0, 420, 240], resultMsg, { multiline: true, readonly: true, scrollable: true });
+            var btnsBatch = dlgBatch.add("group");
+            btnsBatch.alignment = "center";
+            btnsBatch.spacing = 10;
+            var okBatchBtn = btnsBatch.add("button", undefined, "OK");
+            okBatchBtn.active = true;
+            okBatchBtn.onClick = function () { dlgBatch.close(); };
+            dlgBatch.show();
+        } catch (e) {
+            logError("Error displaying batch completion dialog: " + e.toString());
+            alert(resultMsg);
+        }
     }
 
     /**
