@@ -3546,6 +3546,53 @@
     }
 
     /**
+     * Release any locks After Effects might have on a file (Render Queue or footage items)
+     * @param {File} file - The file to unlock
+     * @returns {array} Array of project items that were temporarily replaced
+     */
+    function releaseFileLock(file) {
+        var replacedItems = [];
+        if (!file || !file.exists) return replacedItems;
+
+        // 1. Release Render Queue locks (point output module to dummy file)
+        if (app.project && app.project.renderQueue) {
+            try {
+                var rq = app.project.renderQueue;
+                for (var i = 1; i <= rq.numItems; i++) {
+                    var item = rq.item(i);
+                    for (var j = 1; j <= item.numOutputModules; j++) {
+                        var om = item.outputModule(j);
+                        if (om.file && om.file.fsName === file.fsName) {
+                            var dummyFile = new File(Folder.temp.fsName + "/rel_lock_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000) + ".mp4");
+                            om.file = dummyFile;
+                        }
+                    }
+                }
+            } catch (err) {
+                writeLog("Error releasing Render Queue lock: " + err.toString(), "DEBUG");
+            }
+        }
+
+        // 2. Release footage item locks (point footage item to dummy placeholder)
+        if (app.project) {
+            try {
+                for (var k = 1; k <= app.project.numItems; k++) {
+                    var projItem = app.project.item(k);
+                    if (projItem instanceof FootageItem && projItem.file && projItem.file.fsName === file.fsName) {
+                        var dummyPlace = new File(Folder.temp.fsName + "/temp_place_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000) + ".mp4");
+                        projItem.replace(dummyPlace);
+                        replacedItems.push(projItem);
+                    }
+                }
+            } catch (err) {
+                writeLog("Error releasing FootageItem lock: " + err.toString(), "DEBUG");
+            }
+        }
+        
+        return replacedItems;
+    }
+
+    /**
      * Process DOOH MP4 Optimization (supports single and batch)
      * @param {object} ui - UI reference
      * @param {boolean} [forceFilePick] - If true, skip project folder detection and directly open file picker
@@ -4021,14 +4068,34 @@
                 // REPLACEMENT LOGIC FOR BATCH
                 var replaced = false;
                 var sourceName = mp4File.name;
+                var lockedItems = [];
                 try {
+                    lockedItems = releaseFileLock(mp4File);
                     if (mp4File.remove()) {
                         if (outputFile.rename(sourceName)) {
                             replaced = true;
+                            // Restore footage items to point to the newly renamed file
+                            for (var k = 0; k < lockedItems.length; k++) {
+                                try { lockedItems[k].replace(mp4File); } catch (err) {}
+                            }
+                        } else {
+                            // Rename failed, restore to original file
+                            for (var k = 0; k < lockedItems.length; k++) {
+                                try { lockedItems[k].replace(mp4File); } catch (err) {}
+                            }
+                        }
+                    } else {
+                        // Delete failed, restore to original file
+                        for (var k = 0; k < lockedItems.length; k++) {
+                            try { lockedItems[k].replace(mp4File); } catch (err) {}
                         }
                     }
                 } catch (e) {
-                    // If failed, we just note it but success is still true as we have an optimized file
+                    writeLog("Batch replace failed: " + e.toString(), "WARN");
+                    // Restore to original file in case of exception
+                    for (var k = 0; k < lockedItems.length; k++) {
+                        try { lockedItems[k].replace(mp4File); } catch (err) {}
+                    }
                 }
 
                 results.push({
@@ -4647,15 +4714,35 @@
 
             // REPLACEMENT LOGIC
             var replaced = false;
+            var lockedItems = [];
             try {
+                lockedItems = releaseFileLock(mp4File);
                 if (mp4File.remove()) {
                     if (outputFile.rename(originalName)) {
                         replaced = true;
+                        // Restore footage items to point to the newly renamed file
+                        for (var k = 0; k < lockedItems.length; k++) {
+                            try { lockedItems[k].replace(mp4File); } catch (err) {}
+                        }
+                    } else {
+                        // Rename failed, restore to original file
+                        for (var k = 0; k < lockedItems.length; k++) {
+                            try { lockedItems[k].replace(mp4File); } catch (err) {}
+                        }
                     }
+                } else {
+                    // Delete failed, restore to original file
+                    for (var k = 0; k < lockedItems.length; k++) {
+                        try { lockedItems[k].replace(mp4File); } catch (err) {}
+                        }
                 }
             } catch (e) {
                 // If replacement fails, we still have the _Optimized file, which is fine, just warn
                 alert("Warning: Could not replace original file.\nError: " + e.toString());
+                // Restore to original file in case of exception
+                for (var k = 0; k < lockedItems.length; k++) {
+                    try { lockedItems[k].replace(mp4File); } catch (err) {}
+                }
             }
 
             var resultMsg = "═══════════════════════════════════════\n";
