@@ -3403,25 +3403,37 @@
             }
         }
 
-        // Method 2: Fallback to FFmpeg -i (merge stderr→stdout via 2>&1, pipe through findstr)
+        // Method 2: Fallback to FFmpeg -i (merge stderr→stdout, write to temp file, read and match)
         if (ffmpegPath) {
             try {
-                var result2 = "";
+                var tempOutput = Folder.temp.fsName + (isWin ? "\\ffmpeg_dur_" + new Date().getTime() + ".txt" : "/ffmpeg_dur_" + new Date().getTime() + ".txt");
+                var exe = '"' + ffmpegPath + '"';
+                var cmd2 = exe + ' -nostdin -i "' + inputPath + '"';
+                
                 if (isWin) {
-                    // Wrap exe+args in outer quotes so cmd /c handles inner quoted paths correctly
-                    var cmd2 = 'cmd /c ""' + ffmpegPath + '" -nostdin -i "' + inputPath + '" 2>&1 | findstr /C:"Duration:""';
-                    result2 = system.callSystem(cmd2);
+                    cmd2 = 'cmd /c ' + cmd2 + ' > "' + tempOutput + '" 2>&1';
                 } else {
-                    result2 = system.callSystem('"' + ffmpegPath + '" -i "' + inputPath + '" 2>&1 | grep Duration');
+                    cmd2 = cmd2 + ' > "' + tempOutput + '" 2>&1';
                 }
-
+                
+                system.callSystem(cmd2);
+                
+                var result2 = "";
+                var tempFile = new File(tempOutput);
+                if (tempFile.exists) {
+                    tempFile.open("r");
+                    result2 = tempFile.read();
+                    tempFile.close();
+                    try { tempFile.remove(); } catch (e) {}
+                }
+                
                 var match = result2.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
                 if (match) {
                     var hours = parseInt(match[1], 10);
                     var mins = parseInt(match[2], 10);
                     var secs = parseFloat(match[3]);
                     duration = hours * 3600 + mins * 60 + secs;
-
+                    
                     if (duration > 0) {
                         writeLog("Auto-detected duration (ffmpeg): " + duration.toFixed(2) + "s for " + videoFile.name, "INFO");
                         return duration;
