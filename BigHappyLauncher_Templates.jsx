@@ -3403,25 +3403,37 @@
             }
         }
 
-        // Method 2: Fallback to FFmpeg -i (merge stderr→stdout via 2>&1, pipe through findstr)
+        // Method 2: Fallback to FFmpeg -i (merge stderr→stdout, write to temp file, read and match)
         if (ffmpegPath) {
             try {
-                var result2 = "";
+                var tempOutput = Folder.temp.fsName + (isWin ? "\\ffmpeg_dur_" + new Date().getTime() + ".txt" : "/ffmpeg_dur_" + new Date().getTime() + ".txt");
+                var exe = '"' + ffmpegPath + '"';
+                var cmd2 = exe + ' -nostdin -i "' + inputPath + '"';
+                
                 if (isWin) {
-                    // Wrap exe+args in outer quotes so cmd /c handles inner quoted paths correctly
-                    var cmd2 = 'cmd /c ""' + ffmpegPath + '" -nostdin -i "' + inputPath + '" 2>&1 | findstr /C:"Duration:""';
-                    result2 = system.callSystem(cmd2);
+                    cmd2 = 'cmd /c ' + cmd2 + ' > "' + tempOutput + '" 2>&1';
                 } else {
-                    result2 = system.callSystem('"' + ffmpegPath + '" -i "' + inputPath + '" 2>&1 | grep Duration');
+                    cmd2 = cmd2 + ' > "' + tempOutput + '" 2>&1';
                 }
-
+                
+                system.callSystem(cmd2);
+                
+                var result2 = "";
+                var tempFile = new File(tempOutput);
+                if (tempFile.exists) {
+                    tempFile.open("r");
+                    result2 = tempFile.read();
+                    tempFile.close();
+                    try { tempFile.remove(); } catch (e) {}
+                }
+                
                 var match = result2.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
                 if (match) {
                     var hours = parseInt(match[1], 10);
                     var mins = parseInt(match[2], 10);
                     var secs = parseFloat(match[3]);
                     duration = hours * 3600 + mins * 60 + secs;
-
+                    
                     if (duration > 0) {
                         writeLog("Auto-detected duration (ffmpeg): " + duration.toFixed(2) + "s for " + videoFile.name, "INFO");
                         return duration;
@@ -3531,6 +3543,53 @@
         var minEstimate = (duration * 0.05); // ~50kbps minimum
         if (estimated < minEstimate) estimated = minEstimate;
         return estimated;
+    }
+
+    /**
+     * Release any locks After Effects might have on a file (Render Queue or footage items)
+     * @param {File} file - The file to unlock
+     * @returns {array} Array of project items that were temporarily replaced
+     */
+    function releaseFileLock(file) {
+        var replacedItems = [];
+        if (!file || !file.exists) return replacedItems;
+
+        // 1. Release Render Queue locks (point output module to dummy file)
+        if (app.project && app.project.renderQueue) {
+            try {
+                var rq = app.project.renderQueue;
+                for (var i = 1; i <= rq.numItems; i++) {
+                    var item = rq.item(i);
+                    for (var j = 1; j <= item.numOutputModules; j++) {
+                        var om = item.outputModule(j);
+                        if (om.file && om.file.fsName === file.fsName) {
+                            var dummyFile = new File(Folder.temp.fsName + "/rel_lock_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000) + ".mp4");
+                            om.file = dummyFile;
+                        }
+                    }
+                }
+            } catch (err) {
+                writeLog("Error releasing Render Queue lock: " + err.toString(), "DEBUG");
+            }
+        }
+
+        // 2. Release footage item locks (point footage item to dummy placeholder)
+        if (app.project) {
+            try {
+                for (var k = 1; k <= app.project.numItems; k++) {
+                    var projItem = app.project.item(k);
+                    if (projItem instanceof FootageItem && projItem.file && projItem.file.fsName === file.fsName) {
+                        var dummyPlace = new File(Folder.temp.fsName + "/temp_place_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000) + ".mp4");
+                        projItem.replace(dummyPlace);
+                        replacedItems.push(projItem);
+                    }
+                }
+            } catch (err) {
+                writeLog("Error releasing FootageItem lock: " + err.toString(), "DEBUG");
+            }
+        }
+        
+        return replacedItems;
     }
 
     /**
@@ -3773,9 +3832,12 @@
         cancelBtn.alignment = ["center", "bottom"];
         cancelBtn.onClick = function () {
             batchCancelled = true;
-            w.close();
+            w.hide();
         };
-        w.onClose = function () { batchCancelled = true; };
+        w.onClose = function () {
+            batchCancelled = true;
+            return true;
+        };
 
         w.center();
         w.show();
@@ -4006,14 +4068,34 @@
                 // REPLACEMENT LOGIC FOR BATCH
                 var replaced = false;
                 var sourceName = mp4File.name;
+                var lockedItems = [];
                 try {
+                    lockedItems = releaseFileLock(mp4File);
                     if (mp4File.remove()) {
                         if (outputFile.rename(sourceName)) {
                             replaced = true;
+                            // Restore footage items to point to the newly renamed file
+                            for (var k = 0; k < lockedItems.length; k++) {
+                                try { lockedItems[k].replace(mp4File); } catch (err) {}
+                            }
+                        } else {
+                            // Rename failed, restore to original file
+                            for (var k = 0; k < lockedItems.length; k++) {
+                                try { lockedItems[k].replace(mp4File); } catch (err) {}
+                            }
+                        }
+                    } else {
+                        // Delete failed, restore to original file
+                        for (var k = 0; k < lockedItems.length; k++) {
+                            try { lockedItems[k].replace(mp4File); } catch (err) {}
                         }
                     }
                 } catch (e) {
-                    // If failed, we just note it but success is still true as we have an optimized file
+                    writeLog("Batch replace failed: " + e.toString(), "WARN");
+                    // Restore to original file in case of exception
+                    for (var k = 0; k < lockedItems.length; k++) {
+                        try { lockedItems[k].replace(mp4File); } catch (err) {}
+                    }
                 }
 
                 results.push({
@@ -4056,7 +4138,17 @@
         }
 
         overallBar.value = mp4Files.length;
-        w.close();
+        
+        try {
+            w.hide();
+        } catch (e) {
+            logError("Error hiding batch progress window: " + e.toString());
+        }
+        try {
+            w.close();
+        } catch (e) {
+            logError("Error closing batch progress window: " + e.toString());
+        }
 
         logInfo("Batch optimization finished", {
             "Total Files": mp4Files.length,
@@ -4065,55 +4157,71 @@
         });
 
         // Show batch results
-        var totalSourceSize = 0;
-        var totalOutputSize = 0;
-        var resultMsg = "═══════════════════════════════════════\n";
-        resultMsg += "       BATCH OPTIMIZATION COMPLETE\n";
-        resultMsg += "═══════════════════════════════════════\n\n";
-        resultMsg += "Processed: " + mp4Files.length + " files\n";
-        resultMsg += "Success: " + successCount + " | Failed: " + failCount + "\n\n";
-        resultMsg += "───────────────────────────────────────\n";
-
-        for (var r = 0; r < results.length; r++) {
-            var res = results[r];
-            if (res.success) {
-                totalSourceSize += res.sourceSize;
-                totalOutputSize += res.outputSize;
-                resultMsg += (res.meetsTarget ? "✓ " : "⚠ ") + res.name + "\n";
-                resultMsg += "   " + res.sourceSize.toFixed(1) + " → " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
-                if (res.replaced) {
-                    resultMsg += "   (Replaced original)\n";
-                } else {
-                    resultMsg += "   (Original NOT replaced - check permissions)\n";
-                }
-            } else {
-                resultMsg += "✗ " + res.name + " - " + res.reason + "\n";
-            }
-        }
-
-        if (successCount > 0) {
-            var totalSavings = ((totalSourceSize - totalOutputSize) / totalSourceSize * 100);
+        var resultMsg = "";
+        try {
+            var totalSourceSize = 0;
+            var totalOutputSize = 0;
+            resultMsg = "═══════════════════════════════════════\n";
+            resultMsg += "       BATCH OPTIMIZATION COMPLETE\n";
+            resultMsg += "═══════════════════════════════════════\n\n";
+            resultMsg += "Processed: " + mp4Files.length + " files\n";
+            resultMsg += "Success: " + successCount + " | Failed: " + failCount + "\n\n";
             resultMsg += "───────────────────────────────────────\n";
-            resultMsg += "Total: " + totalSourceSize.toFixed(1) + " → " + totalOutputSize.toFixed(1) + " MB\n";
-            resultMsg += "Overall Savings: " + totalSavings.toFixed(1) + "%\n";
+
+            for (var r = 0; r < results.length; r++) {
+                var res = results[r];
+                if (res.success) {
+                    totalSourceSize += res.sourceSize;
+                    totalOutputSize += res.outputSize;
+                    resultMsg += (res.meetsTarget ? "✓ " : "⚠ ") + res.name + "\n";
+                    resultMsg += "   " + res.sourceSize.toFixed(1) + " → " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
+                    if (res.replaced) {
+                        resultMsg += "   (Replaced original)\n";
+                    } else {
+                        resultMsg += "   (Original NOT replaced - check permissions)\n";
+                    }
+                } else {
+                    resultMsg += "✗ " + res.name + " - " + res.reason + "\n";
+                }
+            }
+
+            if (successCount > 0) {
+                var totalSavings = ((totalSourceSize - totalOutputSize) / totalSourceSize * 100);
+                resultMsg += "───────────────────────────────────────\n";
+                resultMsg += "Total: " + totalSourceSize.toFixed(1) + " → " + totalOutputSize.toFixed(1) + " MB\n";
+                resultMsg += "Overall Savings: " + totalSavings.toFixed(1) + "%\n";
+            }
+
+            resultMsg += "\nLocation: " + outFolder.fsName;
+        } catch (err) {
+            logError("Error building batch results message: " + err.toString());
+            resultMsg = "Batch optimization completed.\nSuccess: " + successCount + " | Failed: " + failCount + "\nLocation: " + outFolder.fsName;
         }
 
-        resultMsg += "\nLocation: " + outFolder.fsName;
+        try {
+            outFolder.execute();
+        } catch (e) {
+            logWarn("Could not auto-open folder: " + e.toString());
+        }
 
-        outFolder.execute();
-        var dlgBatch = new Window("dialog", "Batch Optimization Complete");
-        dlgBatch.orientation = "column";
-        dlgBatch.alignChildren = ["fill", "top"];
-        dlgBatch.margins = 20;
-        dlgBatch.spacing = 10;
-        var msgBatch = dlgBatch.add("edittext", [0, 0, 420, 240], resultMsg, { multiline: true, readonly: true, scrollable: true });
-        var btnsBatch = dlgBatch.add("group");
-        btnsBatch.alignment = "center";
-        btnsBatch.spacing = 10;
-        var okBatchBtn = btnsBatch.add("button", undefined, "OK");
-        okBatchBtn.active = true;
-        okBatchBtn.onClick = function () { dlgBatch.close(); };
-        dlgBatch.show();
+        try {
+            var dlgBatch = new Window("dialog", "Batch Optimization Complete");
+            dlgBatch.orientation = "column";
+            dlgBatch.alignChildren = ["fill", "top"];
+            dlgBatch.margins = 20;
+            dlgBatch.spacing = 10;
+            var msgBatch = dlgBatch.add("edittext", [0, 0, 420, 240], resultMsg, { multiline: true, readonly: true, scrollable: true });
+            var btnsBatch = dlgBatch.add("group");
+            btnsBatch.alignment = "center";
+            btnsBatch.spacing = 10;
+            var okBatchBtn = btnsBatch.add("button", undefined, "OK");
+            okBatchBtn.active = true;
+            okBatchBtn.onClick = function () { dlgBatch.close(); };
+            dlgBatch.show();
+        } catch (e) {
+            logError("Error displaying batch completion dialog: " + e.toString());
+            alert(resultMsg);
+        }
     }
 
     /**
@@ -4606,15 +4714,35 @@
 
             // REPLACEMENT LOGIC
             var replaced = false;
+            var lockedItems = [];
             try {
+                lockedItems = releaseFileLock(mp4File);
                 if (mp4File.remove()) {
                     if (outputFile.rename(originalName)) {
                         replaced = true;
+                        // Restore footage items to point to the newly renamed file
+                        for (var k = 0; k < lockedItems.length; k++) {
+                            try { lockedItems[k].replace(mp4File); } catch (err) {}
+                        }
+                    } else {
+                        // Rename failed, restore to original file
+                        for (var k = 0; k < lockedItems.length; k++) {
+                            try { lockedItems[k].replace(mp4File); } catch (err) {}
+                        }
                     }
+                } else {
+                    // Delete failed, restore to original file
+                    for (var k = 0; k < lockedItems.length; k++) {
+                        try { lockedItems[k].replace(mp4File); } catch (err) {}
+                        }
                 }
             } catch (e) {
                 // If replacement fails, we still have the _Optimized file, which is fine, just warn
                 alert("Warning: Could not replace original file.\nError: " + e.toString());
+                // Restore to original file in case of exception
+                for (var k = 0; k < lockedItems.length; k++) {
+                    try { lockedItems[k].replace(mp4File); } catch (err) {}
+                }
             }
 
             var resultMsg = "═══════════════════════════════════════\n";
