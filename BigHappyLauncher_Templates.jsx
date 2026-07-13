@@ -521,19 +521,21 @@
 
             if (checkCancelled(currentFile)) return;
 
-            // ==============================
-            // REMOVE UNUSED FOOTAGE
-            // ==============================
-            updateProgress("Removing unused footage...", 3);
-            removeUnusedFootage();
+            // 3. Save Copy FIRST, then clean up the COPY only.
+            // The original .aep on disk must never be modified by collect:
+            // reduceProject() deletes comps/footage, so it may only run on the copy.
+            updateProgress("Saving local copy...", 3);
 
-            // 3. Save Copy & Collect Assets LOCALLY
-            updateProgress("Saving local copy...", 4);
-
-            // Step 3a: Save ORIGINAL first to ensure changes are safe
+            // Step 3a: Save ORIGINAL as-is so no work is lost
             if (app.project.file) app.project.save();
             var localAepPath = joinPath(destFolder.fsName, currentName + ".aep");
-            app.project.save(new File(localAepPath)); // Save project As copy
+            app.project.save(new File(localAepPath)); // Save As copy — we now work on the copy
+
+            // ==============================
+            // REMOVE UNUSED FOOTAGE (copy only)
+            // ==============================
+            updateProgress("Removing unused footage...", 4);
+            removeUnusedFootage();
 
             // Collect Assets (Use Shared Folder)
             updateProgress("Collecting assets to Shared Library...", 5);
@@ -877,10 +879,24 @@
      */
     function removeUnusedFootage() {
         try {
+            var keep = [];
             var mainComp = findMainComp();
-            if (mainComp) {
-                app.project.reduceProject([mainComp]);
-                writeLog("Removed unused footage (reduceProject)", "INFO");
+            if (mainComp) keep.push(mainComp);
+            // Also keep comps queued in the Render Queue — they are deliverables too
+            try {
+                var rq = app.project.renderQueue;
+                for (var i = 1; i <= rq.numItems; i++) {
+                    var c = rq.item(i).comp;
+                    if (c) {
+                        var dup = false;
+                        for (var j = 0; j < keep.length; j++) { if (keep[j] === c) { dup = true; break; } }
+                        if (!dup) keep.push(c);
+                    }
+                }
+            } catch (eRQ) { }
+            if (keep.length > 0) {
+                app.project.reduceProject(keep);
+                writeLog("Removed unused footage (reduceProject, kept " + keep.length + " comp(s))", "INFO");
                 return true;
             }
             return false;
@@ -1742,10 +1758,51 @@
         return null;
     }
 
+    /**
+     * Guard before any action that closes/replaces the open project.
+     * If the current project has unsaved changes, asks the user to save
+     * or explicitly discard them first.
+     * @param {string} actionLabel - What is about to happen (shown to the user)
+     * @returns {boolean} true to proceed, false to abort the action
+     */
+    function guardUnsavedProject(actionLabel) {
+        try {
+            var proj = app.project;
+            if (!proj || proj.numItems === 0) return true;
+
+            var isDirty;
+            try {
+                isDirty = (proj.dirty === true); // AE 17.5+
+            } catch (e) {
+                isDirty = (proj.file === null); // fallback: has items but never saved
+            }
+            if (!isDirty) return true;
+
+            var doSave = confirm("The current project has UNSAVED changes.\n\nAbout to: " + actionLabel + "\n\nSave the current project first?");
+            if (doSave) {
+                if (proj.file) {
+                    proj.save();
+                } else {
+                    var f = File.saveDialog("Save current project", "*.aep");
+                    if (!f) return false; // Save As cancelled — abort the action
+                    proj.save(f);
+                }
+                return true;
+            }
+            // Discard requires explicit consent
+            return confirm("Continue WITHOUT saving?\n\nUnsaved changes will be LOST.");
+        } catch (e) {
+            writeLog("guardUnsavedProject error: " + e.toString(), "WARN");
+            return true;
+        }
+    }
+
     function generateTemplateFile(template, folderPath) {
         try {
             if (app.project) {
-                app.project.close(CloseOptions.PROMPT_TO_SAVE_CHANGES);
+                // Unsaved changes are handled by guardUnsavedProject before the
+                // generation batch starts — do not prompt per template.
+                app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
             }
             app.newProject();
             app.beginUndoGroup("Generate Template: " + template.name);
@@ -1808,6 +1865,7 @@
         if (!folder.exists) folder.create();
 
         var generated = [];
+        var guardPassed = false; // generation closes the open project — confirm once
         for (var i = 0; i < templates.length; i++) {
             var t = templates[i];
 
@@ -1828,6 +1886,14 @@
                     generated.push(t.name);
                     continue;
                 }
+            }
+
+            if (!guardPassed) {
+                if (!guardUnsavedProject("Generate template files (this closes the current project)")) {
+                    writeLog("Template generation aborted by user (unsaved project)", "WARN");
+                    break;
+                }
+                guardPassed = true;
             }
 
             var newPath = generateTemplateFile(t, folderPath);
@@ -3593,6 +3659,56 @@
     }
 
     /**
+     * Safely replace the original file with the optimized output.
+     * Never deletes the source before the swap is confirmed:
+     * original -> .bak, optimized -> original name, then delete the .bak.
+     * If the optimized rename fails, the .bak is rolled back to the original name.
+     * Footage items released via releaseFileLock are re-pointed at the original path.
+     * @param {File} mp4File - Original source file (same folder as outputFile)
+     * @param {File} outputFile - Optimized output file
+     * @returns {boolean} true if the original was replaced with the optimized file
+     */
+    function safeReplaceOriginal(mp4File, outputFile) {
+        var originalName = decodePath(mp4File.name);
+        var parentPath = mp4File.parent.fsName;
+        var lockedItems = [];
+        var replaced = false;
+        var parkedAsBak = false;
+        try {
+            lockedItems = releaseFileLock(mp4File);
+
+            var backupFile = new File(joinPath(parentPath, originalName + ".bak"));
+            if (backupFile.exists) backupFile.remove();
+
+            if (mp4File.rename(originalName + ".bak")) {
+                parkedAsBak = true; // mp4File object now points at the .bak on disk
+                if (outputFile.rename(originalName)) {
+                    replaced = true;
+                    if (mp4File.remove()) parkedAsBak = false; // backup deleted
+                } else {
+                    // Optimized rename failed — roll the original back into place
+                    if (mp4File.rename(originalName)) parkedAsBak = false;
+                }
+            }
+        } catch (e) {
+            writeLog("safeReplaceOriginal failed: " + e.toString(), "WARN");
+            if (parkedAsBak && !replaced) {
+                try { if (mp4File.rename(originalName)) parkedAsBak = false; } catch (err) { }
+            }
+        }
+        if (parkedAsBak) {
+            writeLog("Backup file left on disk: " + originalName + ".bak", "WARN");
+        }
+        // Re-point footage items at the original path (now the optimized file if
+        // replaced, otherwise the restored original)
+        var finalFile = new File(joinPath(parentPath, originalName));
+        for (var m = 0; m < lockedItems.length; m++) {
+            try { lockedItems[m].replace(finalFile); } catch (err) { }
+        }
+        return replaced;
+    }
+
+    /**
      * Process DOOH MP4 Optimization (supports single and batch)
      * @param {object} ui - UI reference
      * @param {boolean} [forceFilePick] - If true, skip project folder detection and directly open file picker
@@ -4065,38 +4181,10 @@
                 var outputSize = outputFile.length / (1024 * 1024);
                 var savings = ((sourceSize - outputSize) / sourceSize * 100);
 
-                // REPLACEMENT LOGIC FOR BATCH
-                var replaced = false;
+                // REPLACEMENT LOGIC FOR BATCH (backup-swap: original is never
+                // deleted before the optimized file is confirmed in place)
                 var sourceName = mp4File.name;
-                var lockedItems = [];
-                try {
-                    lockedItems = releaseFileLock(mp4File);
-                    if (mp4File.remove()) {
-                        if (outputFile.rename(sourceName)) {
-                            replaced = true;
-                            // Restore footage items to point to the newly renamed file
-                            for (var k = 0; k < lockedItems.length; k++) {
-                                try { lockedItems[k].replace(mp4File); } catch (err) {}
-                            }
-                        } else {
-                            // Rename failed, restore to original file
-                            for (var k = 0; k < lockedItems.length; k++) {
-                                try { lockedItems[k].replace(mp4File); } catch (err) {}
-                            }
-                        }
-                    } else {
-                        // Delete failed, restore to original file
-                        for (var k = 0; k < lockedItems.length; k++) {
-                            try { lockedItems[k].replace(mp4File); } catch (err) {}
-                        }
-                    }
-                } catch (e) {
-                    writeLog("Batch replace failed: " + e.toString(), "WARN");
-                    // Restore to original file in case of exception
-                    for (var k = 0; k < lockedItems.length; k++) {
-                        try { lockedItems[k].replace(mp4File); } catch (err) {}
-                    }
-                }
+                var replaced = safeReplaceOriginal(mp4File, outputFile);
 
                 results.push({
                     name: sourceName,
@@ -4712,38 +4800,9 @@
                 "Total Time": formatDuration(totalTime)
             });
 
-            // REPLACEMENT LOGIC
-            var replaced = false;
-            var lockedItems = [];
-            try {
-                lockedItems = releaseFileLock(mp4File);
-                if (mp4File.remove()) {
-                    if (outputFile.rename(originalName)) {
-                        replaced = true;
-                        // Restore footage items to point to the newly renamed file
-                        for (var k = 0; k < lockedItems.length; k++) {
-                            try { lockedItems[k].replace(mp4File); } catch (err) {}
-                        }
-                    } else {
-                        // Rename failed, restore to original file
-                        for (var k = 0; k < lockedItems.length; k++) {
-                            try { lockedItems[k].replace(mp4File); } catch (err) {}
-                        }
-                    }
-                } else {
-                    // Delete failed, restore to original file
-                    for (var k = 0; k < lockedItems.length; k++) {
-                        try { lockedItems[k].replace(mp4File); } catch (err) {}
-                        }
-                }
-            } catch (e) {
-                // If replacement fails, we still have the _Optimized file, which is fine, just warn
-                alert("Warning: Could not replace original file.\nError: " + e.toString());
-                // Restore to original file in case of exception
-                for (var k = 0; k < lockedItems.length; k++) {
-                    try { lockedItems[k].replace(mp4File); } catch (err) {}
-                }
-            }
+            // REPLACEMENT LOGIC (backup-swap: original is never deleted before
+            // the optimized file is confirmed in place)
+            var replaced = safeReplaceOriginal(mp4File, outputFile);
 
             var resultMsg = "═══════════════════════════════════════\n";
             resultMsg += "        DOOH OPTIMIZATION COMPLETE\n";
@@ -5657,6 +5716,8 @@
             }
             if (!file) return;
 
+            if (!guardUnsavedProject("Open project: " + decodePath(file.name))) return;
+
             try {
                 app.open(file);
                 addToRecentFiles(file.fsName);
@@ -5673,11 +5734,8 @@
             var file = File.openDialog("Select .aep file to import", "*.aep");
             if (!file) return;
 
-            // 1. Open
-            if (app.project && app.project.numItems > 0 && !app.project.saved) {
-                // If dirty, just let user decide via app (or simpler: assume they want to proceed)
-                // For safety, force close warning if needed, but app.open usually prompts
-            }
+            // 1. Open (guard against losing unsaved work)
+            if (!guardUnsavedProject("Import project: " + decodePath(file.name))) return;
             app.open(file);
 
             // 2. Detect
