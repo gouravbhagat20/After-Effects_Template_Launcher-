@@ -539,6 +539,8 @@
                 return chain.then(function () {
                     if (optCancelled) throw new Error("CANCELLED");
                     $("opt-current-file").textContent = f.path.split(/[\\/]/).pop();
+                    $("opt-bar-file").style.width = "0%";
+                    $("opt-pct").textContent = "0%";
 
                     return host("releaseFileLock", f.path)
                         .catch(function () { return { items: [], oms: [] }; })
@@ -577,6 +579,9 @@
                         })
                         .then(function () {
                             done++;
+                            // File finished (encoded, skipped, or failed) — complete its bar
+                            $("opt-bar-file").style.width = "100%";
+                            $("opt-pct").textContent = "100%";
                             $("opt-overall-txt").textContent = done + " / " + optFiles.length;
                             $("opt-bar-all").style.width = (done / optFiles.length * 100) + "%";
                             renderOptFiles(statuses);
