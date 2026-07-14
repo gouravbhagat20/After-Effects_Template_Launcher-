@@ -102,6 +102,13 @@
         else cp.spawn("open", [folderPath], { detached: true });
     }
 
+    /** Reveal a specific file selected in Finder/Explorer. */
+    function revealFile(filePath) {
+        if (!filePath) return;
+        if (BHFFmpeg.isWin) cp.spawn("explorer", ["/select," + filePath], { detached: true });
+        else cp.spawn("open", ["-R", filePath], { detached: true });
+    }
+
     var ui = window.BHDialog;
 
     /** Unsaved-changes guard: resolves true to proceed (saving first if asked). */
@@ -522,9 +529,11 @@
             $("btn-cancel").disabled = false;
             $("opt-progress").classList.remove("hidden");
             $("opt-log").innerHTML = "";
+            $("btn-show-output").classList.add("hidden");
 
             var statuses = {};
             var done = 0;
+            var outputs = [];   // final file paths (replaced originals or _Optimized copies)
 
             /** Restore AE's footage/render-queue links; awaited before moving on. */
             function restore(tokens, filePath) {
@@ -554,6 +563,7 @@
                             ).then(function (res) {
                                 return restore(tokens, f.path).then(function () {
                                     var short = f.path.split(/[\\/]/).pop();
+                                    if (!res.skipped) outputs.push(res.output);
                                     if (res.skipped) {
                                         statuses[f.path] = "✓ already " + res.before.toFixed(1) + " MB";
                                         optLog(short + ": already under target, skipped", "ok");
@@ -592,6 +602,14 @@
             }, function (err) {
                 optLog(err.message === "CANCELLED" ? "Cancelled — remaining files skipped." : err.message, "err");
             }).then(function () {
+                // Reveal the result and keep a button around for later
+                if (outputs.length) {
+                    revealFile(outputs[0]);
+                    var btn = $("btn-show-output");
+                    btn.textContent = BHFFmpeg.isWin ? "Show in Explorer" : "Show in Finder";
+                    btn.classList.remove("hidden");
+                    btn.onclick = function () { revealFile(outputs[0]); };
+                }
                 optRunning = false;
                 $("btn-optimize").disabled = optFiles.length === 0;
                 $("btn-cancel").disabled = true;
