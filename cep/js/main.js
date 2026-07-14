@@ -611,7 +611,10 @@
                     btn.onclick = function () { revealFile(outputs[0]); };
                 }
                 optRunning = false;
-                $("btn-optimize").disabled = optFiles.length === 0;
+                // Clear the queue — results stay in the log; next run starts fresh
+                optFiles = [];
+                renderOptFiles();
+                $("opt-current-file").textContent = "—";
                 $("btn-cancel").disabled = true;
                 refreshProject();
             });
