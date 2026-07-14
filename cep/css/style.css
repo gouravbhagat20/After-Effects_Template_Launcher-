@@ -70,37 +70,58 @@ body {
 }
 .pill-dim { color: var(--text-dim); }
 .pill-ok { color: var(--green); border-color: rgba(88, 196, 105, 0.4); background: var(--green-soft); }
-.pill-ok::before { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.pill-ok::before {
+    background: var(--green);
+    animation: dot-breathe 2.4s ease-in-out infinite;
+}
+@keyframes dot-breathe {
+    0%, 100% { box-shadow: 0 0 3px var(--green); opacity: 0.85; }
+    50%      { box-shadow: 0 0 9px var(--green); opacity: 1; }
+}
 .pill-err { color: var(--red); border-color: rgba(228, 96, 96, 0.4); background: var(--red-soft); }
 .pill-err::before { background: var(--red); }
 
 /* ============ tabs ============ */
 
 .tabs {
+    position: relative;
     display: flex; gap: 2px;
     margin: 0 12px 14px; padding: 3px;
     background: var(--bg-input);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius);
 }
+.tab-thumb {
+    position: absolute; top: 3px; bottom: 3px; left: 0; width: 0;
+    background: var(--accent); border-radius: var(--radius-sm);
+    box-shadow: 0 1px 8px rgba(76, 154, 255, 0.4);
+    transition: transform 0.28s cubic-bezier(0.35, 0, 0.2, 1), width 0.28s cubic-bezier(0.35, 0, 0.2, 1);
+    z-index: 0;
+}
 .tab {
+    position: relative; z-index: 1;
     flex: 1;
     background: none; border: none; color: var(--text-dim);
     padding: 7px 10px; cursor: pointer; font-size: 11.5px; font-weight: 600;
     border-radius: var(--radius-sm);
-    transition: color 0.15s, background 0.15s;
+    transition: color 0.2s;
     white-space: nowrap;
 }
 .tab:hover { color: var(--text); }
-.tab.active {
-    color: #101418; background: var(--accent);
-    box-shadow: 0 1px 6px rgba(76, 154, 255, 0.35);
-}
+.tab.active { color: #101418; }
 
 .tab-page { display: none; padding: 0 12px; }
-.tab-page.active { display: block; animation: page-in 0.18s ease; }
-@keyframes page-in {
-    from { opacity: 0; transform: translateY(4px); }
+.tab-page.active { display: block; }
+
+/* staggered card entrance on tab switch */
+.tab-page.active .card { animation: card-in 0.3s ease backwards; }
+.tab-page.active .card:nth-child(1) { animation-delay: 0.02s; }
+.tab-page.active .card:nth-child(2) { animation-delay: 0.08s; }
+.tab-page.active .card:nth-child(3) { animation-delay: 0.14s; }
+.tab-page.active .card:nth-child(4) { animation-delay: 0.20s; }
+.tab-page.active .card:nth-child(5) { animation-delay: 0.26s; }
+@keyframes card-in {
+    from { opacity: 0; transform: translateY(10px); }
     to   { opacity: 1; transform: none; }
 }
 
@@ -361,3 +382,45 @@ select {
     overflow-wrap: break-word;
 }
 .bh-modal-btns { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ============ animations & feedback ============ */
+
+/* list items cascade in (delays set inline by JS) */
+.file-list li, .recent-list li, .tpl-list li {
+    animation: item-in 0.25s ease backwards;
+}
+@keyframes item-in {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: none; }
+}
+.mini-log div { animation: log-in 0.2s ease; }
+@keyframes log-in {
+    from { opacity: 0; transform: translateY(3px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* busy buttons get a spinner */
+.btn.loading { pointer-events: none; opacity: 0.75; }
+.btn.loading::before {
+    content: ""; width: 11px; height: 11px; flex: none;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: currentColor; border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* toast */
+.bh-toast {
+    position: fixed; left: 50%; bottom: 18px; z-index: 90;
+    transform: translateX(-50%) translateY(24px);
+    opacity: 0; pointer-events: none;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-left: 3px solid var(--green);
+    padding: 9px 16px; border-radius: var(--radius-sm);
+    font-size: 12px; font-weight: 600;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    transition: transform 0.25s cubic-bezier(0.35, 0, 0.2, 1), opacity 0.25s;
+    max-width: 85%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bh-toast.show { transform: translateX(-50%); opacity: 1; }
+.bh-toast.err { border-left-color: var(--red); }
