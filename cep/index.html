@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>BigHappy Launcher</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+    <div class="brand">
+        <span class="brand-name">BIG<span class="accent">HAPPY</span></span>
+        <span class="brand-sub">Launcher</span>
+    </div>
+    <span id="ae-status" class="pill pill-dim">connecting…</span>
+</header>
+
+<nav class="tabs">
+    <button class="tab active" data-tab="launcher">Launcher</button>
+    <button class="tab" data-tab="optimizer">DOOH Optimizer</button>
+    <button class="tab" data-tab="settings">Settings</button>
+</nav>
+
+<!-- ============================= LAUNCHER ============================= -->
+<section id="tab-launcher" class="tab-page active">
+
+    <div class="card">
+        <div class="card-title">New Project</div>
+        <label class="field">
+            <span>Template</span>
+            <select id="np-template"></select>
+        </label>
+        <div class="row gap">
+            <label class="field grow">
+                <span>Brand *</span>
+                <input type="text" id="np-brand" placeholder="Nike">
+            </label>
+            <label class="field grow">
+                <span>Campaign</span>
+                <input type="text" id="np-campaign" placeholder="SummerSale">
+            </label>
+        </div>
+        <div class="row gap">
+            <label class="field grow">
+                <span>Year</span>
+                <select id="np-year"></select>
+            </label>
+            <label class="field grow">
+                <span>Quarter</span>
+                <select id="np-quarter">
+                    <option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Version</span>
+                <input type="number" id="np-version" value="1" min="1" style="width:56px">
+            </label>
+            <label class="field">
+                <span>Revision</span>
+                <input type="number" id="np-revision" value="1" min="1" style="width:56px">
+            </label>
+        </div>
+        <div id="np-preview" class="preview-line">—</div>
+        <div class="row gap">
+            <button id="btn-create" class="btn btn-primary">Create Project</button>
+        </div>
+    </div>
+
+    <div class="card" id="project-card">
+        <div class="card-title">Current Project</div>
+        <div id="project-info" class="project-info">
+            <div class="muted">No project open.</div>
+        </div>
+        <div class="row gap">
+            <button id="btn-open" class="btn">Open Project…</button>
+            <button id="btn-save" class="btn btn-ghost">Save</button>
+            <button id="btn-reveal" class="btn btn-ghost">Reveal</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Recent Projects</div>
+        <ul id="recent-list" class="recent-list">
+            <li class="muted">Nothing yet — projects you open appear here.</li>
+        </ul>
+    </div>
+
+</section>
+
+<!-- ============================ OPTIMIZER ============================= -->
+<section id="tab-optimizer" class="tab-page">
+
+    <div class="card">
+        <div class="card-title">DOOH MP4 Optimizer</div>
+        <p class="hint">Optimizes MP4s to a hard size cap with two-pass H.264.
+           Originals are replaced only after a verified backup-swap.</p>
+
+        <div class="row gap">
+            <label class="field grow">
+                <span>Target size (MB)</span>
+                <input type="number" id="opt-target" value="7" min="1" step="0.5">
+            </label>
+            <label class="field grow">
+                <span>Source</span>
+                <button id="btn-pick-files" class="btn">Choose MP4s…</button>
+            </label>
+        </div>
+
+        <ul id="opt-file-list" class="file-list"></ul>
+
+        <div class="row gap">
+            <button id="btn-optimize" class="btn btn-primary" disabled>Optimize</button>
+            <button id="btn-cancel" class="btn btn-danger" disabled>Cancel</button>
+        </div>
+
+        <div id="opt-progress" class="progress-area hidden">
+            <div class="progress-label"><span id="opt-current-file">—</span><span id="opt-pct">0%</span></div>
+            <div class="bar"><div id="opt-bar-file" class="bar-fill"></div></div>
+            <div class="progress-label small"><span>Overall</span><span id="opt-overall-txt">0 / 0</span></div>
+            <div class="bar"><div id="opt-bar-all" class="bar-fill alt"></div></div>
+            <div id="opt-log" class="mini-log"></div>
+        </div>
+    </div>
+
+</section>
+
+<!-- ============================= SETTINGS ============================= -->
+<section id="tab-settings" class="tab-page">
+
+    <div class="card">
+        <div class="card-title">FFmpeg</div>
+        <div class="row gap">
+            <label class="field grow">
+                <span>FFmpeg path</span>
+                <input type="text" id="set-ffmpeg" placeholder="auto-detect">
+            </label>
+            <button id="btn-detect-ffmpeg" class="btn">Detect</button>
+        </div>
+        <div id="ffmpeg-status" class="hint"></div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Projects</div>
+        <p class="hint">Stored in After Effects preferences — shared with the ScriptUI launcher.</p>
+        <label class="field">
+            <span>Base work folder</span>
+            <input type="text" id="set-basefolder" placeholder="e.g. /Users/you/Work">
+        </label>
+        <label class="field">
+            <span>Templates folder</span>
+            <input type="text" id="set-tplfolder" placeholder="Documents/BH_Templates">
+        </label>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Templates</div>
+        <p class="hint">Shared with the ScriptUI launcher — changes here appear there too.</p>
+        <ul id="tpl-list" class="tpl-list"></ul>
+        <div class="row gap">
+            <button id="btn-tpl-add" class="btn">+ Add</button>
+            <button id="btn-tpl-generate" class="btn">Generate Missing Files</button>
+        </div>
+    </div>
+
+    <div class="card hidden" id="tpl-form-card">
+        <div class="card-title" id="tpl-form-title">Add Template</div>
+        <label class="field">
+            <span>Name *</span>
+            <input type="text" id="tpl-name" placeholder="Sunrise">
+        </label>
+        <div class="row gap">
+            <label class="field grow"><span>Width</span><input type="number" id="tpl-width" value="1920" min="1" max="8192"></label>
+            <label class="field grow"><span>Height</span><input type="number" id="tpl-height" value="1080" min="1" max="8192"></label>
+        </div>
+        <div class="row gap">
+            <label class="field grow"><span>FPS</span><input type="number" id="tpl-fps" value="24" min="1" max="120" step="0.01"></label>
+            <label class="field grow"><span>Duration (s)</span><input type="number" id="tpl-duration" value="15" min="0.1" max="3600" step="0.1"></label>
+        </div>
+        <label class="field">
+            <span>Template .aep (optional — leave empty to generate a placeholder)</span>
+            <div class="row gap">
+                <input type="text" id="tpl-path" class="grow" placeholder="auto-generate">
+                <button id="btn-tpl-browse" class="btn">…</button>
+            </div>
+        </label>
+        <div class="row gap">
+            <button id="btn-tpl-save" class="btn btn-primary">Save Template</button>
+            <button id="btn-tpl-cancel" class="btn btn-ghost">Cancel</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">About</div>
+        <div class="hint">BigHappy Launcher CEP v0.1.0 — panel UI with async ffmpeg.<br>
+            The classic ScriptUI version remains available as BigHappyLauncher_Templates.jsx.</div>
+    </div>
+
+</section>
+
+<script src="js/CSInterface.js"></script>
+<script src="js/dialog.js"></script>
+<script src="js/ffmpeg.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
