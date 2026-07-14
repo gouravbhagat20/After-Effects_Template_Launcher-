@@ -1142,6 +1142,75 @@
         return false;
     }
 
+    /** Dev installs are symlinked/copied from the git repo — never self-overwrite those. */
+    function isDevInstall(extPath) {
+        try {
+            if (fsMod.existsSync(pathMod.join(extPath, "..", ".git"))) return true;   // extPath = repo/cep
+            if (fsMod.lstatSync(extPath).isSymbolicLink()) return true;
+        } catch (e) { }
+        return false;
+    }
+
+    /** Download the new signed package and extract it over this install. */
+    function performAutoUpdate(remoteVersion) {
+        var extPath = cs.getExtensionPath();
+        if (isDevInstall(extPath)) {
+            ui.alert("This is a development install (linked to the git repo).\n\n" +
+                     "Update with git pull instead of the auto-updater.");
+            return;
+        }
+
+        var zxpUrl = "https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/dist/BigHappyLauncher_v" +
+            remoteVersion + ".zxp";
+        var tmpZip = pathMod.join(osMod.tmpdir(), "bh_update_" + remoteVersion + ".zip");
+
+        busy(true);
+        toast("Downloading v" + remoteVersion + "…");
+        fetch(zxpUrl)
+            .then(function (r) {
+                if (!r.ok) throw new Error("Download failed (" + r.status + "). The release file may not be published yet.");
+                return r.arrayBuffer();
+            })
+            .then(function (buf) {
+                var B = (window.cep_node && window.cep_node.Buffer) || window.Buffer;
+                var data = B.from(buf);
+                // sanity: real zip (PK header) and plausible size
+                if (data.length < 10 * 1024 || data[0] !== 0x50 || data[1] !== 0x4b) {
+                    throw new Error("Downloaded file is not a valid package.");
+                }
+                fsMod.writeFileSync(tmpZip, data);
+                return new Promise(function (resolve, reject) {
+                    var proc = BHFFmpeg.isWin
+                        ? cp.spawn("tar", ["-xf", tmpZip, "-C", extPath], { windowsHide: true })
+                        : cp.spawn("unzip", ["-o", tmpZip, "-d", extPath]);
+                    var errTail = "";
+                    proc.stderr.on("data", function (c) { errTail += String(c); });
+                    proc.on("error", reject);
+                    proc.on("close", function (code) {
+                        code === 0 ? resolve() : reject(new Error("Extract failed: " + errTail.slice(-300)));
+                    });
+                });
+            })
+            .then(function () {
+                // confirm the new manifest actually landed
+                var manifest = fsMod.readFileSync(pathMod.join(extPath, "CSXS", "manifest.xml"), "utf8");
+                var m = manifest.match(/ExtensionBundleVersion="([\d.]+)"/);
+                if (!m || m[1] !== remoteVersion) throw new Error("Update extracted but version verification failed.");
+                try { fsMod.unlinkSync(tmpZip); } catch (e) { }
+                busy(false);
+                $("update-pill").classList.add("hidden");
+                return ui.alert("Updated to v" + remoteVersion + "!\n\n" +
+                    "Restart After Effects to finish — the new version loads on next launch.", "Update Installed");
+            })
+            .catch(function (err) {
+                busy(false);
+                ui.alert("Auto-update failed:\n" + err.message +
+                    "\n\nYou can update manually — the panel will open the GitHub page.").then(function () {
+                    cp.spawn(BHFFmpeg.isWin ? "explorer" : "open", [REPO_URL], { detached: true });
+                });
+            });
+    }
+
     function checkForUpdate() {
         var last = parseInt(localStorage.getItem("bh.updateCheckTs") || "0", 10);
         if (Date.now() - last < 24 * 60 * 60 * 1000) return;   // once a day
@@ -1157,7 +1226,10 @@
                     pill.textContent = "v" + m[1] + " available";
                     pill.classList.remove("hidden");
                     pill.onclick = function () {
-                        cp.spawn(BHFFmpeg.isWin ? "explorer" : "open", [REPO_URL], { detached: true });
+                        ui.confirm("Version " + m[1] + " is available (you have " + BH_VERSION + ").\n\n" +
+                                   "Download and install it now?\nAfter Effects must be restarted afterwards.",
+                                   "Update Available")
+                            .then(function (yes) { if (yes) performAutoUpdate(m[1]); });
                     };
                 }
             })
