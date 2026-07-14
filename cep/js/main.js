@@ -505,13 +505,27 @@
         });
     }
 
+    /** Clear the previous batch's progress, log, and result button. */
+    function resetOptProgress() {
+        $("opt-progress").classList.add("hidden");
+        $("opt-log").innerHTML = "";
+        $("opt-bar-file").style.width = "0%";
+        $("opt-bar-all").style.width = "0%";
+        $("opt-pct").textContent = "0%";
+        $("opt-current-file").textContent = "—";
+        $("opt-overall-txt").textContent = "0 / 0";
+        $("btn-show-output").classList.add("hidden");
+    }
+
     $("btn-pick-files").addEventListener("click", function () {
+        if (optRunning) return;
         var files = pickFiles(true, "Select MP4(s) to optimize", ["mp4"]);
         if (!files) return;
         getFFmpegOrExplain().then(function (exe) {
             return Promise.all(files.map(function (f) { return BHFFmpeg.probe(exe, f); }));
         }).then(function (infos) {
             optFiles = infos;
+            resetOptProgress();   // new batch — drop the previous run's results
             renderOptFiles();
         }).catch(function (e) {
             if (e.message !== "no ffmpeg") ui.alert("Could not read files:\n" + e.message);
