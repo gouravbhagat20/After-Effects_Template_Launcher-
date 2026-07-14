@@ -506,6 +506,17 @@ select {
     background: none !important;
 }
 
+/* ============ checkbox rows ============ */
+
+.check-label {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 600; color: var(--text-dim);
+    cursor: pointer; user-select: none;
+}
+.check-label:hover { color: var(--text); }
+.check-label input { accent-color: var(--accent); cursor: pointer; }
+.check-row { margin: 10px 0; align-items: center; }
+
 /* ============ compact layout for narrow docking ============ */
 
 @media (max-width: 380px) {

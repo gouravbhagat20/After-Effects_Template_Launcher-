@@ -228,6 +228,280 @@ var BH = (function () {
         } catch (e) { return fail(e); }
     };
 
+    // ---------- render queue ----------
+
+    /**
+     * Add the Main comp to the Render Queue with template-specific output
+     * settings — exact port of the ScriptUI addToRenderQueue.
+     * outputPath has no extension (the output module appends it).
+     */
+    api.addMainToRenderQueue = function (outputPath, templateType) {
+        try {
+            var comp = findMainComp();
+            if (!comp) return fail("Main composition not found (BH-3001).");
+
+            var rqItem = app.project.renderQueue.items.add(comp);
+            var om = rqItem.outputModule(1);
+            var isPng = !(templateType === "interscroller" || String(templateType).indexOf("dooh") !== -1);
+
+            try {
+                om.applyTemplate(isPng ? "PNG Sequence with Alpha" : "H.264");
+            } catch (templateErr) {
+                try {
+                    om.applyTemplate(isPng ? "PNG Sequence" : "H.264 - Match Render Settings - 15 Mbps");
+                } catch (fallbackErr) { }
+            }
+
+            if (templateType === "sunrise") {
+                try {
+                    var pngSettings = {
+                        "Format": "PNG Sequence",
+                        "Video Output": {
+                            "Channels": "RGB + Alpha",
+                            "Depth": "Millions of Colors+",
+                            "Color": "Straight (Unmatted)"
+                        }
+                    };
+                    try { om.setSettings(pngSettings); }
+                    catch (e1) {
+                        pngSettings["Video Output"]["Color"] = "Straight";
+                        om.setSettings(pngSettings);
+                    }
+                } catch (e) { }
+            } else if (!isPng) {
+                try {
+                    om.setSettings({
+                        "Format": "H.264",
+                        "Video Output": {
+                            "Format Options": { "Profile": "High", "Level": "5.1", "Target Bitrate (Mbps)": 15 }
+                        }
+                    });
+                } catch (e) {
+                    try { om.setSettings({ "Format": "QuickTime" }); } catch (err2) { }
+                }
+            }
+
+            om.file = new File(outputPath);
+            return ok({ comp: comp.name, canAME: canQueueInAME() });
+        } catch (e) { return fail(e); }
+    };
+
+    function canQueueInAME() {
+        try { return typeof app.project.renderQueue.queueInAME === "function"; }
+        catch (e) { return false; }
+    }
+
+    /** Send the queue to Adobe Media Encoder and start rendering. */
+    api.queueToAME = function () {
+        try {
+            if (!canQueueInAME()) return fail("Adobe Media Encoder not available (BH-3003).");
+            app.project.renderQueue.queueInAME(true);
+            return ok(true);
+        } catch (e) { return fail(e); }
+    };
+
+    // ---------- collect ----------
+
+    /** List missing footage files (pre-flight before collecting). */
+    api.preFlightCheck = function () {
+        try {
+            var missing = [];
+            var items = app.project.items;
+            for (var i = 1; i <= items.length; i++) {
+                var item = items[i];
+                if (item instanceof FootageItem && item.file && !item.file.exists) {
+                    missing.push(item.name + " → " + item.file.fsName);
+                }
+            }
+            return ok(missing);
+        } catch (e) { return fail(e); }
+    };
+
+    /**
+     * Collect: save original untouched, Save As a copy at destAepPath, copy
+     * all linked footage into footageFolderPath (relinking the COPY), save,
+     * and write _Pack_Report.txt. Port of the script's local collect path —
+     * the original project on disk is never modified.
+     */
+    api.collectProject = function (destAepPath, footageFolderPath) {
+        try {
+            if (!app.project || !app.project.file) return fail("No saved project open (BH-2003).");
+
+            app.project.save();                          // original, unmodified
+            app.project.save(new File(destAepPath));     // now working on the copy
+
+            var footageFolder = new Folder(footageFolderPath);
+            if (!footageFolder.exists) footageFolder.create();
+
+            var missing = [];
+            var items = app.project.items;
+            for (var m = 1; m <= items.length; m++) {
+                var it = items[m];
+                if (it instanceof FootageItem && it.file && !it.file.exists) {
+                    missing.push(it.name + " → " + it.file.fsName);
+                }
+            }
+
+            var count = collectAssetsInto(footageFolder);
+            app.project.save();                          // persist relinks in the copy
+
+            generatePackReport(new File(destAepPath).parent, missing);
+
+            return ok({ assets: count, missing: missing.length });
+        } catch (e) { return fail(e); }
+    };
+
+    /** Port of collectAssets (no palette UI — the panel shows progress). */
+    function collectAssetsInto(footageFolder) {
+        var count = 0;
+        var items = app.project.items;
+        for (var i = 1; i <= items.length; i++) {
+            var item = items[i];
+            if (!item || !(item instanceof FootageItem) || !item.file) continue;
+            if (!item.mainSource || item.mainSource instanceof SolidSource) continue;
+            var sourceFile = item.file;
+            if (!sourceFile.exists) continue;
+
+            var destName = decodeURI(sourceFile.name);
+            var destFile = new File(footageFolder.fsName + "/" + destName);
+
+            var isSequence = false;
+            if (!item.mainSource.isStill) {
+                var ext = sourceFile.name.split(".").pop().toLowerCase();
+                if (/^(png|jpg|jpeg|tif|tiff|tga|exr|psd)$/i.test(ext)) isSequence = true;
+            }
+
+            if (isSequence) {
+                var seqFolder = sourceFile.parent;
+                if (!seqFolder || !seqFolder.exists) continue;
+                var namePart = decodeURI(sourceFile.name).replace(/\.[^\.]+$/, "");
+                var match = namePart.match(/^(.*?)(\d+)$/);
+                var found = false;
+                if (match) {
+                    var lowerPrefix = match[1].toLowerCase();
+                    var lowerExt = sourceFile.name.split(".").pop().toLowerCase();
+                    var seqFiles = seqFolder.getFiles(function (f) {
+                        if (f instanceof Folder) return false;
+                        var fName = decodeURI(f.name).toLowerCase();
+                        return fName.indexOf(lowerPrefix) === 0 && fName.indexOf("." + lowerExt) !== -1;
+                    });
+                    if (seqFiles && seqFiles.length > 0) {
+                        found = true;
+                        var allCopied = true;
+                        for (var s = 0; s < seqFiles.length; s++) {
+                            var df = new File(footageFolder.fsName + "/" + decodeURI(seqFiles[s].name));
+                            if (!df.exists && !seqFiles[s].copy(df.fsName)) allCopied = false;
+                        }
+                        if (allCopied) {
+                            destFile = new File(footageFolder.fsName + "/" + destName);
+                            var replaced = false;
+                            try {
+                                if (typeof item.replaceWithSequence === "function") {
+                                    item.replaceWithSequence(destFile, false);
+                                    replaced = true;
+                                }
+                            } catch (errSeq) { }
+                            if (!replaced) item.replace(destFile);
+                            count++;
+                        }
+                    }
+                }
+                if (!found) {
+                    if (!destFile.exists) sourceFile.copy(destFile.fsName);
+                    item.replace(destFile);
+                    count++;
+                }
+            } else {
+                // single file — dedupe name collisions
+                var dupIdx = 1;
+                var parts = destName.split(".");
+                var fileExt = parts.pop();
+                var base = parts.join(".");
+                while (destFile.exists) {
+                    destFile = new File(footageFolder.fsName + "/" + base + "_" + dupIdx + "." + fileExt);
+                    dupIdx++;
+                }
+                sourceFile.copy(destFile.fsName);
+                item.replace(destFile);
+                count++;
+            }
+        }
+        return count;
+    }
+
+    function generatePackReport(destFolder, missingList) {
+        try {
+            var report = "=== PACK REPORT ===\n";
+            report += "Generated: " + new Date().toLocaleString() + "\n";
+            report += "Project: " + (app.project.file ? decodeURI(app.project.file.name) : "Untitled") + "\n\n";
+
+            report += "--- MISSING FILES (" + missingList.length + ") ---\n";
+            report += missingList.length === 0 ? "(None - All files found!)\n" : "";
+            for (var i = 0; i < missingList.length; i++) report += "• " + missingList[i] + "\n";
+
+            var fonts = getFontsUsed();
+            report += "\n--- FONTS USED (" + fonts.length + ") ---\n";
+            report += fonts.length === 0 ? "(No text layers found)\n" : "";
+            for (var j = 0; j < fonts.length; j++) report += "• " + fonts[j] + "\n";
+
+            var effects = getEffectsUsed();
+            report += "\n--- EFFECTS/PLUGINS (" + effects.length + ") ---\n";
+            report += effects.length === 0 ? "(No effects applied)\n" : "";
+            for (var k = 0; k < effects.length; k++) report += "• " + effects[k] + "\n";
+
+            var reportFile = new File(destFolder.fsName + "/_Pack_Report.txt");
+            reportFile.encoding = "UTF-8";
+            reportFile.open("w");
+            reportFile.write(report);
+            reportFile.close();
+            return true;
+        } catch (e) { return false; }
+    }
+
+    function getFontsUsed() {
+        var fonts = {};
+        try {
+            for (var i = 1; i <= app.project.numItems; i++) {
+                var it = app.project.item(i);
+                if (!(it instanceof CompItem)) continue;
+                for (var L = 1; L <= it.numLayers; L++) {
+                    var layer = it.layer(L);
+                    try {
+                        if (layer.property("Source Text")) {
+                            var doc = layer.property("Source Text").value;
+                            if (doc && doc.font) fonts[doc.font] = true;
+                        }
+                    } catch (e) { }
+                }
+            }
+        } catch (e) { }
+        var out = [];
+        for (var f in fonts) if (fonts.hasOwnProperty(f)) out.push(f);
+        return out;
+    }
+
+    function getEffectsUsed() {
+        var fx = {};
+        try {
+            for (var i = 1; i <= app.project.numItems; i++) {
+                var it = app.project.item(i);
+                if (!(it instanceof CompItem)) continue;
+                for (var L = 1; L <= it.numLayers; L++) {
+                    try {
+                        var effects = it.layer(L).property("ADBE Effect Parade");
+                        if (!effects) continue;
+                        for (var e2 = 1; e2 <= effects.numProperties; e2++) {
+                            fx[effects.property(e2).name] = true;
+                        }
+                    } catch (e) { }
+                }
+            }
+        } catch (e) { }
+        var out = [];
+        for (var k in fx) if (fx.hasOwnProperty(k)) out.push(k);
+        return out;
+    }
+
     // ---------- settings shared with BigHappyLauncher_Templates.jsx ----------
 
     var SETTINGS_SECTION = "BigHappyLauncher";

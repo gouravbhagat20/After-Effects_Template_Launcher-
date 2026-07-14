@@ -34,7 +34,8 @@
 
 <nav class="tabs">
     <button class="tab active" data-tab="launcher">Launcher</button>
-    <button class="tab" data-tab="optimizer">DOOH Optimizer</button>
+    <button class="tab" data-tab="render">Render</button>
+    <button class="tab" data-tab="optimizer">DOOH</button>
     <button class="tab" data-tab="settings">Settings</button>
 </nav>
 
@@ -100,6 +101,62 @@
         <ul id="recent-list" class="recent-list">
             <li class="muted">Nothing yet — projects you open appear here.</li>
         </ul>
+    </div>
+
+</section>
+
+<!-- ============================== RENDER ============================== -->
+<section id="tab-render" class="tab-page">
+
+    <div class="card">
+        <div class="card-title">Render Queue</div>
+        <p class="hint">Adds the Main comp to the Render Queue with the right output
+           module for the template (PNG+Alpha for Sunrise, H.264 for InterScroller/DOOH)
+           and a standardized output name in Render_R#.</p>
+        <div id="rq-info" class="project-info"><div class="muted">No project open.</div></div>
+        <div class="row gap">
+            <button id="btn-rq-add" class="btn btn-primary"><svg class="ic"><use href="#i-plus"/></svg>Add to Render Queue</button>
+            <label class="check-label"><input type="checkbox" id="rq-ame"> Send to Media Encoder</label>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Sunrise Post-Render</div>
+        <p class="hint">Converts a rendered PNG sequence to delivery files.</p>
+        <div class="row gap">
+            <button id="btn-pr-folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg>Choose Render Folder…</button>
+            <button id="btn-pr-auto" class="btn btn-ghost">Auto-Detect</button>
+        </div>
+        <div id="pr-seq" class="hint" style="margin-top:8px">No sequence selected.</div>
+        <div class="row gap check-row">
+            <label class="check-label"><input type="checkbox" id="pr-webm" checked> WebM</label>
+            <label class="check-label"><input type="checkbox" id="pr-mov" checked> MOV</label>
+            <label class="check-label"><input type="checkbox" id="pr-html" checked> HTML</label>
+            <label class="check-label"><input type="checkbox" id="pr-zip" checked> ZIP</label>
+        </div>
+        <div class="row gap">
+            <button id="btn-pr-convert" class="btn btn-primary" disabled><svg class="ic"><use href="#i-bolt"/></svg>Convert</button>
+            <button id="btn-pr-cancel" class="btn btn-danger" disabled><svg class="ic"><use href="#i-x"/></svg>Cancel</button>
+        </div>
+        <div id="pr-progress" class="progress-area hidden">
+            <div class="progress-label"><span id="pr-step">—</span><span id="pr-pct">0%</span></div>
+            <div class="bar"><div id="pr-bar" class="bar-fill"></div></div>
+            <div id="pr-log" class="mini-log"></div>
+            <div class="row gap" style="margin-top:10px">
+                <button id="btn-pr-show" class="btn hidden"><svg class="ic"><use href="#i-pin"/></svg>Show Files</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Collect Project</div>
+        <p class="hint">Checks for missing footage, then saves a standardized copy with
+           all linked assets and a pack report (fonts, effects, missing files).
+           The original project is never modified.</p>
+        <div class="row gap">
+            <button id="btn-collect" class="btn btn-primary"><svg class="ic"><use href="#i-save"/></svg>Collect Project…</button>
+        </div>
+        <div id="collect-status" class="hint" style="margin-top:8px"></div>
     </div>
 
 </section>
@@ -232,6 +289,7 @@
 <script src="js/CSInterface.js"></script>
 <script src="js/dialog.js"></script>
 <script src="js/ffmpeg.js"></script>
+<script src="js/postrender.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/main.js"></script>
 </body>

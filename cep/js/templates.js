@@ -84,6 +84,73 @@
         return brand + "_" + quarter + "_" + size + "_" + version + "_" + revision + ".aep";
     }
 
+    /** Exact port of the script's end-anchored project name parser.
+        Pattern: Brand_Campaign_Q#_WxH_V#_R# (V and Q optional, DOOH_ prefix variant). */
+    function parseProjectName(projectName) {
+        if (!projectName) return null;
+        var result = { quarter: null };
+        var remaining = projectName;
+
+        var versionMatch = remaining.match(/(?:_V(\d+))?_R(\d+)$/i);
+        if (!versionMatch) return null;
+        result.version = versionMatch[1] ? ("V" + versionMatch[1]) : "V1";
+        result.revision = "R" + versionMatch[2];
+        remaining = remaining.replace(/(?:_V\d+)?_R\d+$/i, "");
+
+        var sizeMatch = remaining.match(/_(\d+x\d+)$/i);
+        if (!sizeMatch) return null;
+        result.size = sizeMatch[1];
+        remaining = remaining.replace(/_\d+x\d+$/i, "");
+
+        if (remaining.match(/^DOOH/i)) {
+            result.isDOOH = true;
+            result.brand = "DOOH";
+            result.campaign = remaining.replace(/^DOOH_?/i, "") || "";
+            return result;
+        }
+
+        var quarterMatch = remaining.match(/_Q([1-4])$/i);
+        if (quarterMatch) {
+            result.quarter = "Q" + quarterMatch[1];
+            remaining = remaining.replace(/_Q[1-4]$/i, "");
+        }
+
+        var firstUnderscore = remaining.indexOf("_");
+        if (firstUnderscore > 0) {
+            result.brand = remaining.substring(0, firstUnderscore);
+            result.campaign = remaining.substring(firstUnderscore + 1);
+        } else {
+            result.brand = remaining;
+            result.campaign = "";
+        }
+        return result;
+    }
+
+    /** MMDDYYYY, same as the script's getDateString. */
+    function getDateString() {
+        var d = new Date();
+        var pad = function (n) { return n < 10 ? "0" + n : String(n); };
+        return pad(d.getMonth() + 1) + pad(d.getDate()) + d.getFullYear();
+    }
+
+    /** Render output base name — exact port of the script's render naming. */
+    function buildRenderName(projectName, mainW, mainH) {
+        var type = getTemplateType(mainW, mainH);
+        var parsed = parseProjectName(projectName);
+        if (parsed && parsed.isDOOH) type = "dooh";
+        if (type === "default" && projectName.toLowerCase().indexOf("interscroller") !== -1) type = "interscroller";
+
+        var renderName = projectName + "_" + getDateString();
+        if (type === "sunrise" && parsed && parsed.brand) {
+            renderName = parsed.brand + "_" + (parsed.campaign || "Campaign") +
+                "_CTA_AnimatedSunrise_" + parsed.version + "_" + parsed.revision;
+        } else if (parsed && parsed.isDOOH) {
+            renderName = "DOOH_" + (parsed.campaign || "Campaign") + "_" +
+                (parsed.size || (mainW + "x" + mainH)) + "_" + getDateString();
+        }
+        return { name: renderName, type: type, parsed: parsed };
+    }
+
     function validate(brand, campaign) {
         if (!brand) return "Brand name is required. (BH-4001)";
         if (brand.length < LIMITS.BRAND_MIN || brand.length > LIMITS.BRAND_MAX) {
@@ -151,6 +218,9 @@
         getTemplateLabel: getTemplateLabel,
         buildProjectFolderName: buildProjectFolderName,
         buildFilename: buildFilename,
+        parseProjectName: parseProjectName,
+        getDateString: getDateString,
+        buildRenderName: buildRenderName,
         validate: validate,
         createProjectStructure: createProjectStructure,
         defaultTemplatesFolder: defaultTemplatesFolder,
