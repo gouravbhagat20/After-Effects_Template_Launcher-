@@ -15,7 +15,20 @@
     var cp = nodeRequire("child_process");
     var pathMod = nodeRequire("path");
     var fsMod = nodeRequire("fs");
+    var osMod = nodeRequire("os");
     var T = window.BHTemplates;
+
+    var BH_VERSION = "0.2.0";   // keep in sync with CSXS/manifest.xml
+    var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
+    var CHANGELOG = {
+        "0.2.0": [
+            "New Render tab: Render Queue with template-specific output modules, Collect Project with pack report",
+            "Diagnostics section in Settings with copyable troubleshooting report",
+            "Update notifications when a newer version is on GitHub",
+            "Signed .zxp installer for easy team installs",
+            "UI polish: icons, tooltips, theme adaptation, animations"
+        ]
+    };
 
     // ---------------- host bridge ----------------
 
@@ -1019,6 +1032,149 @@
         });
     });
 
+    // ---------------- diagnostics ----------------
+
+    var lastDiagReport = "";
+
+    function checkFolder(p) {
+        if (!p) return "not set";
+        if (!fsMod.existsSync(p)) return p + "  [MISSING]";
+        try {
+            var probe = pathMod.join(p, ".bh_write_test");
+            fsMod.writeFileSync(probe, "x");
+            fsMod.unlinkSync(probe);
+            return p + "  [ok, writable]";
+        } catch (e) { return p + "  [exists, NOT writable]"; }
+    }
+
+    function buildDiagReport() {
+        var lines = [];
+        lines.push("=== BigHappy Launcher Diagnostics ===");
+        lines.push("Generated: " + new Date().toString());
+        lines.push("");
+        lines.push("Panel version:  " + BH_VERSION);
+        try {
+            var env = cs.getHostEnvironment();
+            lines.push("Host app:       " + env.appName + " " + env.appVersion);
+            lines.push("CEP API:        " + (env.apiVersion || "n/a"));
+        } catch (e) { lines.push("Host app:       (unavailable: " + e.message + ")"); }
+        lines.push("OS:             " + osMod.platform() + " " + osMod.release() + " (" + osMod.arch() + ")");
+        lines.push("Node:           " + process.version);
+        var chrome = (navigator.userAgent.match(/Chrome\/([\d.]+)/) || [])[1];
+        lines.push("Chromium:       " + (chrome || "unknown"));
+        lines.push("");
+        lines.push("Base folder:    " + checkFolder(S.base_work_folder));
+        lines.push("Templates dir:  " + checkFolder(templatesFolder()));
+        var missing = templates.filter(function (t) { return !T.fileExists(t.path); }).length;
+        lines.push("Templates:      " + templates.length + " configured, " + missing + " missing file(s)");
+        lines.push("FFmpeg path:    " + (S.ffmpeg_path || "(auto-detect)"));
+
+        return host("ping").then(function (info) {
+            lines.splice(4, 0, "AE (host):      " + info.app + " " + info.version);
+        }).catch(function () {
+            lines.splice(4, 0, "AE (host):      NOT RESPONDING");
+        }).then(function () {
+            return BHFFmpeg.detect(S.ffmpeg_path || null);
+        }).then(function (found) {
+            if (!found) { lines.push("FFmpeg:         NOT FOUND"); return; }
+            return new Promise(function (resolve) {
+                cp.execFile(found, ["-version"], { timeout: 8000 }, function (err, stdout) {
+                    lines.push("FFmpeg:         " + (err ? "found but failed to run"
+                        : String(stdout).split("\n")[0] + " @ " + found));
+                    resolve();
+                });
+            });
+        }).then(function () {
+            lastDiagReport = lines.join("\n");
+            return lastDiagReport;
+        });
+    }
+
+    function refreshDiag() {
+        $("diag-body").textContent = "Gathering…";
+        buildDiagReport().then(function (report) {
+            $("diag-body").textContent = report;
+        });
+    }
+
+    $("btn-diag-refresh").addEventListener("click", refreshDiag);
+
+    $("btn-diag-copy").addEventListener("click", function () {
+        var doCopy = function () {
+            var ta = document.createElement("textarea");
+            ta.value = lastDiagReport;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+            toast("✓ Report copied to clipboard");
+        };
+        lastDiagReport ? doCopy() : buildDiagReport().then(function (r) {
+            $("diag-body").textContent = r; doCopy();
+        });
+    });
+
+    $("btn-diag-save").addEventListener("click", function () {
+        var doSave = function () {
+            var res = window.cep.fs.showSaveDialogEx("Save diagnostics report", null, ["txt"],
+                "BigHappy_Diagnostics.txt");
+            if (!res || res.err !== 0 || !res.data) return;
+            try {
+                fsMod.writeFileSync(res.data, lastDiagReport, "utf8");
+                toast("✓ Report saved");
+                revealFile(res.data);
+            } catch (e) { ui.alert("Could not save report:\n" + e.message); }
+        };
+        lastDiagReport ? doSave() : buildDiagReport().then(function (r) {
+            $("diag-body").textContent = r; doSave();
+        });
+    });
+
+    // ---------------- update check & what's-new ----------------
+
+    function versionNewer(remote, local) {
+        var a = String(remote).split(".").map(Number);
+        var b = String(local).split(".").map(Number);
+        for (var i = 0; i < Math.max(a.length, b.length); i++) {
+            var d = (a[i] || 0) - (b[i] || 0);
+            if (d !== 0) return d > 0;
+        }
+        return false;
+    }
+
+    function checkForUpdate() {
+        var last = parseInt(localStorage.getItem("bh.updateCheckTs") || "0", 10);
+        if (Date.now() - last < 24 * 60 * 60 * 1000) return;   // once a day
+        localStorage.setItem("bh.updateCheckTs", String(Date.now()));
+
+        fetch("https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/cep/CSXS/manifest.xml")
+            .then(function (r) { return r.ok ? r.text() : null; })
+            .then(function (xml) {
+                if (!xml) return;
+                var m = xml.match(/ExtensionBundleVersion="([\d.]+)"/);
+                if (m && versionNewer(m[1], BH_VERSION)) {
+                    var pill = $("update-pill");
+                    pill.textContent = "v" + m[1] + " available";
+                    pill.classList.remove("hidden");
+                    pill.onclick = function () {
+                        cp.spawn(BHFFmpeg.isWin ? "explorer" : "open", [REPO_URL], { detached: true });
+                    };
+                }
+            })
+            .catch(function () { /* offline — try again tomorrow */ });
+    }
+
+    function showWhatsNew() {
+        var seen = localStorage.getItem("bh.lastVersion");
+        localStorage.setItem("bh.lastVersion", BH_VERSION);
+        if (!seen || seen === BH_VERSION) return;   // fresh install or unchanged
+        var notes = CHANGELOG[BH_VERSION];
+        if (!notes) return;
+        ui.alert("Updated to v" + BH_VERSION + "\n\n" +
+            notes.map(function (n) { return "• " + n; }).join("\n"),
+            "What's New");
+    }
+
     // ---------------- boot ----------------
 
     function populateYears() {
@@ -1071,7 +1227,13 @@
         $("pr-mov").checked = S.post_render_mov !== "false";
         $("pr-html").checked = S.post_render_html !== "false";
         $("pr-zip").checked = S.post_render_zip !== "false";
+
+        showWhatsNew();
+        checkForUpdate();
     });
+
+    $("about-text").innerHTML = "BigHappy Launcher CEP v" + BH_VERSION +
+        " — panel UI with async ffmpeg.<br>The classic ScriptUI version remains available as BigHappyLauncher_Templates.jsx.";
 
     $("rq-ame").addEventListener("change", function () {
         setSetting("ame_enabled", this.checked ? "true" : "false");

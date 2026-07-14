@@ -506,6 +506,18 @@ select {
     background: none !important;
 }
 
+/* ============ update pill & diagnostics ============ */
+
+.pill-update {
+    cursor: pointer;
+    color: var(--accent); border-color: rgba(76, 154, 255, 0.5); background: var(--accent-soft);
+    animation: fade-in 0.3s ease;
+}
+.pill-update::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.pill-update:hover { background: rgba(76, 154, 255, 0.22); }
+
+.diag-body { max-height: 220px; white-space: pre-wrap; }
+
 /* ============ checkbox rows ============ */
 
 .check-label {

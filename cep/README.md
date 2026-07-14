@@ -30,6 +30,13 @@ Not yet ported from the ScriptUI version: Collect & Upload, render-queue
 helpers, PNG-sequence post-render conversion. The `.jsx` script remains the
 production tool for those.
 
+## Install (team members)
+
+Grab `dist/BigHappyLauncher_v*.zxp` and install it with any ZXP installer
+(e.g. [aescripts ZXP Installer](https://aescripts.com/learn/zxp-installer/)).
+Restart After Effects → **Window → Extensions → BigHappy Launcher**.
+No PlayerDebugMode needed — the package is signed.
+
 ## Install (development)
 
 **Mac:** `./install-mac.sh` &nbsp;&nbsp; **Windows:** double-click `install-win.bat`
@@ -37,6 +44,20 @@ production tool for those.
 Both enable CEP `PlayerDebugMode` (required for unsigned extensions), place the
 extension in the user CEP folder, and the panel then appears under
 **Window → Extensions → BigHappy Launcher** after restarting AE.
+
+## Build a release
+
+```
+./cep/build-zxp.sh        # macOS
+```
+
+Downloads Adobe's ZXPSignCmd on first run, creates a self-signed cert
+(`build/cert.p12`, gitignored — password via `BH_CERT_PASS`, default
+`bighappy`), and signs `cep/` (minus dev files) into
+`dist/BigHappyLauncher_v<version>.zxp`. Bump the version in
+`CSXS/manifest.xml` **and** `BH_VERSION` in `js/main.js` first, and add a
+`CHANGELOG` entry in main.js — the panel shows it after users update, and the
+update pill compares the manifest version on GitHub `main` once a day.
 
 ## Architecture
 

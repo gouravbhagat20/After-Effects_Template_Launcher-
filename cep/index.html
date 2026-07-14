@@ -28,6 +28,7 @@
     </div>
     <div class="header-right">
         <span id="activity" class="activity hidden" title="Working…"></span>
+        <button id="update-pill" class="pill pill-update hidden" title="A newer version is on GitHub">Update available</button>
         <span id="ae-status" class="pill pill-dim">connecting…</span>
     </div>
 </header>
@@ -277,10 +278,22 @@
         </div>
     </div>
 
+    <div class="card collapsible collapsed" data-section="diag">
+        <div class="card-title">Diagnostics<svg class="ic chev"><use href="#i-chevron"/></svg></div>
+        <div class="card-body"><div class="card-body-inner">
+            <div id="diag-body" class="mini-log diag-body">Open this section and click Refresh.</div>
+            <div class="row gap" style="margin-top:10px">
+                <button id="btn-diag-refresh" class="btn"><svg class="ic"><use href="#i-search"/></svg>Refresh</button>
+                <button id="btn-diag-copy" class="btn">Copy Report</button>
+                <button id="btn-diag-save" class="btn btn-ghost">Save…</button>
+            </div>
+        </div></div>
+    </div>
+
     <div class="card collapsible collapsed" data-section="about">
         <div class="card-title">About<svg class="ic chev"><use href="#i-chevron"/></svg></div>
         <div class="card-body"><div class="card-body-inner">
-            <div class="hint">BigHappy Launcher CEP v0.1.0 — panel UI with async ffmpeg.<br>
+            <div class="hint" id="about-text">BigHappy Launcher CEP — panel UI with async ffmpeg.<br>
                 The classic ScriptUI version remains available as BigHappyLauncher_Templates.jsx.</div>
         </div></div>
     </div>
