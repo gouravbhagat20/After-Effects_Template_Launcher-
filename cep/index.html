@@ -7,12 +7,29 @@
 </head>
 <body>
 
+<!-- monochrome icon set (currentColor) -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 16 16"><path d="M1.5 4.5h4.2l1.6 2h7.2v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/></symbol>
+    <symbol id="i-save" viewBox="0 0 16 16"><path d="M3 2.5h8.5L14 5v8.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M5 2.5V6h5.5V2.5M5 14v-4.5h6V14" stroke="currentColor" stroke-width="1.4" fill="none"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 16 16"><path d="M8 1.5a4.3 4.3 0 0 1 4.3 4.3C12.3 9 8 14.5 8 14.5S3.7 9 3.7 5.8A4.3 4.3 0 0 1 8 1.5z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><circle cx="8" cy="5.8" r="1.4" fill="currentColor"/></symbol>
+    <symbol id="i-film" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M4.5 2.5v11M11.5 2.5v11M1.5 5.5h3M1.5 8h3M1.5 10.5h3M11.5 5.5h3M11.5 8h3M11.5 10.5h3" stroke="currentColor" stroke-width="1.2"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 16 16"><path d="M9 1.5 3.5 9H7l-1 5.5L11.5 7H8l1-5.5z" fill="currentColor"/></symbol>
+    <symbol id="i-x" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="6.8" cy="6.8" r="4.3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 16 16"><path d="M8 1.5 9.4 6 14 7.5 9.4 9 8 13.5 6.6 9 2 7.5 6.6 6z" fill="currentColor"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
 <header class="app-header">
     <div class="brand">
         <span class="brand-name">BIG<span class="accent">HAPPY</span></span>
         <span class="brand-sub">Launcher</span>
     </div>
-    <span id="ae-status" class="pill pill-dim">connecting…</span>
+    <div class="header-right">
+        <span id="activity" class="activity hidden" title="Working…"></span>
+        <span id="ae-status" class="pill pill-dim">connecting…</span>
+    </div>
 </header>
 
 <nav class="tabs">
@@ -52,17 +69,17 @@
                 </select>
             </label>
             <label class="field">
-                <span>Version</span>
+                <span data-tip="Version — a new creative direction. Folder V1, V2… in the project structure.">Version</span>
                 <input type="number" id="np-version" value="1" min="1" style="width:56px">
             </label>
             <label class="field">
-                <span>Revision</span>
+                <span data-tip="Revision — a change round within a version. Names the Render_R# folder.">Revision</span>
                 <input type="number" id="np-revision" value="1" min="1" style="width:56px">
             </label>
         </div>
         <div id="np-preview" class="preview-line">—</div>
         <div class="row gap">
-            <button id="btn-create" class="btn btn-primary">Create Project</button>
+            <button id="btn-create" class="btn btn-primary"><svg class="ic"><use href="#i-plus"/></svg>Create Project</button>
         </div>
     </div>
 
@@ -72,9 +89,9 @@
             <div class="muted">No project open.</div>
         </div>
         <div class="row gap">
-            <button id="btn-open" class="btn">Open Project…</button>
-            <button id="btn-save" class="btn btn-ghost">Save</button>
-            <button id="btn-reveal" class="btn btn-ghost">Reveal</button>
+            <button id="btn-open" class="btn"><svg class="ic"><use href="#i-folder"/></svg>Open Project…</button>
+            <button id="btn-save" class="btn btn-ghost"><svg class="ic"><use href="#i-save"/></svg>Save</button>
+            <button id="btn-reveal" class="btn btn-ghost"><svg class="ic"><use href="#i-pin"/></svg>Reveal</button>
         </div>
     </div>
 
@@ -92,25 +109,24 @@
 
     <div class="card">
         <div class="card-title">DOOH MP4 Optimizer</div>
-        <p class="hint">Optimizes MP4s to a hard size cap with two-pass H.264.
-           Originals are replaced only after a verified backup-swap.</p>
+        <p class="hint">Optimizes MP4s to a hard size cap with two-pass H.264.</p>
 
         <div class="row gap">
             <label class="field grow">
-                <span>Target size (MB)</span>
+                <span data-tip="Hard cap. If the best encode still exceeds this, the original is kept and the result is saved as _Optimized.mp4 instead.">Target size (MB)</span>
                 <input type="number" id="opt-target" value="7" min="1" step="0.5">
             </label>
             <label class="field grow">
-                <span>Source</span>
-                <button id="btn-pick-files" class="btn">Choose MP4s…</button>
+                <span data-tip="Originals are replaced only after a verified backup-swap — the source is never deleted before the optimized file is in place.">Source</span>
+                <button id="btn-pick-files" class="btn"><svg class="ic"><use href="#i-film"/></svg>Choose MP4s…</button>
             </label>
         </div>
 
         <ul id="opt-file-list" class="file-list"></ul>
 
         <div class="row gap">
-            <button id="btn-optimize" class="btn btn-primary" disabled>Optimize</button>
-            <button id="btn-cancel" class="btn btn-danger" disabled>Cancel</button>
+            <button id="btn-optimize" class="btn btn-primary" disabled><svg class="ic"><use href="#i-bolt"/></svg>Optimize</button>
+            <button id="btn-cancel" class="btn btn-danger" disabled><svg class="ic"><use href="#i-x"/></svg>Cancel</button>
         </div>
 
         <div id="opt-progress" class="progress-area hidden">
@@ -120,7 +136,7 @@
             <div class="bar"><div id="opt-bar-all" class="bar-fill alt"></div></div>
             <div id="opt-log" class="mini-log"></div>
             <div class="row gap" style="margin-top:10px">
-                <button id="btn-show-output" class="btn hidden">Show File</button>
+                <button id="btn-show-output" class="btn hidden"><svg class="ic"><use href="#i-pin"/></svg>Show File</button>
             </div>
         </div>
     </div>
@@ -130,39 +146,50 @@
 <!-- ============================= SETTINGS ============================= -->
 <section id="tab-settings" class="tab-page">
 
-    <div class="card">
-        <div class="card-title">FFmpeg</div>
-        <div class="row gap">
-            <label class="field grow">
-                <span>FFmpeg path</span>
-                <input type="text" id="set-ffmpeg" placeholder="auto-detect">
+    <div class="card collapsible" data-section="ffmpeg">
+        <div class="card-title">FFmpeg<svg class="ic chev"><use href="#i-chevron"/></svg></div>
+        <div class="card-body"><div class="card-body-inner">
+            <div class="row gap">
+                <label class="field grow">
+                    <span>FFmpeg path</span>
+                    <input type="text" id="set-ffmpeg" placeholder="auto-detect">
+                </label>
+                <button id="btn-detect-ffmpeg" class="btn"><svg class="ic"><use href="#i-search"/></svg>Detect</button>
+            </div>
+            <div id="ffmpeg-status" class="hint"></div>
+        </div></div>
+    </div>
+
+    <div class="card collapsible" data-section="projects">
+        <div class="card-title">Projects<svg class="ic chev"><use href="#i-chevron"/></svg></div>
+        <div class="card-body"><div class="card-body-inner">
+            <p class="hint">Stored in After Effects preferences — shared with the ScriptUI launcher.</p>
+            <label class="field">
+                <span>Base work folder</span>
+                <div class="row gap">
+                    <input type="text" id="set-basefolder" class="grow" placeholder="e.g. /Users/you/Work">
+                    <button id="btn-browse-base" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
+                </div>
             </label>
-            <button id="btn-detect-ffmpeg" class="btn">Detect</button>
-        </div>
-        <div id="ffmpeg-status" class="hint"></div>
+            <label class="field">
+                <span>Templates folder</span>
+                <div class="row gap">
+                    <input type="text" id="set-tplfolder" class="grow" placeholder="Documents/BH_Templates">
+                    <button id="btn-browse-tpl" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
+                </div>
+            </label>
+        </div></div>
     </div>
 
-    <div class="card">
-        <div class="card-title">Projects</div>
-        <p class="hint">Stored in After Effects preferences — shared with the ScriptUI launcher.</p>
-        <label class="field">
-            <span>Base work folder</span>
-            <input type="text" id="set-basefolder" placeholder="e.g. /Users/you/Work">
-        </label>
-        <label class="field">
-            <span>Templates folder</span>
-            <input type="text" id="set-tplfolder" placeholder="Documents/BH_Templates">
-        </label>
-    </div>
-
-    <div class="card">
-        <div class="card-title">Templates</div>
-        <p class="hint">Shared with the ScriptUI launcher — changes here appear there too.</p>
-        <ul id="tpl-list" class="tpl-list"></ul>
-        <div class="row gap">
-            <button id="btn-tpl-add" class="btn">+ Add</button>
-            <button id="btn-tpl-generate" class="btn">Generate Missing Files</button>
-        </div>
+    <div class="card collapsible" data-section="templates">
+        <div class="card-title">Templates<svg class="ic chev"><use href="#i-chevron"/></svg></div>
+        <div class="card-body"><div class="card-body-inner">
+            <ul id="tpl-list" class="tpl-list"></ul>
+            <div class="row gap">
+                <button id="btn-tpl-add" class="btn"><svg class="ic"><use href="#i-plus"/></svg>Add</button>
+                <button id="btn-tpl-generate" class="btn"><svg class="ic"><use href="#i-sparkle"/></svg>Generate Missing Files</button>
+            </div>
+        </div></div>
     </div>
 
     <div class="card hidden" id="tpl-form-card">
@@ -183,19 +210,21 @@
             <span>Template .aep (optional — leave empty to generate a placeholder)</span>
             <div class="row gap">
                 <input type="text" id="tpl-path" class="grow" placeholder="auto-generate">
-                <button id="btn-tpl-browse" class="btn">…</button>
+                <button id="btn-tpl-browse" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
             </div>
         </label>
         <div class="row gap">
-            <button id="btn-tpl-save" class="btn btn-primary">Save Template</button>
+            <button id="btn-tpl-save" class="btn btn-primary"><svg class="ic"><use href="#i-save"/></svg>Save Template</button>
             <button id="btn-tpl-cancel" class="btn btn-ghost">Cancel</button>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-title">About</div>
-        <div class="hint">BigHappy Launcher CEP v0.1.0 — panel UI with async ffmpeg.<br>
-            The classic ScriptUI version remains available as BigHappyLauncher_Templates.jsx.</div>
+    <div class="card collapsible collapsed" data-section="about">
+        <div class="card-title">About<svg class="ic chev"><use href="#i-chevron"/></svg></div>
+        <div class="card-body"><div class="card-body-inner">
+            <div class="hint">BigHappy Launcher CEP v0.1.0 — panel UI with async ffmpeg.<br>
+                The classic ScriptUI version remains available as BigHappyLauncher_Templates.jsx.</div>
+        </div></div>
     </div>
 
 </section>

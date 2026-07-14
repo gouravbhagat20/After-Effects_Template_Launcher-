@@ -24,6 +24,23 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* light theme — applied when AE's skin is bright (see applyTheme in main.js) */
+body.light {
+    --bg: #f4f4f5;
+    --bg-elev: #ffffff;
+    --bg-card: #fbfbfc;
+    --bg-input: #ebebee;
+    --bg-hover: #e1e1e5;
+    --border: #c6c6cc;
+    --border-soft: #d9d9de;
+    --text: #202024;
+    --text-dim: #5a5a63;
+    --text-faint: #8e8e97;
+    --accent-soft: rgba(47, 127, 230, 0.12);
+}
+body.light .card { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07); }
+body.light .btn.loading::before { border-color: rgba(0, 0, 0, 0.15); border-top-color: currentColor; }
+
 /* Chromium draws a blue focus ring around the document when the panel
    gains keyboard focus — suppress it; inputs have their own focus style. */
 html, body { outline: none !important; }
@@ -57,6 +74,16 @@ body {
 .brand-sub {
     color: var(--text-faint); font-size: 10px; font-weight: 600;
     text-transform: uppercase; letter-spacing: 2px;
+}
+
+.header-right { display: flex; align-items: center; gap: 10px; }
+
+/* header activity spinner — visible only during real background work */
+.activity {
+    width: 13px; height: 13px; flex: none;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.7s linear infinite;
 }
 
 .pill {
@@ -424,3 +451,73 @@ select {
 }
 .bh-toast.show { transform: translateX(-50%); opacity: 1; }
 .bh-toast.err { border-left-color: var(--red); }
+
+/* ============ icons ============ */
+
+.ic { width: 13px; height: 13px; flex: none; pointer-events: none; }
+
+/* ============ tooltips ============ */
+
+[data-tip] { position: relative; cursor: help; border-bottom: 1px dotted var(--text-faint); }
+[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 7px); left: 0;
+    width: max-content; max-width: 210px; z-index: 60;
+    background: var(--bg-elev); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 6px 9px; font-size: 10.5px; font-weight: 500; line-height: 1.45;
+    text-transform: none; letter-spacing: 0; white-space: normal;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+    animation: fade-in 0.12s ease;
+}
+
+/* ============ collapsible settings sections ============ */
+
+.collapsible .card-title { cursor: pointer; user-select: none; }
+.collapsible .card-title .chev {
+    order: 2; margin-left: 4px; color: var(--text-dim);
+    transition: transform 0.22s ease;
+}
+.collapsible.collapsed .card-title { margin-bottom: 0; }
+.collapsible.collapsed .card-title .chev { transform: rotate(-90deg); }
+.collapsible .card-body {
+    display: grid; grid-template-rows: 1fr;
+    transition: grid-template-rows 0.25s ease;
+}
+.collapsible .card-body-inner { overflow: hidden; min-height: 0; }
+.collapsible.collapsed .card-body { grid-template-rows: 0fr; }
+
+/* ============ template thumbs & empty states ============ */
+
+.tpl-info { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.tpl-info > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-thumb {
+    flex: none; display: inline-block;
+    border: 1.5px solid var(--accent); border-radius: 2px;
+    background: var(--accent-soft);
+}
+
+.empty-state {
+    display: block; text-align: center;
+    padding: 14px 10px !important;
+    border: 1px dashed var(--border) !important; border-radius: var(--radius-sm);
+    color: var(--text-faint); font-weight: 400 !important; font-size: 11px;
+    background: none !important;
+}
+
+/* ============ compact layout for narrow docking ============ */
+
+@media (max-width: 380px) {
+    .app-header { padding: 10px 10px 6px; }
+    .brand-sub { display: none; }
+    .tabs { margin: 0 8px 10px; }
+    .tab { padding: 6px 4px; font-size: 10.5px; }
+    .tab-page { padding: 0 8px; }
+    .card { padding: 10px; }
+    .row.gap { flex-wrap: wrap; }
+    .row.gap .field { min-width: 45%; }
+    .row.gap .field input[style] { width: 100% !important; }
+    .btn { padding: 0 10px; }
+    [data-tip]:hover::after { max-width: 160px; }
+}

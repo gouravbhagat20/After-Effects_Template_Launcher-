@@ -96,6 +96,11 @@
         return (res && res.err === 0 && res.data && res.data.length) ? res.data : null;
     }
 
+    function pickFolder(title) {
+        var res = window.cep.fs.showOpenDialogEx(false, true, title, null, []);
+        return (res && res.err === 0 && res.data && res.data.length) ? res.data[0] : null;
+    }
+
     function revealInOS(folderPath) {
         if (!folderPath) return;
         if (BHFFmpeg.isWin) cp.spawn("explorer", [folderPath], { detached: true });
@@ -130,6 +135,26 @@
                     return ui.confirm("Continue WITHOUT saving?\n\nUnsaved changes will be LOST.", "Discard Changes?");
                 });
         }).catch(function () { return true; });
+    }
+
+    // ---------------- theme (follows AE's appearance) ----------------
+
+    function applyTheme() {
+        try {
+            var skin = cs.getHostEnvironment().appSkinInfo;
+            var c = skin.panelBackgroundColor.color;
+            document.body.classList.toggle("light", c.red > 128);
+        } catch (e) { /* keep dark default */ }
+    }
+    applyTheme();
+    try { cs.addEventListener(CSInterface.THEME_COLOR_CHANGED_EVENT, applyTheme); } catch (e) { }
+
+    // ---------------- activity indicator (real background work only) ----------------
+
+    var busyCount = 0;
+    function busy(on) {
+        busyCount = Math.max(0, busyCount + (on ? 1 : -1));
+        $("activity").classList.toggle("hidden", busyCount === 0);
     }
 
     // ---------------- toast ----------------
@@ -353,7 +378,7 @@
                 return host("createFromTemplate", v.t.path, savePath, true).then(function () {
                     addRecent(savePath);
                     refreshProject();
-                    ui.alert("Project Created!\n\nFile: " + filename + "\n\nLocation:\n" + folders.aeFolder, "Success");
+                    toast("✓ Created " + filename);
                 }).catch(function (e) {
                     ui.alert("Failed to open template (BH-2004):\n" + e.message);
                 });
@@ -368,13 +393,23 @@
     function renderTemplateList() {
         var ul = $("tpl-list");
         ul.innerHTML = "";
+        if (!templates.length) {
+            ul.innerHTML = '<li class="empty-state">No templates yet — click "Add" to create one.</li>';
+        }
         templates.forEach(function (t, i) {
             var li = document.createElement("li");
             li.style.animationDelay = (i * 0.03) + "s";
             var missing = !T.fileExists(t.path);
+            // miniature aspect-ratio preview (max 26px on the long edge)
+            var scale = 26 / Math.max(t.width, t.height);
+            var tw = Math.max(8, Math.round(t.width * scale));
+            var th = Math.max(8, Math.round(t.height * scale));
             li.innerHTML =
-                "<span>" + escapeHtml(T.getTemplateLabel(t)) +
-                    (missing ? '<span class="tpl-missing">FILE MISSING</span>' : "") + "</span>" +
+                '<span class="tpl-info">' +
+                    '<span class="tpl-thumb" style="width:' + tw + 'px;height:' + th + 'px"></span>' +
+                    "<span>" + escapeHtml(T.getTemplateLabel(t)) +
+                        (missing ? '<span class="tpl-missing">FILE MISSING</span>' : "") + "</span>" +
+                "</span>" +
                 '<span class="tpl-actions">' +
                     '<button class="link" data-act="edit" data-i="' + i + '">edit</button>' +
                     '<button class="link danger" data-act="del" data-i="' + i + '">delete</button>' +
@@ -459,6 +494,7 @@
                 if (!go) return;
                 var folder = templatesFolder();
                 nodeRequire("fs").mkdirSync(folder, { recursive: true });
+                busy(true);
 
                 return missing.reduce(function (chain, t) {
                     return chain.then(function () {
@@ -467,11 +503,12 @@
                             .catch(function (e) { ui.alert('Failed to generate "' + t.name + '" (BH-1003):\n' + e.message); });
                     });
                 }, Promise.resolve()).then(function () {
+                    busy(false);
                     saveTemplates(templates);
                     renderTemplateList();
                     refreshProject();
-                    ui.alert("Template generation finished.\n\nFolder:\n" + folder, "Templates");
-                });
+                    toast("✓ Templates generated");
+                }, function (e) { busy(false); throw e; });
             });
     });
 
@@ -485,6 +522,9 @@
     function renderOptFiles(statusByPath) {
         var ul = $("opt-file-list");
         ul.innerHTML = "";
+        if (!optFiles.length && !optRunning) {
+            ul.innerHTML = '<li class="empty-state">No MP4s queued — click "Choose MP4s…" to add files.</li>';
+        }
         optFiles.forEach(function (f, i) {
             var li = document.createElement("li");
             if (!statusByPath) li.style.animationDelay = (i * 0.03) + "s";
@@ -509,14 +549,18 @@
     /** Install ffmpeg with progress in the Settings status line; resolves the path. */
     function installFFmpegFlow() {
         var status = $("ffmpeg-status");
+        busy(true);
         return BHFFmpeg.install(function (line) {
             status.textContent = line.length > 90 ? line.slice(0, 90) + "…" : line;
         }).then(function (exePath) {
+            busy(false);
             setSetting("ffmpeg_path", exePath);
             $("set-ffmpeg").value = exePath;
             status.textContent = "✓ Installed: " + exePath;
+            toast("✓ FFmpeg installed");
             return exePath;
         }, function (err) {
+            busy(false);
             status.textContent = "✗ Install failed.";
             ui.alert("FFmpeg install failed:\n\n" + err.message);
             throw new Error("no ffmpeg");
@@ -558,6 +602,7 @@
         if (!files) return;
         var pickBtn = $("btn-pick-files");
         pickBtn.classList.add("loading");
+        busy(true);
         getFFmpegOrExplain().then(function (exe) {
             return Promise.all(files.map(function (f) { return BHFFmpeg.probe(exe, f); }));
         }).then(function (infos) {
@@ -568,6 +613,7 @@
             if (e.message !== "no ffmpeg") ui.alert("Could not read files:\n" + e.message);
         }).then(function () {
             pickBtn.classList.remove("loading");
+            busy(false);
         });
     });
 
@@ -578,6 +624,7 @@
         getFFmpegOrExplain().then(function (exe) {
             optRunning = true;
             optCancelled = false;
+            busy(true);
             $("btn-optimize").classList.add("loading");
             $("btn-optimize").disabled = true;
             $("btn-cancel").disabled = false;
@@ -659,6 +706,7 @@
                 optLog(cancelledRun ? "Cancelled — remaining files skipped." : err.message, "err");
                 toast(cancelledRun ? "Batch cancelled" : "Optimization failed", true);
             }).then(function () {
+                busy(false);
                 $("btn-optimize").classList.remove("loading");
                 // Reveal the result and keep a button around for later
                 if (outputs.length) {
@@ -695,6 +743,30 @@
     bindSetting("set-ffmpeg", "ffmpeg_path");
     bindSetting("set-basefolder", "base_work_folder");
     bindSetting("set-tplfolder", "templates_folder");
+
+    function bindBrowse(btnId, inputId, key, title) {
+        $(btnId).addEventListener("click", function () {
+            var folder = pickFolder(title);
+            if (!folder) return;
+            $(inputId).value = folder;
+            setSetting(key, folder);
+            toast("✓ Saved");
+        });
+    }
+    bindBrowse("btn-browse-base", "set-basefolder", "base_work_folder", "Select base work folder");
+    bindBrowse("btn-browse-tpl", "set-tplfolder", "templates_folder", "Select templates folder");
+
+    // collapsible settings sections (state remembered per section)
+    Array.prototype.forEach.call(document.querySelectorAll(".card.collapsible"), function (card) {
+        var section = card.dataset.section;
+        var saved = localStorage.getItem("bh.collapse." + section);
+        if (saved === "1") card.classList.add("collapsed");
+        else if (saved === "0") card.classList.remove("collapsed");
+        card.querySelector(".card-title").addEventListener("click", function () {
+            var collapsed = card.classList.toggle("collapsed");
+            localStorage.setItem("bh.collapse." + section, collapsed ? "1" : "0");
+        });
+    });
 
     $("btn-detect-ffmpeg").addEventListener("click", function () {
         $("ffmpeg-status").textContent = "Detecting…";

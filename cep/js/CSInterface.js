@@ -28,5 +28,17 @@
         return global.navigator.platform.indexOf("Win") >= 0 ? "Windows" : "Mac";
     };
 
+    /** Host environment incl. appSkinInfo (panel background color, etc.). */
+    CSInterface.prototype.getHostEnvironment = function () {
+        return JSON.parse(global.__adobe_cep__.getHostEnvironment());
+    };
+
+    /** Subscribe to CEP events (e.g. theme changes). */
+    CSInterface.prototype.addEventListener = function (type, listener) {
+        global.__adobe_cep__.addEventListener(type, listener);
+    };
+
+    CSInterface.THEME_COLOR_CHANGED_EVENT = "com.adobe.csxs.events.ThemeColorChanged";
+
     global.CSInterface = CSInterface;
 })(window);
