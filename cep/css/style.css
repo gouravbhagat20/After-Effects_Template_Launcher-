@@ -549,6 +549,35 @@ select {
 
 .diag-body { max-height: 220px; white-space: pre-wrap; }
 
+/* ============ spec sheet & flow chips (render tab) ============ */
+
+.spec-list {
+    background: var(--bg-input); border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm); padding: 2px 0;
+}
+.spec-row {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 6px 11px; font-size: 11.5px;
+}
+.spec-row + .spec-row { border-top: 1px solid var(--border-soft); }
+.spec-row > span { color: var(--text-faint); font-size: 10px; flex: none; }
+.spec-row > b {
+    font-weight: 600; text-align: right; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.spec-row .mono { font: 10.5px Menlo, Consolas, monospace; font-weight: 400; color: var(--text-dim); }
+
+.flow-chips {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+    margin-bottom: 4px;
+}
+.chip {
+    font-size: 10px; font-weight: 600; color: var(--text-dim);
+    background: var(--bg-input); border: 1px solid var(--border-soft);
+    border-radius: 20px; padding: 3px 9px; white-space: nowrap;
+}
+.chip-arrow { color: var(--text-faint); font-size: 10px; }
+
 /* ============ checkbox rows ============ */
 
 .check-label {

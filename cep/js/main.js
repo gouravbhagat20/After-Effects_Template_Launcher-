@@ -583,20 +583,29 @@
 
     function renderRQInfo() {
         var box = $("rq-info");
+        if (!box) return;
         if (!currentProject || !currentProject.path) {
-            box.innerHTML = '<div class="muted">Open a saved project first.</div>';
+            box.innerHTML = '<div class="empty-state">Open a saved project to set up a render.</div>';
+            $("btn-rq-add").disabled = true;
             return;
         }
         var main = currentProject.mainComp;
         if (!main) {
-            box.innerHTML = '<div class="muted">No "Main" comp found in this project.</div>';
+            box.innerHTML = '<div class="empty-state">No "Main" comp found in this project.</div>';
+            $("btn-rq-add").disabled = true;
             return;
         }
+        $("btn-rq-add").disabled = false;
         var r = T.buildRenderName(currentProject.name, main.width, main.height);
+        var revision = (r.parsed && r.parsed.revision) ? r.parsed.revision : "R1";
+        var isPng = r.type === "sunrise" || r.type === "default";
         box.innerHTML =
-            '<div class="name">' + escapeHtml(main.name) + " — " + main.width + "×" + main.height + '</div>' +
-            '<div class="meta">Output: ' + escapeHtml(r.name) + '</div>' +
-            '<div class="meta">Format: ' + (r.type === "sunrise" || r.type === "default" ? "PNG Sequence + Alpha" : "H.264 (MP4)") + '</div>';
+            '<div class="spec-list">' +
+                '<div class="spec-row"><span>Comp</span><b>' + escapeHtml(main.name) + " · " + main.width + "×" + main.height + " · " + main.duration.toFixed(1) + 's</b></div>' +
+                '<div class="spec-row"><span>Format</span><b>' + (isPng ? "PNG Sequence + Alpha" : "H.264 (MP4)") + '</b></div>' +
+                '<div class="spec-row"><span>Folder</span><b>Render_' + escapeHtml(revision) + '</b></div>' +
+                '<div class="spec-row"><span>Output</span><b class="mono">' + escapeHtml(r.name) + '</b></div>' +
+            '</div>';
     }
 
     $("btn-rq-add").addEventListener("click", function () {
