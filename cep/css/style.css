@@ -176,7 +176,7 @@ body {
     padding: 14px;
     margin-bottom: 10px;
 }
-.card-primary { border-color: rgba(55, 142, 240, 0.45); }
+.card-primary { border-color: var(--border-soft); }
 .card-title {
     display: flex; align-items: center; gap: 6px;
     font-size: 11px; font-weight: 700;
@@ -308,15 +308,14 @@ select {
     margin: 0; padding: 8px 10px;
     background: var(--bg-input);
     border: 1px solid var(--border-soft);
-    border-left: 2px solid var(--accent);
     border-radius: var(--radius-sm);
-    font: 11px Menlo, Consolas, monospace; color: var(--accent);
+    font: 11px Menlo, Consolas, monospace; color: var(--text-dim);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     user-select: text;
 }
 .preview-block { margin-top: 12px; }
 .preview-label { display: block; margin: 0 0 5px 1px; color: var(--text-faint); font-size: 9.5px; }
-.preview-line.invalid { color: var(--red); border-left-color: var(--red); }
+.preview-line.invalid { color: var(--red); border-color: rgba(227, 72, 80, 0.5); }
 
 /* ============ template list ============ */
 
