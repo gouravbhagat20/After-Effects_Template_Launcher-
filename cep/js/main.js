@@ -824,9 +824,7 @@
     function renderOptFiles(statusByPath) {
         var ul = $("opt-file-list");
         ul.innerHTML = "";
-        if (!optFiles.length && !optRunning) {
-            ul.innerHTML = '<li class="empty-state">No MP4s queued — click "Choose MP4s…" to add files.</li>';
-        }
+        // (empty queue needs no placeholder — the dropzone above is the empty state)
         optFiles.forEach(function (f) {
             var li = document.createElement("li");
             var status = (statusByPath && statusByPath[f.path]) || "";
@@ -897,26 +895,66 @@
         $("btn-show-output").classList.add("hidden");
     }
 
-    $("btn-pick-files").addEventListener("click", function () {
-        if (optRunning) return;
-        var files = pickFiles(true, "Select MP4(s) to optimize", ["mp4"]);
-        if (!files) return;
-        var pickBtn = $("btn-pick-files");
-        pickBtn.classList.add("loading");
+    function updateDropLabel() {
+        $("opt-drop-label").textContent = optFiles.length
+            ? optFiles.length + " file" + (optFiles.length > 1 ? "s" : "") + " queued — drop or click to replace"
+            : "Drop MP4s here — or click to browse";
+    }
+
+    /** Probe and queue a set of MP4 paths (from the picker or drag & drop). */
+    function queueOptFiles(paths) {
+        if (optRunning || !paths || !paths.length) return;
+        var zone = $("btn-pick-files");
+        zone.classList.add("loading");
         busy(true);
         getFFmpegOrExplain().then(function (exe) {
-            return Promise.all(files.map(function (f) { return BHFFmpeg.probe(exe, f); }));
+            return Promise.all(paths.map(function (f) { return BHFFmpeg.probe(exe, f); }));
         }).then(function (infos) {
             optFiles = infos;
             resetOptProgress();   // new batch — drop the previous run's results
             renderOptFiles();
+            updateDropLabel();
         }).catch(function (e) {
             if (e.message !== "no ffmpeg") ui.alert("Could not read files:\n" + e.message);
         }).then(function () {
-            pickBtn.classList.remove("loading");
+            zone.classList.remove("loading");
             busy(false);
         });
+    }
+
+    $("btn-pick-files").addEventListener("click", function () {
+        var files = pickFiles(true, "Select MP4(s) to optimize", ["mp4"]);
+        if (files) queueOptFiles(files);
     });
+    $("btn-pick-files").addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); this.click(); }
+    });
+
+    // drag & drop from Finder/Explorer
+    (function () {
+        var zone = $("btn-pick-files");
+        ["dragover", "dragenter"].forEach(function (evName) {
+            zone.addEventListener(evName, function (ev) {
+                ev.preventDefault();
+                zone.classList.add("drag");
+            });
+        });
+        ["dragleave", "dragend"].forEach(function (evName) {
+            zone.addEventListener(evName, function () { zone.classList.remove("drag"); });
+        });
+        zone.addEventListener("drop", function (ev) {
+            ev.preventDefault();
+            zone.classList.remove("drag");
+            var paths = Array.prototype.slice.call(ev.dataTransfer.files)
+                .map(function (f) { return f.path; })
+                .filter(function (p) { return p && /\.mp4$/i.test(p); });
+            if (!paths.length) { toast("Only MP4 files can be optimized", true); return; }
+            queueOptFiles(paths);
+        });
+        // block accidental drops elsewhere from navigating the panel
+        document.addEventListener("dragover", function (ev) { ev.preventDefault(); });
+        document.addEventListener("drop", function (ev) { ev.preventDefault(); });
+    })();
 
     $("btn-optimize").addEventListener("click", function () {
         if (optRunning || !optFiles.length) return;
@@ -1021,6 +1059,7 @@
                 // Clear the queue — results stay in the log; next run starts fresh
                 optFiles = [];
                 renderOptFiles();
+                updateDropLabel();
                 $("opt-current-file").textContent = "—";
                 $("btn-cancel").disabled = true;
                 refreshProject();

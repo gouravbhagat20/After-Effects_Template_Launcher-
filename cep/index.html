@@ -199,24 +199,24 @@
     </div>
 
     <div class="card">
-        <div class="card-title">DOOH MP4 optimizer</div>
-        <p class="hint">Optimizes MP4s to a hard size cap with two-pass H.264.</p>
+        <div class="card-title"><span data-tip="Two-pass H.264 size targeting. Originals are replaced only after a verified backup-swap; if the cap can't be met, the original is kept and the result is saved as _Optimized.mp4.">Queue</span><span class="card-step">01</span></div>
 
-        <div class="row gap">
-            <label class="field grow">
-                <span data-tip="Hard cap. If the best encode still exceeds this, the original is kept and the result is saved as _Optimized.mp4 instead.">Target size (MB)</span>
-                <input type="number" id="opt-target" value="7" min="1" step="0.5">
-            </label>
-            <label class="field grow">
-                <span data-tip="Originals are replaced only after a verified backup-swap — the source is never deleted before the optimized file is in place.">Source</span>
-                <button id="btn-pick-files" class="btn"><svg class="ic"><use href="#i-film"/></svg>Choose MP4s…</button>
-            </label>
+        <div id="btn-pick-files" class="dropzone" role="button" tabindex="0" aria-label="Add MP4 files">
+            <svg class="ic"><use href="#i-film"/></svg>
+            <span id="opt-drop-label">Drop MP4s here — or click to browse</span>
         </div>
 
         <ul id="opt-file-list" class="file-list"></ul>
 
         <div class="row gap">
-            <button id="btn-optimize" class="btn btn-primary" disabled><svg class="ic"><use href="#i-bolt"/></svg>Optimize</button>
+            <label class="field" style="max-width:130px">
+                <span data-tip="Hard cap. If the best encode still exceeds this, the original is kept and the result is saved as _Optimized.mp4 instead.">Target size (MB)</span>
+                <input type="number" id="opt-target" value="7" min="1" step="0.5">
+            </label>
+        </div>
+
+        <div class="row gap action-row">
+            <button id="btn-optimize" class="btn btn-primary btn-wide" disabled><svg class="ic"><use href="#i-bolt"/></svg>Optimize</button>
             <button id="btn-cancel" class="btn btn-danger" disabled><svg class="ic"><use href="#i-x"/></svg>Cancel</button>
         </div>
 
