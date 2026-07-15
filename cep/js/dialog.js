@@ -13,7 +13,7 @@
 
     function build() {
         overlay = document.createElement("div");
-        overlay.className = "bh-modal-overlay hidden";
+        overlay.className = "bh-modal-overlay";
         overlay.innerHTML =
             '<div class="bh-modal">' +
                 '<div class="bh-modal-title"></div>' +
@@ -34,21 +34,32 @@
             var yes = overlay.querySelector(".bh-modal-yes");
             var no = overlay.querySelector(".bh-modal-no");
             no.classList.toggle("hidden", !isConfirm);
-            overlay.classList.remove("hidden");
-            yes.focus();
+            requestAnimationFrame(function () {
+                overlay.classList.add("show");
+                yes.focus();
+            });
 
-            function done(result) {
-                overlay.classList.add("hidden");
+            function finish(result) {
                 yes.onclick = no.onclick = null;
                 document.removeEventListener("keydown", onKey);
                 resolve(result);
             }
-            function onKey(ev) {
-                if (ev.key === "Escape") done(isConfirm ? false : undefined);
-                if (ev.key === "Enter") done(isConfirm ? true : undefined);
+            function done(result, animate) {
+                if (!animate) overlay.classList.add("is-static");
+                overlay.classList.remove("show");
+                if (animate) {
+                    setTimeout(function () { finish(result); }, 120);
+                } else {
+                    finish(result);
+                    requestAnimationFrame(function () { overlay.classList.remove("is-static"); });
+                }
             }
-            yes.onclick = function () { done(isConfirm ? true : undefined); };
-            no.onclick = function () { done(false); };
+            function onKey(ev) {
+                if (ev.key === "Escape") done(isConfirm ? false : undefined, false);
+                if (ev.key === "Enter") done(isConfirm ? true : undefined, false);
+            }
+            yes.onclick = function () { done(isConfirm ? true : undefined, true); };
+            no.onclick = function () { done(false, true); };
             document.addEventListener("keydown", onKey);
         });
     }

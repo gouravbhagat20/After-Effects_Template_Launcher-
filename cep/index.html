@@ -23,8 +23,11 @@
 
 <header class="app-header">
     <div class="brand">
-        <span class="brand-name">BIG<span class="accent">HAPPY</span></span>
-        <span class="brand-sub">Launcher</span>
+        <span class="brand-mark" aria-hidden="true">BH</span>
+        <span class="brand-copy">
+            <span class="brand-name">BigHappy</span>
+            <span class="brand-sub">Project launcher</span>
+        </span>
     </div>
     <div class="header-right">
         <span id="activity" class="activity hidden" title="Working…"></span>
@@ -33,25 +36,33 @@
     </div>
 </header>
 
-<nav class="tabs">
-    <button class="tab active" data-tab="launcher">Launcher</button>
-    <button class="tab" data-tab="render">Render</button>
-    <button class="tab" data-tab="optimizer">DOOH</button>
-    <button class="tab" data-tab="settings">Settings</button>
+<nav class="tabs" role="tablist" aria-label="BigHappy tools">
+    <button class="tab active" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-launcher" data-tab="launcher">Launcher</button>
+    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-render" data-tab="render">Render</button>
+    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-optimizer" data-tab="optimizer">DOOH</button>
+    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-settings" data-tab="settings">Settings</button>
 </nav>
 
 <!-- ============================= LAUNCHER ============================= -->
-<section id="tab-launcher" class="tab-page active">
+<section id="tab-launcher" class="tab-page active" role="tabpanel">
 
-    <div class="card">
-        <div class="card-title">New Project</div>
+    <div class="page-intro">
+        <div>
+            <span class="eyebrow">Workspace</span>
+            <h1>Create a project</h1>
+        </div>
+        <span class="page-intro-note">Template → named file</span>
+    </div>
+
+    <div class="card card-primary">
+        <div class="card-title"><span>Project details</span><span class="card-step">01</span></div>
         <label class="field">
             <span>Template</span>
             <select id="np-template"></select>
         </label>
         <div class="row gap">
             <label class="field grow">
-                <span>Brand *</span>
+                <span>Brand <b class="required" aria-label="required">*</b></span>
                 <input type="text" id="np-brand" placeholder="Nike">
             </label>
             <label class="field grow">
@@ -79,26 +90,29 @@
                 <input type="number" id="np-revision" value="1" min="1" style="width:56px">
             </label>
         </div>
-        <div id="np-preview" class="preview-line">—</div>
-        <div class="row gap">
-            <button id="btn-create" class="btn btn-primary"><svg class="ic"><use href="#i-plus"/></svg>Create Project</button>
+        <div class="preview-block">
+            <span class="preview-label">Project filename</span>
+            <div id="np-preview" class="preview-line">—</div>
+        </div>
+        <div class="row gap action-row">
+            <button id="btn-create" class="btn btn-primary btn-wide"><svg class="ic"><use href="#i-plus"/></svg>Create project</button>
         </div>
     </div>
 
     <div class="card" id="project-card">
-        <div class="card-title">Current Project</div>
+        <div class="card-title"><span>Current project</span><span class="card-step">02</span></div>
         <div id="project-info" class="project-info">
             <div class="muted">No project open.</div>
         </div>
-        <div class="row gap">
-            <button id="btn-open" class="btn"><svg class="ic"><use href="#i-folder"/></svg>Open Project…</button>
+        <div class="row gap action-row secondary-actions">
+            <button id="btn-open" class="btn"><svg class="ic"><use href="#i-folder"/></svg>Open project…</button>
             <button id="btn-save" class="btn btn-ghost"><svg class="ic"><use href="#i-save"/></svg>Save</button>
             <button id="btn-reveal" class="btn btn-ghost"><svg class="ic"><use href="#i-pin"/></svg>Reveal</button>
         </div>
     </div>
 
     <div class="card">
-        <div class="card-title">Recent Projects</div>
+        <div class="card-title">Recent projects</div>
         <ul id="recent-list" class="recent-list">
             <li class="muted">Nothing yet — projects you open appear here.</li>
         </ul>
@@ -107,26 +121,34 @@
 </section>
 
 <!-- ============================== RENDER ============================== -->
-<section id="tab-render" class="tab-page">
+<section id="tab-render" class="tab-page" role="tabpanel">
+
+    <div class="page-intro">
+        <div>
+            <span class="eyebrow">Output</span>
+            <h1>Render &amp; deliver</h1>
+        </div>
+        <span class="page-intro-note">Queue → collect</span>
+    </div>
 
     <div class="card">
-        <div class="card-title">Render Queue</div>
+        <div class="card-title">Render queue</div>
         <p class="hint">Adds the Main comp to the Render Queue with the right output
            module for the template (PNG+Alpha for Sunrise, H.264 for InterScroller/DOOH)
            and a standardized output name in Render_R#.</p>
         <div id="rq-info" class="project-info"><div class="muted">No project open.</div></div>
         <div class="row gap">
-            <button id="btn-rq-add" class="btn btn-primary"><svg class="ic"><use href="#i-plus"/></svg>Add to Render Queue</button>
+            <button id="btn-rq-add" class="btn btn-primary"><svg class="ic"><use href="#i-plus"/></svg>Add to render queue</button>
             <label class="check-label"><input type="checkbox" id="rq-ame"> Send to Media Encoder</label>
         </div>
     </div>
 
     <!-- Sunrise post-render temporarily hidden — remove "hidden" to re-enable -->
     <div class="card hidden" id="pr-card">
-        <div class="card-title">Sunrise Post-Render</div>
+        <div class="card-title">Sunrise post-render</div>
         <p class="hint">Converts a rendered PNG sequence to delivery files.</p>
         <div class="row gap">
-            <button id="btn-pr-folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg>Choose Render Folder…</button>
+            <button id="btn-pr-folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg>Choose render folder…</button>
             <button id="btn-pr-auto" class="btn btn-ghost">Auto-Detect</button>
         </div>
         <div id="pr-seq" class="hint" style="margin-top:8px">No sequence selected.</div>
@@ -151,12 +173,12 @@
     </div>
 
     <div class="card">
-        <div class="card-title">Collect Project</div>
+        <div class="card-title">Collect project</div>
         <p class="hint">Checks for missing footage, then saves a standardized copy with
            all linked assets and a pack report (fonts, effects, missing files).
            The original project is never modified.</p>
         <div class="row gap">
-            <button id="btn-collect" class="btn btn-primary"><svg class="ic"><use href="#i-save"/></svg>Collect Project…</button>
+            <button id="btn-collect" class="btn btn-primary"><svg class="ic"><use href="#i-save"/></svg>Collect project…</button>
         </div>
         <div id="collect-status" class="hint" style="margin-top:8px"></div>
     </div>
@@ -164,10 +186,18 @@
 </section>
 
 <!-- ============================ OPTIMIZER ============================= -->
-<section id="tab-optimizer" class="tab-page">
+<section id="tab-optimizer" class="tab-page" role="tabpanel">
+
+    <div class="page-intro">
+        <div>
+            <span class="eyebrow">Delivery spec</span>
+            <h1>DOOH optimizer</h1>
+        </div>
+        <span class="page-intro-note">Hard size cap</span>
+    </div>
 
     <div class="card">
-        <div class="card-title">DOOH MP4 Optimizer</div>
+        <div class="card-title">DOOH MP4 optimizer</div>
         <p class="hint">Optimizes MP4s to a hard size cap with two-pass H.264.</p>
 
         <div class="row gap">
@@ -203,7 +233,15 @@
 </section>
 
 <!-- ============================= SETTINGS ============================= -->
-<section id="tab-settings" class="tab-page">
+<section id="tab-settings" class="tab-page" role="tabpanel">
+
+    <div class="page-intro">
+        <div>
+            <span class="eyebrow">Configuration</span>
+            <h1>Settings</h1>
+        </div>
+        <span class="page-intro-note">Shared with ScriptUI</span>
+    </div>
 
     <div class="card collapsible" data-section="ffmpeg">
         <div class="card-title">FFmpeg<svg class="ic chev"><use href="#i-chevron"/></svg></div>
@@ -246,13 +284,13 @@
             <ul id="tpl-list" class="tpl-list"></ul>
             <div class="row gap">
                 <button id="btn-tpl-add" class="btn"><svg class="ic"><use href="#i-plus"/></svg>Add</button>
-                <button id="btn-tpl-generate" class="btn"><svg class="ic"><use href="#i-sparkle"/></svg>Generate Missing Files</button>
+                <button id="btn-tpl-generate" class="btn"><svg class="ic"><use href="#i-sparkle"/></svg>Generate missing files</button>
             </div>
         </div></div>
     </div>
 
     <div class="card hidden" id="tpl-form-card">
-        <div class="card-title" id="tpl-form-title">Add Template</div>
+        <div class="card-title" id="tpl-form-title">Add template</div>
         <label class="field">
             <span>Name *</span>
             <input type="text" id="tpl-name" placeholder="Sunrise">
@@ -273,7 +311,7 @@
             </div>
         </label>
         <div class="row gap">
-            <button id="btn-tpl-save" class="btn btn-primary"><svg class="ic"><use href="#i-save"/></svg>Save Template</button>
+            <button id="btn-tpl-save" class="btn btn-primary"><svg class="ic"><use href="#i-save"/></svg>Save template</button>
             <button id="btn-tpl-cancel" class="btn btn-ghost">Cancel</button>
         </div>
     </div>
@@ -284,7 +322,7 @@
             <div id="diag-body" class="mini-log diag-body">Open this section and click Refresh.</div>
             <div class="row gap" style="margin-top:10px">
                 <button id="btn-diag-refresh" class="btn"><svg class="ic"><use href="#i-search"/></svg>Refresh</button>
-                <button id="btn-diag-copy" class="btn">Copy Report</button>
+                <button id="btn-diag-copy" class="btn">Copy report</button>
                 <button id="btn-diag-save" class="btn btn-ghost">Save…</button>
             </div>
         </div></div>

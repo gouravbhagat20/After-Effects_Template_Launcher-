@@ -187,6 +187,11 @@
         toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2600);
     }
 
+    function setProgress(id, pct) {
+        var value = Math.max(0, Math.min(100, Number(pct) || 0));
+        $(id).style.transform = "scaleX(" + (value / 100) + ")";
+    }
+
     // ---------------- tabs (sliding thumb) ----------------
 
     var tabsBar = document.querySelector(".tabs");
@@ -194,25 +199,70 @@
     tabThumb.className = "tab-thumb";
     tabsBar.insertBefore(tabThumb, tabsBar.firstChild);
 
-    function moveThumb(tab) {
+    function moveThumb(tab, immediate) {
+        if (immediate) tabThumb.classList.add("is-static");
         tabThumb.style.width = tab.offsetWidth + "px";
-        tabThumb.style.transform = "translateX(" + (tab.offsetLeft - 3) + "px)";
+        tabThumb.style.transform = "translateX(" + tab.offsetLeft + "px)";
+        if (immediate) requestAnimationFrame(function () { tabThumb.classList.remove("is-static"); });
+    }
+
+    var activeTabAnimation = null;
+    var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    function animateTabPage(page, event) {
+        // Keyboard navigation should respond instantly; pointer changes get one
+        // small, interruptible transition for continuity.
+        if (!page.animate || (event && event.detail === 0) || (reduceMotion && reduceMotion.matches)) return;
+        if (activeTabAnimation) activeTabAnimation.cancel();
+        var animation = page.animate([
+            { opacity: 0, transform: "translateY(4px)" },
+            { opacity: 1, transform: "translateY(0)" }
+        ], {
+            duration: 160,
+            easing: "cubic-bezier(0.23, 1, 0.32, 1)"
+        });
+        activeTabAnimation = animation;
+        animation.onfinish = function () {
+            if (activeTabAnimation === animation) activeTabAnimation = null;
+        };
+        animation.oncancel = function () {
+            if (activeTabAnimation === animation) activeTabAnimation = null;
+        };
     }
 
     Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (tab) {
-        tab.addEventListener("click", function () {
-            document.querySelector(".tab.active").classList.remove("active");
-            document.querySelector(".tab-page.active").classList.remove("active");
+        tab.addEventListener("click", function (event) {
+            var previousTab = document.querySelector(".tab.active");
+            var previousPage = document.querySelector(".tab-page.active");
+            previousTab.classList.remove("active");
+            previousTab.setAttribute("aria-selected", "false");
+            previousTab.setAttribute("tabindex", "-1");
+            previousPage.classList.remove("active");
             tab.classList.add("active");
-            $("tab-" + tab.dataset.tab).classList.add("active");
-            moveThumb(tab);
+            tab.setAttribute("aria-selected", "true");
+            tab.setAttribute("tabindex", "0");
+            var page = $("tab-" + tab.dataset.tab);
+            page.classList.add("active");
+            moveThumb(tab, event.detail === 0);
+            animateTabPage(page, event);
         });
     });
+    tabsBar.addEventListener("keydown", function (event) {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return;
+        var tabs = Array.prototype.slice.call(tabsBar.querySelectorAll(".tab"));
+        var current = tabs.indexOf(document.activeElement);
+        if (current < 0) current = tabs.indexOf(document.querySelector(".tab.active"));
+        var next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 :
+            (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+        event.preventDefault();
+        tabs[next].focus();
+        tabs[next].click();
+    });
     window.addEventListener("resize", function () {
-        moveThumb(document.querySelector(".tab.active"));
+        moveThumb(document.querySelector(".tab.active"), true);
     });
     // position after first layout
-    requestAnimationFrame(function () { moveThumb(document.querySelector(".tab.active")); });
+    requestAnimationFrame(function () { moveThumb(document.querySelector(".tab.active"), true); });
 
     // ---------------- launcher: project status ----------------
 
@@ -278,9 +328,8 @@
             return;
         }
         ul.innerHTML = "";
-        list.forEach(function (r, i) {
+        list.forEach(function (r) {
             var li = document.createElement("li");
-            li.style.animationDelay = (i * 0.03) + "s";
             var base = r.path.split(/[\\/]/).pop();
             li.innerHTML = escapeHtml(base) + '<span class="path">' + escapeHtml(r.path) + "</span>";
             li.addEventListener("click", function () { openProject(r.path); });
@@ -417,7 +466,6 @@
         }
         templates.forEach(function (t, i) {
             var li = document.createElement("li");
-            li.style.animationDelay = (i * 0.03) + "s";
             var missing = !T.fileExists(t.path);
             // miniature aspect-ratio preview (max 26px on the long edge)
             var scale = 26 / Math.max(t.width, t.height);
@@ -454,7 +502,7 @@
         } else {
             tplEditIndex = i;
             var t = templates[i];
-            $("tpl-form-title").textContent = "Edit Template";
+            $("tpl-form-title").textContent = "Edit template";
             $("tpl-name").value = t.name;
             $("tpl-width").value = t.width;
             $("tpl-height").value = t.height;
@@ -467,7 +515,7 @@
 
     $("btn-tpl-add").addEventListener("click", function () {
         tplEditIndex = -1;
-        $("tpl-form-title").textContent = "Add Template";
+        $("tpl-form-title").textContent = "Add template";
         ["tpl-name", "tpl-path"].forEach(function (id) { $(id).value = ""; });
         $("tpl-width").value = 1920; $("tpl-height").value = 1080;
         $("tpl-fps").value = 24; $("tpl-duration").value = 15;
@@ -571,7 +619,7 @@
                         ui.alert(e.message + "\n\nItem remains in the AE Render Queue.");
                     });
                 }
-                toast("✓ Added to Render Queue");
+                toast("✓ Added to render queue");
             })
             .catch(function (e) { ui.alert("Failed to add to Render Queue (BH-3002):\n" + e.message); });
     });
@@ -672,7 +720,7 @@
                 }, function (step, pct) {
                     $("pr-step").textContent = step;
                     $("pr-pct").textContent = Math.round(pct) + "%";
-                    $("pr-bar").style.width = pct + "%";
+                    setProgress("pr-bar", pct);
                 }, prLog).then(function (res) {
                     prLog("Conversion complete.", "ok");
                     toast("✓ Conversion complete");
@@ -770,9 +818,8 @@
         if (!optFiles.length && !optRunning) {
             ul.innerHTML = '<li class="empty-state">No MP4s queued — click "Choose MP4s…" to add files.</li>';
         }
-        optFiles.forEach(function (f, i) {
+        optFiles.forEach(function (f) {
             var li = document.createElement("li");
-            if (!statusByPath) li.style.animationDelay = (i * 0.03) + "s";
             var status = (statusByPath && statusByPath[f.path]) || "";
             li.innerHTML = "<span>" + escapeHtml(f.path.split(/[\\/]/).pop()) + "</span>" +
                 '<span class="size ' + (status.indexOf("✓") === 0 ? "done" : status.indexOf("✗") === 0 ? "fail" : "") + '">' +
@@ -833,8 +880,8 @@
     function resetOptProgress() {
         $("opt-progress").classList.add("hidden");
         $("opt-log").innerHTML = "";
-        $("opt-bar-file").style.width = "0%";
-        $("opt-bar-all").style.width = "0%";
+        setProgress("opt-bar-file", 0);
+        setProgress("opt-bar-all", 0);
         $("opt-pct").textContent = "0%";
         $("opt-current-file").textContent = "—";
         $("opt-overall-txt").textContent = "0 / 0";
@@ -894,7 +941,7 @@
                 return chain.then(function () {
                     if (optCancelled) throw new Error("CANCELLED");
                     $("opt-current-file").textContent = f.path.split(/[\\/]/).pop();
-                    $("opt-bar-file").style.width = "0%";
+                    setProgress("opt-bar-file", 0);
                     $("opt-pct").textContent = "0%";
 
                     return host("releaseFileLock", f.path)
@@ -903,7 +950,7 @@
                             return BHFFmpeg.optimize(f.path,
                                 { ffmpegPath: exe, targetMB: targetMB, replaceOriginal: true },
                                 function (pct) {
-                                    $("opt-bar-file").style.width = pct + "%";
+                                    setProgress("opt-bar-file", pct);
                                     $("opt-pct").textContent = Math.round(pct) + "%";
                                 }
                             ).then(function (res) {
@@ -936,10 +983,10 @@
                         .then(function () {
                             done++;
                             // File finished (encoded, skipped, or failed) — complete its bar
-                            $("opt-bar-file").style.width = "100%";
+                            setProgress("opt-bar-file", 100);
                             $("opt-pct").textContent = "100%";
                             $("opt-overall-txt").textContent = done + " / " + optFiles.length;
-                            $("opt-bar-all").style.width = (done / optFiles.length * 100) + "%";
+                            setProgress("opt-bar-all", done / optFiles.length * 100);
                             renderOptFiles(statuses);
                         });
                 });
@@ -1004,12 +1051,25 @@
     // collapsible settings sections (state remembered per section)
     Array.prototype.forEach.call(document.querySelectorAll(".card.collapsible"), function (card) {
         var section = card.dataset.section;
+        var title = card.querySelector(".card-title");
         var saved = localStorage.getItem("bh.collapse." + section);
         if (saved === "1") card.classList.add("collapsed");
         else if (saved === "0") card.classList.remove("collapsed");
-        card.querySelector(".card-title").addEventListener("click", function () {
+        title.setAttribute("role", "button");
+        title.setAttribute("tabindex", "0");
+        title.setAttribute("aria-expanded", card.classList.contains("collapsed") ? "false" : "true");
+        title.addEventListener("click", function (event) {
+            var instant = event.detail === 0;
+            if (instant) card.classList.add("is-static");
             var collapsed = card.classList.toggle("collapsed");
+            title.setAttribute("aria-expanded", collapsed ? "false" : "true");
             localStorage.setItem("bh.collapse." + section, collapsed ? "1" : "0");
+            if (instant) requestAnimationFrame(function () { card.classList.remove("is-static"); });
+        });
+        title.addEventListener("keydown", function (event) {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            title.click();
         });
     });
 
