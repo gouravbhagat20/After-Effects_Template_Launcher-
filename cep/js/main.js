@@ -1325,19 +1325,15 @@
     }
 
     /**
-     * @param {boolean} [force] - true for the manual Settings button: bypass
-     *   the throttle and report every outcome (up to date / offline).
-     *   Falsy for the silent boot/periodic check, which throttles network
-     *   calls to one per 6 hours and pops the install dialog by itself the
-     *   first time each new version is seen (the pill stays for later).
+     * Runs at every panel open and hourly after that — the manifest fetch is
+     * tiny, and the once-per-version dialog gate is what prevents nagging,
+     * so there is deliberately NO time throttle (one would delay the
+     * push → open panel → see notification flow this exists for).
+     * @param {boolean} [force] - true for the manual Settings button: report
+     *   every outcome (up to date / offline) and re-show the dialog even for
+     *   an already-notified version.
      */
     function checkForUpdate(force) {
-        if (!force) {
-            var last = parseInt(localStorage.getItem("bh.updateCheckTs") || "0", 10);
-            if (Date.now() - last < 6 * 60 * 60 * 1000) return;
-        }
-        localStorage.setItem("bh.updateCheckTs", String(Date.now()));
-
         // cache-bust: raw branch URLs sit behind a ~5-min CDN cache
         fetch("https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/cep/CSXS/manifest.xml" +
               "?t=" + Date.now())
@@ -1456,7 +1452,6 @@
     refreshProject();
     setInterval(refreshProject, 4000); // keep the status card in sync
 
-    // Panels stay open for days — re-check for updates while running, not
-    // just at boot. Hourly tick; the 6h throttle limits actual network calls.
+    // Panels stay open for days — re-check for updates hourly, not just at boot.
     setInterval(function () { checkForUpdate(); }, 60 * 60 * 1000);
 })();
