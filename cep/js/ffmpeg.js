@@ -162,7 +162,10 @@
             fs.renameSync(bak, originalPath); // roll back
             throw e;
         }
-        fs.unlinkSync(bak);
+        // The swap already succeeded — a failed .bak cleanup must not make
+        // the whole optimization report as failed. The stray .bak is
+        // deliberately never clobbered (see above), only left behind.
+        try { fs.unlinkSync(bak); } catch (e) { }
     }
 
     /**

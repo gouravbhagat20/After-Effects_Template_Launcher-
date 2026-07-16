@@ -194,7 +194,7 @@
     // =========================================================================
 
     var CONFIG = {
-        VERSION: "1.1", // Production Release
+        VERSION: "1.2", // Production Release
         UPDATE: {
             // Any push to main that touches this file makes every installed
             // copy offer the update on next launch (see SECTION 4C)
@@ -2137,10 +2137,12 @@
                 return;
             }
 
-            // curl ships with macOS and Windows 10+; without it, do nothing
+            // curl ships with macOS and Windows 10+; without it, do nothing.
+            // Match "curl <digit>" — Windows' "'curl' is not recognized" error
+            // also contains the word curl, so a bare indexOf is fooled.
             var probe = "";
             try { probe = system.callSystem("curl --version") || ""; } catch (e) { probe = ""; }
-            if (probe.indexOf("curl") === -1) {
+            if (!probe.match(/curl\s+\d/)) {
                 if (!silent) alert("Update check needs curl, which was not found on this system.");
                 return;
             }
@@ -3790,10 +3792,12 @@
      * @returns {array} Array of project items that were temporarily replaced
      */
     function releaseFileLock(file) {
-        var replacedItems = [];
-        if (!file || !file.exists) return replacedItems;
+        var released = { items: [], oms: [] };
+        if (!file || !file.exists) return released;
 
-        // 1. Release Render Queue locks (point output module to dummy file)
+        // 1. Release Render Queue locks (point output module to dummy file).
+        // The OMs are returned so the caller can point them back at the real
+        // path — otherwise queued renders would silently write to temp.
         if (app.project && app.project.renderQueue) {
             try {
                 var rq = app.project.renderQueue;
@@ -3804,6 +3808,7 @@
                         if (om.file && om.file.fsName === file.fsName) {
                             var dummyFile = new File(Folder.temp.fsName + "/rel_lock_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000) + ".mp4");
                             om.file = dummyFile;
+                            released.oms.push(om);
                         }
                     }
                 }
@@ -3814,26 +3819,35 @@
 
         // 2. Release footage item locks (point footage item to dummy placeholder)
         if (app.project) {
-            try {
-                for (var k = 1; k <= app.project.numItems; k++) {
+            for (var k = 1; k <= app.project.numItems; k++) {
+                // Per-item try: one bad item must not leave the rest locked
+                try {
                     var projItem = app.project.item(k);
                     if (projItem instanceof FootageItem && projItem.file && projItem.file.fsName === file.fsName) {
                         // replace() throws when the target file doesn't exist on
-                        // disk — use AE's built-in placeholder instead.
+                        // disk — use AE's built-in placeholder instead. Clamp to
+                        // replaceWithPlaceholder's documented limits (fps 1-99,
+                        // duration <= 10800, dimensions 4-30000) — e.g. 120fps
+                        // footage would otherwise throw and stay locked.
                         var phW = projItem.width > 0 ? projItem.width : 1920;
+                        if (phW < 4) phW = 4; if (phW > 30000) phW = 30000;
                         var phH = projItem.height > 0 ? projItem.height : 1080;
+                        if (phH < 4) phH = 4; if (phH > 30000) phH = 30000;
                         var phFps = projItem.frameRate > 0 ? projItem.frameRate : 30;
+                        if (phFps < 1) phFps = 1; if (phFps > 99) phFps = 99;
                         var phDur = projItem.duration > 0 ? projItem.duration : 1;
+                        if (phDur > 10800) phDur = 10800;
+                        var keepName = projItem.name; // placeholder renames the item
                         projItem.replaceWithPlaceholder("BH_RELINK_" + k, phW, phH, phFps, phDur);
-                        replacedItems.push(projItem);
+                        released.items.push({ item: projItem, name: keepName });
                     }
+                } catch (err) {
+                    writeLog("Error releasing FootageItem lock: " + err.toString(), "DEBUG");
                 }
-            } catch (err) {
-                writeLog("Error releasing FootageItem lock: " + err.toString(), "DEBUG");
             }
         }
-        
-        return replacedItems;
+
+        return released;
     }
 
     /**
@@ -3849,11 +3863,11 @@
     function safeReplaceOriginal(mp4File, outputFile) {
         var originalName = decodePath(mp4File.name);
         var parentPath = mp4File.parent.fsName;
-        var lockedItems = [];
+        var locked = { items: [], oms: [] };
         var replaced = false;
         var parkedAsBak = false;
         try {
-            lockedItems = releaseFileLock(mp4File);
+            locked = releaseFileLock(mp4File);
 
             var backupFile = new File(joinPath(parentPath, originalName + ".bak"));
             if (backupFile.exists) backupFile.remove();
@@ -3878,10 +3892,18 @@
             writeLog("Backup file left on disk: " + originalName + ".bak", "WARN");
         }
         // Re-point footage items at the original path (now the optimized file if
-        // replaced, otherwise the restored original)
+        // replaced, otherwise the restored original) and restore their names —
+        // replace() does not undo the placeholder rename.
         var finalFile = new File(joinPath(parentPath, originalName));
-        for (var m = 0; m < lockedItems.length; m++) {
-            try { lockedItems[m].replace(finalFile); } catch (err) { }
+        for (var m = 0; m < locked.items.length; m++) {
+            try {
+                locked.items[m].item.replace(finalFile);
+                locked.items[m].item.name = locked.items[m].name;
+            } catch (err) { }
+        }
+        // Point released Render Queue output modules back at the real path
+        for (var q = 0; q < locked.oms.length; q++) {
+            try { locked.oms[q].file = finalFile; } catch (err) { }
         }
         return replaced;
     }
