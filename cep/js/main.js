@@ -1319,15 +1319,27 @@
             });
     }
 
-    function checkForUpdate() {
-        var last = parseInt(localStorage.getItem("bh.updateCheckTs") || "0", 10);
-        if (Date.now() - last < 24 * 60 * 60 * 1000) return;   // once a day
+    /**
+     * @param {boolean} [force] - true for the manual Settings button: bypass
+     *   the daily throttle and report every outcome (up to date / offline).
+     *   Falsy for the silent boot check.
+     */
+    function checkForUpdate(force) {
+        if (!force) {
+            var last = parseInt(localStorage.getItem("bh.updateCheckTs") || "0", 10);
+            if (Date.now() - last < 24 * 60 * 60 * 1000) return;   // once a day
+        }
         localStorage.setItem("bh.updateCheckTs", String(Date.now()));
 
-        fetch("https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/cep/CSXS/manifest.xml")
+        // cache-bust: raw branch URLs sit behind a ~5-min CDN cache
+        fetch("https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/cep/CSXS/manifest.xml" +
+              (force ? "?t=" + Date.now() : ""))
             .then(function (r) { return r.ok ? r.text() : null; })
             .then(function (xml) {
-                if (!xml) return;
+                if (!xml) {
+                    if (force) ui.alert("Could not reach GitHub to check for updates.\n\nCheck your internet connection and try again.");
+                    return;
+                }
                 var m = xml.match(/ExtensionBundleVersion="([\d.]+)"/);
                 if (m && versionNewer(m[1], BH_VERSION)) {
                     var pill = $("update-pill");
@@ -1339,9 +1351,15 @@
                                    "Update Available")
                             .then(function (yes) { if (yes) performAutoUpdate(m[1]); });
                     };
+                    if (force) pill.onclick();
+                } else if (force) {
+                    ui.alert("You are up to date.\n\nInstalled: v" + BH_VERSION +
+                             (m ? "\nLatest on GitHub: v" + m[1] : ""), "No Update Available");
                 }
             })
-            .catch(function () { /* offline — try again tomorrow */ });
+            .catch(function () {
+                if (force) ui.alert("Could not reach GitHub to check for updates.\n\nCheck your internet connection and try again.");
+            });
     }
 
     function showWhatsNew() {
@@ -1417,6 +1435,10 @@
 
     $("rq-ame").addEventListener("change", function () {
         setSetting("ame_enabled", this.checked ? "true" : "false");
+    });
+
+    $("btn-check-update").addEventListener("click", function () {
+        checkForUpdate(true);
     });
 
     refreshProject();
