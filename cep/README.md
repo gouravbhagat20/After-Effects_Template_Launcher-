@@ -14,10 +14,17 @@ encode, and no frozen AE during optimization.
   `Assets/...`) to the ScriptUI version, with live filename preview,
   `_GlobalAssets` import, and unsaved-changes guard. Plus live
   current-project card, Open/Save/Reveal, and recent projects.
-- **Templates tab** — add/edit/delete templates and generate missing
-  placeholder `.aep` files. Templates, base folder, ffmpeg path, and recents
-  are stored in AE preferences under the SAME section ("BigHappyLauncher")
-  the ScriptUI version uses — both tools stay in sync automatically.
+- **Render tab** — add the Main comp to the Render Queue with
+  template-specific output modules (PNG+Alpha for Sunrise, H.264 for
+  InterScroller/DOOH), optional send-to-Media-Encoder, project collect
+  (standardized local copy with all linked assets + pack report), and
+  PNG-sequence post-render conversion (the Sunrise card is temporarily
+  hidden in the UI).
+- **Templates management (in Settings)** — add/edit/delete templates and
+  generate missing placeholder `.aep` files. Templates, base folder, ffmpeg
+  path, and recents are stored in AE preferences under the SAME section
+  ("BigHappyLauncher") the ScriptUI version uses — both tools stay in sync
+  automatically.
 - **DOOH Optimizer tab** — pick MP4s, true two-pass H.264 size targeting with
   automatic re-encode if the output exceeds the cap, per-file + overall
   progress, instant cancel, backup-swap replacement (original is never deleted
@@ -26,9 +33,9 @@ encode, and no frozen AE during optimization.
 - **Settings tab** — ffmpeg path (auto-detect covers PATH, Homebrew, and common
   Windows installs), base work folder.
 
-Not yet ported from the ScriptUI version: Collect & Upload, render-queue
-helpers, PNG-sequence post-render conversion. The `.jsx` script remains the
-production tool for those.
+Not yet ported from the ScriptUI version: the Google Drive upload step of
+Collect & Upload (the CEP collect copies to a folder you pick; the `.jsx`
+script still handles the Drive folder structure and upload).
 
 ## Install (team members)
 
@@ -64,7 +71,7 @@ update pill compares the manifest version on GitHub `main` once a day.
 ```
 cep/
 ├── CSXS/manifest.xml   Extension manifest (AEFT 16.0+, Node enabled)
-├── index.html          Panel markup (3 tabs)
+├── index.html          Panel markup (4 tabs: Launcher, Render, DOOH, Settings)
 ├── css/style.css       Dark theme
 ├── js/CSInterface.js   Slim __adobe_cep__ wrapper
 ├── js/ffmpeg.js        Node ffmpeg engine: detect / probe / two-pass optimize / cancel

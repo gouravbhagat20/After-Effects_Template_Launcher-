@@ -194,10 +194,18 @@
     // =========================================================================
 
     var CONFIG = {
-        VERSION: "1.0", // Production Release
+        VERSION: "1.1", // Production Release
+        UPDATE: {
+            // Any push to main that touches this file makes every installed
+            // copy offer the update on next launch (see SECTION 4C)
+            RAW_URL: "https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/BigHappyLauncher_Templates.jsx",
+            API_URL: "https://api.github.com/repos/gouravbhagat20/After-Effects_Template_Launcher-/commits?path=BigHappyLauncher_Templates.jsx&sha=main&per_page=1"
+        },
         SETTINGS: {
             SECTION: "BigHappyLauncher",
             KEYS: {
+                AUTO_UPDATE: "auto_update_enabled",
+                UPDATE_SHA: "update_last_sha",
                 TEMPLATES: "templates_data",
                 TEMPLATES_FOLDER: "templates_folder",
                 DEFAULT_SAVE_FOLDER: "default_save_folder",
@@ -640,8 +648,10 @@
 
             if (checkCancelled(currentFile)) return;
 
-            // Project File Destination
-            var driveRevisionFolder = new Folder(joinPath(pAE, collectFolderName));
+            // Project File Destination — pAE already ends in collectFolderName
+            // (joined at pTemplateFolder above); joining it again would create
+            // .../ProjectName/ProjectName/
+            var driveRevisionFolder = new Folder(pAE);
             if (!driveRevisionFolder.exists) driveRevisionFolder.create();
 
             var driveAepPath = joinPath(driveRevisionFolder.fsName, currentName + ".aep");
@@ -2070,8 +2080,153 @@
 
 
     // =========================================================================
-    // SECTION 4C: AUTO-UPDATE (LOADER GENERATOR)
+    // SECTION 4C: AUTO-UPDATE (SELF-UPDATE FROM GITHUB + LOADER GENERATOR)
     // =========================================================================
+
+    // Captured at eval time — $.fileName is only reliable while the script
+    // file itself is being evaluated, not later inside button callbacks.
+    var SCRIPT_SELF_PATH = (function () {
+        try {
+            var f = new File($.fileName);
+            return f.exists ? f.fsName : "";
+        } catch (e) { return ""; }
+    })();
+
+    /**
+     * Read a whole text file as UTF-8. Returns "" on any failure.
+     */
+    function readFileText(file) {
+        var content = "";
+        try {
+            if (file.open("r")) {
+                file.encoding = "UTF-8";
+                content = file.read();
+                file.close();
+            }
+        } catch (e) { try { file.close(); } catch (e2) { } }
+        return content;
+    }
+
+    /**
+     * Validate that a downloaded blob really is a complete copy of this
+     * script and not a 404 page, rate-limit JSON, or truncated download.
+     * The end marker is assembled at runtime so this code line itself can
+     * never satisfy the check in a truncated file.
+     */
+    function isValidScriptDownload(content) {
+        if (!content || content.length < 50000) return false;
+        if (content.indexOf("BigHappyLauncher") === -1) return false;
+        var endMarker = "@BH_" + "EOF";
+        return content.lastIndexOf(endMarker) > content.length - 200;
+    }
+
+    /**
+     * Check GitHub for a newer version of this script and (with the user's
+     * one-click confirmation) install it over the running copy.
+     * Update detection: latest commit SHA touching this file on main,
+     * remembered in AE settings. Falls back to full-content comparison the
+     * first time (no stored SHA yet), so a stale install is still caught.
+     * @param {boolean} silent - true for the automatic launch check: stay
+     *   quiet unless an update is actually available. false for the manual
+     *   Settings button: report every outcome.
+     */
+    function checkForUpdates(silent) {
+        try {
+            if (!SCRIPT_SELF_PATH) {
+                if (!silent) alert("Cannot self-update: the script's own file path could not be determined.");
+                return;
+            }
+
+            // curl ships with macOS and Windows 10+; without it, do nothing
+            var probe = "";
+            try { probe = system.callSystem("curl --version") || ""; } catch (e) { probe = ""; }
+            if (probe.indexOf("curl") === -1) {
+                if (!silent) alert("Update check needs curl, which was not found on this system.");
+                return;
+            }
+
+            // 1. Latest commit SHA for this file on main
+            var apiRaw = "";
+            try { apiRaw = system.callSystem('curl -s -m 8 "' + CONFIG.UPDATE.API_URL + '"') || ""; } catch (e) { apiRaw = ""; }
+            var shaMatch = apiRaw.match(/"sha"\s*:\s*"([0-9a-f]{40})"/);
+            if (!shaMatch) {
+                // Offline, rate-limited, or GitHub unreachable — never nag at launch
+                if (!silent) alert("Could not reach GitHub to check for updates.\n\nCheck your internet connection and try again.");
+                return;
+            }
+            var remoteSha = shaMatch[1];
+            var storedSha = getSetting(CONFIG.SETTINGS.KEYS.UPDATE_SHA, "");
+
+            if (storedSha && storedSha === remoteSha) {
+                if (!silent) alert("You are up to date.\n\nInstalled: v" + CONFIG.VERSION + "\nLatest commit: " + remoteSha.substring(0, 7));
+                return;
+            }
+
+            // 2. SHA unknown or changed — download the latest script
+            var tmpFile = new File(Folder.temp.fsName + "/bh_launcher_update.jsx");
+            try { if (tmpFile.exists) tmpFile.remove(); } catch (e) { }
+            try { system.callSystem('curl -s -L -m 60 -o "' + tmpFile.fsName + '" "' + CONFIG.UPDATE.RAW_URL + '"'); } catch (e) { }
+
+            var newContent = readFileText(tmpFile);
+            if (!isValidScriptDownload(newContent)) {
+                try { if (tmpFile.exists) tmpFile.remove(); } catch (e) { }
+                if (!silent) alert("Update download failed or was corrupted.\n\nPlease try again later.");
+                return;
+            }
+
+            // 3. Same content already installed? (first run, or a push that
+            // was already applied manually) — just record the SHA, no prompt.
+            // Compare with line endings normalized: the local copy may be CRLF.
+            var currentContent = readFileText(new File(SCRIPT_SELF_PATH));
+            if (currentContent && currentContent.replace(/\r/g, "") === newContent.replace(/\r/g, "")) {
+                setSetting(CONFIG.SETTINGS.KEYS.UPDATE_SHA, remoteSha);
+                try { tmpFile.remove(); } catch (e) { }
+                if (!silent) alert("You are up to date.\n\nInstalled: v" + CONFIG.VERSION + "\nLatest commit: " + remoteSha.substring(0, 7));
+                return;
+            }
+
+            // 4. Genuinely different — confirm, then install over ourselves
+            var verMatch = newContent.match(/VERSION:\s*"([^"]+)"/);
+            var newVer = verMatch ? verMatch[1] : "unknown";
+            var doIt = confirm(
+                "A newer version of BigHappy Launcher is available.\n\n" +
+                "Installed: v" + CONFIG.VERSION + "\n" +
+                "Latest: v" + newVer + " (" + remoteSha.substring(0, 7) + ")\n\n" +
+                "Install now? (The panel keeps working; the new version loads next time you open it.)"
+            );
+            if (!doIt) {
+                try { tmpFile.remove(); } catch (e) { }
+                return;
+            }
+
+            var target = new File(SCRIPT_SELF_PATH);
+
+            // Keep a recovery copy next to the install (overwritten each update)
+            try { target.copy(SCRIPT_SELF_PATH + ".bak"); } catch (e) { }
+
+            // Byte-exact copy (no string round-trip: preserves encoding/EOLs)
+            var installed = false;
+            try { installed = tmpFile.copy(SCRIPT_SELF_PATH); } catch (e) { installed = false; }
+            var verify = new File(SCRIPT_SELF_PATH);
+            if (installed && verify.exists && isValidScriptDownload(readFileText(verify))) {
+                setSetting(CONFIG.SETTINGS.KEYS.UPDATE_SHA, remoteSha);
+                try { tmpFile.remove(); } catch (e) { }
+                writeLog("Self-update installed: v" + CONFIG.VERSION + " -> v" + newVer + " (" + remoteSha.substring(0, 7) + ")", "INFO");
+                alert("✓ Updated to v" + newVer + ".\n\nClose and reopen the panel (Window menu) — or restart After Effects — to load it.");
+            } else {
+                // Typical cause: script lives in Program Files and AE runs without admin rights
+                writeLog("Self-update failed to write: " + SCRIPT_SELF_PATH, "WARN");
+                alert(
+                    "⚠ Could not overwrite the installed script (no write permission?).\n\n" +
+                    "The new version was downloaded to:\n" + tmpFile.fsName + "\n\n" +
+                    "Copy it manually over:\n" + SCRIPT_SELF_PATH
+                );
+            }
+        } catch (e) {
+            writeLog("Update check failed: " + e.toString(), "WARN");
+            if (!silent) alert("Update check failed: " + e.toString());
+        }
+    }
 
     function generateLoaderFile(sourcePath, isUrl) {
         var loaderContent =
@@ -2526,10 +2681,22 @@
         sysTab.margins = 10;
         sysTab.spacing = 10;
 
-        var loaderGrp = sysTab.add("panel", undefined, "Auto-Update Generator");
+        var updGrp = sysTab.add("panel", undefined, "Updates");
+        updGrp.alignChildren = ["left", "top"];
+        updGrp.add("statictext", undefined, "Installed version: v" + CONFIG.VERSION);
+        var autoUpdCheck = updGrp.add("checkbox", undefined, "Check for updates when the panel opens");
+        autoUpdCheck.value = (getSetting(CONFIG.SETTINGS.KEYS.AUTO_UPDATE, "true") === "true");
+        // Saved immediately — must take effect even if the dialog is cancelled
+        autoUpdCheck.onClick = function () {
+            setSetting(CONFIG.SETTINGS.KEYS.AUTO_UPDATE, autoUpdCheck.value ? "true" : "false");
+        };
+        var checkUpdBtn = updGrp.add("button", undefined, "Check for Updates Now");
+        checkUpdBtn.onClick = function () { checkForUpdates(false); };
+
+        var loaderGrp = sysTab.add("panel", undefined, "Team Loader Generator");
         loaderGrp.alignChildren = ["left", "top"];
         loaderGrp.add("statictext", undefined, "Git Raw URL:");
-        var gitUrlInput = loaderGrp.add("edittext", undefined, "https://raw.githubusercontent.com/...");
+        var gitUrlInput = loaderGrp.add("edittext", undefined, CONFIG.UPDATE.RAW_URL);
         gitUrlInput.alignment = ["fill", "top"];
 
         var genBtn = loaderGrp.add("button", undefined, "Generate Loader Script...");
@@ -3645,8 +3812,13 @@
                 for (var k = 1; k <= app.project.numItems; k++) {
                     var projItem = app.project.item(k);
                     if (projItem instanceof FootageItem && projItem.file && projItem.file.fsName === file.fsName) {
-                        var dummyPlace = new File(Folder.temp.fsName + "/temp_place_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000) + ".mp4");
-                        projItem.replace(dummyPlace);
+                        // replace() throws when the target file doesn't exist on
+                        // disk — use AE's built-in placeholder instead.
+                        var phW = projItem.width > 0 ? projItem.width : 1920;
+                        var phH = projItem.height > 0 ? projItem.height : 1080;
+                        var phFps = projItem.frameRate > 0 ? projItem.frameRate : 30;
+                        var phDur = projItem.duration > 0 ? projItem.duration : 1;
+                        projItem.replaceWithPlaceholder("BH_RELINK_" + k, phW, phH, phFps, phDur);
                         replacedItems.push(projItem);
                     }
                 }
@@ -3706,6 +3878,76 @@
             try { lockedItems[m].replace(finalFile); } catch (err) { }
         }
         return replaced;
+    }
+
+    /**
+     * Enforce the DOOH size cap after a CRF pass. CRF 18 with a maxrate
+     * ceiling optimizes for quality and can overshoot the target; when it
+     * does, re-encode the ORIGINAL source with a strict ABR bitrate derived
+     * from the target and swap the result in if it is smaller. Synchronous.
+     * @param {string} exe - Quoted ffmpeg executable string
+     * @param {string} inputPath - Decoded path of the original source file
+     * @param {File} outputFile - CRF-pass output (replaced in place on success)
+     * @param {number} targetMB - Size cap in MB
+     * @param {number} duration - Clip duration in seconds
+     * @param {boolean} isWin
+     * @param {Folder} tempFolder - Space-free temp folder for scripts
+     * @param {string} tag - Unique suffix for temp file names
+     * @returns {number} Final size in MB of the file at outputFile's path
+     */
+    function enforceSizeTarget(exe, inputPath, outputFile, targetMB, duration, isWin, tempFolder, tag) {
+        var outSizeMB = outputFile.length / (1024 * 1024);
+        if (outSizeMB <= targetMB) return outSizeMB;
+
+        var dur = duration < 1 ? 1 : duration;
+        // 95% of the target leaves headroom for container overhead
+        var strictVideo = Math.floor((targetMB * 8192 * 0.95) / dur) - 96;
+        if (strictVideo < 300) strictVideo = 300;
+
+        var sep = isWin ? "\\" : "/";
+        var strictPath = tempFolder.fsName + sep + "strict_" + tag + ".mp4";
+        var strictScriptPath = tempFolder.fsName + sep + "strict_" + tag + (isWin ? ".bat" : ".sh");
+
+        logWarn("CRF pass exceeded size target — running strict ABR fallback", {
+            "CRF Output": outSizeMB.toFixed(2) + " MB",
+            "Target": targetMB + " MB",
+            "Strict Bitrate": strictVideo + " kbps"
+        });
+
+        var strictFlags = "-b:v " + strictVideo + "k -maxrate " + strictVideo + "k -bufsize " + (strictVideo * 2) + "k";
+        var cmd = exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset medium -profile:v high -pix_fmt yuv420p -tune animation -movflags +faststart " + strictFlags + " -c:a aac -b:a 96k \"" + strictPath + "\"";
+        var body = isWin
+            ? "@echo off\r\nchcp 65001 >NUL\r\n" + cmd + " 2>NUL\r\n"
+            : "#!/bin/bash\n" + cmd + " 2>/dev/null\n";
+        var sf = new File(strictScriptPath);
+        sf.open("w");
+        if (!isWin) sf.lineFeed = "unix";
+        sf.write(body);
+        sf.close();
+        system.callSystem(isWin ? 'cmd /c "' + strictScriptPath + '"' : "chmod +x \"" + strictScriptPath + "\" && \"" + strictScriptPath + "\"");
+        try { sf.remove(); } catch (e) { }
+
+        var strictFile = new File(strictPath);
+        if (strictFile.exists && strictFile.length > 1024 && strictFile.length < outputFile.length) {
+            var strictSizeMB = strictFile.length / (1024 * 1024);
+            var outName = decodePath(outputFile.name);
+            // Stage next to the output, then swap — the CRF output is never
+            // deleted before the strict result is confirmed in place.
+            var stagedPath = outputFile.fsName + ".strict";
+            try { var oldStaged = new File(stagedPath); if (oldStaged.exists) oldStaged.remove(); } catch (e) { }
+            if (strictFile.copy(stagedPath)) {
+                var staged = new File(stagedPath);
+                if (staged.exists && staged.length > 1024 && outputFile.remove() && staged.rename(outName)) {
+                    outSizeMB = strictSizeMB;
+                    logInfo("Strict fallback swapped in", {
+                        "Final Size": outSizeMB.toFixed(2) + " MB",
+                        "Target Met": (outSizeMB <= targetMB ? "Yes" : "No")
+                    });
+                }
+            }
+        }
+        try { if (strictFile.exists) strictFile.remove(); } catch (e) { }
+        return outSizeMB;
     }
 
     /**
@@ -4044,8 +4286,11 @@
                 }
             }
 
-            // Calculate bitrate
-            var dur = duration < 1 ? 1 : duration;
+            // Calculate bitrate from THIS file's probed duration — the batch-level
+            // `duration` is file #1's (or the comp's) and would skew every bitrate
+            // and the strict size fallback for any file of a different length
+            var fileDur = (fileInfos && fileInfos[i] && fileInfos[i].duration > 0) ? fileInfos[i].duration : duration;
+            var dur = fileDur < 1 ? 1 : fileDur;
             var totalBitrate = (targetMB * 8192) / dur;
             var videoBitrate = Math.floor(totalBitrate - 128);
             if (videoBitrate < 500) videoBitrate = 500;
@@ -4179,12 +4424,34 @@
             var outputFile = new File(outMP4);
             if (logContent.indexOf("COMPLETE") !== -1 && outputFile.exists && outputFile.length > 1024) {
                 var outputSize = outputFile.length / (1024 * 1024);
+
+                // ENFORCE TARGET: the CRF pass can overshoot the cap — re-encode
+                // with strict ABR before deciding whether to replace the original
+                if (outputSize > targetMB) {
+                    fileLbl.text = mp4File.name + " (Over target — strict re-encode...)";
+                    w.update();
+                    outputSize = enforceSizeTarget(exe, inputPath, outputFile, targetMB, dur, isWin, tempFolder, "batch_" + i);
+                    outputFile = new File(outMP4);
+                }
+
                 var savings = ((sourceSize - outputSize) / sourceSize * 100);
+                var meetsTarget = outputSize <= targetMB;
 
                 // REPLACEMENT LOGIC FOR BATCH (backup-swap: original is never
-                // deleted before the optimized file is confirmed in place)
+                // deleted before the optimized file is confirmed in place).
+                // Over-target output never replaces the original — it stays on
+                // disk as *_Optimized.mp4 for manual review.
                 var sourceName = mp4File.name;
-                var replaced = safeReplaceOriginal(mp4File, outputFile);
+                var replaced = false;
+                if (meetsTarget) {
+                    replaced = safeReplaceOriginal(mp4File, outputFile);
+                } else {
+                    logWarn("Output exceeds target even after strict fallback — original kept", {
+                        "File": decodePath(sourceName),
+                        "Output Size": outputSize.toFixed(2) + " MB",
+                        "Target": targetMB + " MB"
+                    });
+                }
 
                 results.push({
                     name: sourceName,
@@ -4192,7 +4459,7 @@
                     sourceSize: sourceSize,
                     outputSize: outputSize,
                     savings: savings,
-                    meetsTarget: outputSize <= targetMB,
+                    meetsTarget: meetsTarget,
                     replaced: replaced
                 });
                 successCount++;
@@ -4265,6 +4532,10 @@
                     resultMsg += "   " + res.sourceSize.toFixed(1) + " → " + res.outputSize.toFixed(1) + " MB (" + res.savings.toFixed(0) + "% saved)\n";
                     if (res.replaced) {
                         resultMsg += "   (Replaced original)\n";
+                    } else if (res.skipped) {
+                        resultMsg += "   (Already under target - untouched)\n";
+                    } else if (!res.meetsTarget) {
+                        resultMsg += "   (Over target - original kept, see *_Optimized.mp4)\n";
                     } else {
                         resultMsg += "   (Original NOT replaced - check permissions)\n";
                     }
@@ -4715,12 +4986,12 @@
         var detailLbl = detailGrp.add("statictext", undefined, "Bitrate: " + videoBitrate + " kbps | Duration: " + duration.toFixed(1) + "s");
         setTextColor(detailLbl, [0.5, 0.5, 0.5]);
 
-        // Cancel button (no-op while synchronous — kept for UX consistency)
-        var cancelBtn = w.add("button", undefined, "✕  Cancel");
-        cancelBtn.alignment = ["center", "bottom"];
-        cancelBtn.onClick = function () {
-            w.hide();
-        };
+        // No Cancel button: encoding runs through a synchronous shell call, so
+        // nothing in this window can stop FFmpeg once it starts. A dead Cancel
+        // button is worse than none — say what actually happens instead.
+        var noteLbl = w.add("statictext", undefined, "AE will be unresponsive until encoding finishes.");
+        noteLbl.alignment = ["center", "bottom"];
+        setTextColor(noteLbl, [0.6, 0.6, 0.6]);
 
         w.center();
         w.show();
@@ -4786,6 +5057,19 @@
 
         if (outputFile.exists) {
             var outputSize = outputFile.length / (1024 * 1024);
+
+            // ENFORCE TARGET: the CRF pass can overshoot the cap — re-encode
+            // with strict ABR before deciding whether to replace the original
+            if (outputSize > targetMB) {
+                statusLbl.text = "Over target (" + outputSize.toFixed(1) + " MB) — strict re-encode...";
+                progressBar.value = 60;
+                w.show();
+                w.update();
+                outputSize = enforceSizeTarget(exe, inputPath, outputFile, targetMB, duration, isWin, tempFolder, "single");
+                w.hide();
+                outputFile = new File(outMP4);
+            }
+
             var savings = ((sourceSize - outputSize) / sourceSize * 100);
             var meetsTarget = outputSize <= targetMB;
             var originalName = decodePath(mp4File.name);
@@ -4801,8 +5085,18 @@
             });
 
             // REPLACEMENT LOGIC (backup-swap: original is never deleted before
-            // the optimized file is confirmed in place)
-            var replaced = safeReplaceOriginal(mp4File, outputFile);
+            // the optimized file is confirmed in place). Over-target output
+            // never replaces the original — it stays as *_Optimized.mp4.
+            var replaced = false;
+            if (meetsTarget) {
+                replaced = safeReplaceOriginal(mp4File, outputFile);
+            } else {
+                logWarn("Output exceeds target even after strict fallback — original kept", {
+                    "File": originalName,
+                    "Output Size": outputSize.toFixed(2) + " MB",
+                    "Target": targetMB + " MB"
+                });
+            }
 
             var resultMsg = "═══════════════════════════════════════\n";
             resultMsg += "        DOOH OPTIMIZATION COMPLETE\n";
@@ -4820,6 +5114,9 @@
 
             if (replaced) {
                 resultMsg += "✓ Source file replaced with optimized version.\n";
+            } else if (!meetsTarget) {
+                resultMsg += "⚠ Output exceeds the " + targetMB + " MB target — original kept.\n";
+                resultMsg += "Optimized file saved as: " + outName + "\n";
             } else {
                 resultMsg += "⚠ Source file NOT replaced (permission error?)\n";
                 resultMsg += "Output: " + outName + "\n";
@@ -6216,6 +6513,19 @@
 
     buildUI(thisObj);
     // FIX: Pass 'this' explicitly for better Dockable Panel support
+
+    // AUTO-UPDATE CHECK: deferred via scheduleTask so the panel opens
+    // instantly — the curl calls (up to ~8s offline) never block the UI.
+    // One-shot: the global hook removes itself after running.
+    try {
+        if (getSetting(CONFIG.SETTINGS.KEYS.AUTO_UPDATE, "true") === "true") {
+            $.global.__bhLauncherUpdateCheck = function () {
+                try { checkForUpdates(true); } catch (e) { }
+                try { delete $.global.__bhLauncherUpdateCheck; } catch (e) { }
+            };
+            app.scheduleTask("if ($.global.__bhLauncherUpdateCheck) $.global.__bhLauncherUpdateCheck();", 4000, false);
+        }
+    } catch (e) { }
 })(this);
 
 /*
@@ -6251,3 +6561,5 @@ B) For Script (run once):
 
 ================================================================================
 */
+
+// @BH_EOF — end-of-file marker used by the self-updater to detect truncated downloads. Keep as the last line.
