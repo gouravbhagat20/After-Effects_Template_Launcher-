@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.2.4";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.2.5";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.2.5": [
+            "Update pipeline test release \u2014 if you are reading this, auto-update worked on your machine"
+        ],
         "0.2.4": [
             "Windows fix: when the extension lives in Program Files (admin-only), updates now install to your user extensions folder instead \u2014 no admin rights needed"
         ],
