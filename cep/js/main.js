@@ -1270,7 +1270,11 @@
 
     /** Dev installs ARE the git repo — update them with git pull, then reload. */
     function performDevUpdate(remoteVersion) {
-        var repoRoot = pathMod.join(cs.getExtensionPath(), "..");
+        // getExtensionPath() returns the symlink under CEP/extensions —
+        // resolve it to the real cep/ folder inside the repo first
+        var realExt = cs.getExtensionPath();
+        try { realExt = fsMod.realpathSync(realExt); } catch (e) { }
+        var repoRoot = pathMod.join(realExt, "..");
         ui.confirm("This is a development install (linked to the git repo).\n\n" +
                    "Run git pull to update to v" + remoteVersion + " now?", "Dev Install Update")
             .then(function (yes) {
