@@ -289,6 +289,17 @@ Access via the ⚙ button. Configure:
 
 ---
 
+## Known Constraints & Decisions
+
+These are accepted behaviors, not open bugs:
+
+- **FFmpeg is an external dependency** — the script detects it (`where`/`which`), auto-installs it on Windows and macOS if missing, and shows the installed version in Settings. No manual setup is required in the normal case.
+- **HTML previews load Mediabunny from `cdn.bighappy.co`** — the player library is self-hosted (pinned to v1.25.0) rather than pulled from a public CDN, so we control availability and versioning. Previews still require network access.
+- **Generated templates are spec placeholders by design** — the Templates tab generates bare comps labeled with name/size/fps/duration as a quick-start fallback. The full creative templates ship as the `.aep` files in `Templates/`.
+- **AE is blocked during FFmpeg encoding** — JSX's `system.callSystem` is synchronous, so the UI freezes while a file encodes; progress updates between files, not within them. A truly async pipeline would require moving encoding into the CEP panel's Node context (see `cep/`).
+
+---
+
 ## Version History
 
 | Version | Date | Changes |
