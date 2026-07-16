@@ -2162,10 +2162,16 @@
                 return;
             }
 
-            // 2. SHA unknown or changed — download the latest script
+            // 2. SHA unknown or changed — download the latest script.
+            // Pin the raw URL to the commit SHA: the branch URL is served
+            // through a ~5-minute CDN cache, so right after a push it can
+            // still return the PREVIOUS content while the API already
+            // reports the new SHA — installing that and recording the new
+            // SHA would permanently skip the real update.
+            var rawUrl = CONFIG.UPDATE.RAW_URL.replace("/main/", "/" + remoteSha + "/");
             var tmpFile = new File(Folder.temp.fsName + "/bh_launcher_update.jsx");
             try { if (tmpFile.exists) tmpFile.remove(); } catch (e) { }
-            try { system.callSystem('curl -s -L -m 60 -o "' + tmpFile.fsName + '" "' + CONFIG.UPDATE.RAW_URL + '"'); } catch (e) { }
+            try { system.callSystem('curl -s -L -m 60 -o "' + tmpFile.fsName + '" "' + rawUrl + '"'); } catch (e) { }
 
             var newContent = readFileText(tmpFile);
             if (!isValidScriptDownload(newContent)) {
