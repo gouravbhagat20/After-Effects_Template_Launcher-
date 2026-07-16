@@ -10,6 +10,7 @@
     "use strict";
 
     var overlay = null;
+    var queue = Promise.resolve();   // serialize dialogs — see show()
 
     function build() {
         overlay = document.createElement("div");
@@ -26,7 +27,19 @@
         document.body.appendChild(overlay);
     }
 
+    /**
+     * Dialogs share ONE overlay, so two concurrent calls (e.g. the boot
+     * update check and the What's New popup) must not run at once — the
+     * second would steal the overlay and the first promise would never
+     * resolve, hanging its caller. Queue them instead.
+     */
     function show(message, title, isConfirm) {
+        var next = queue.then(function () { return showNow(message, title, isConfirm); });
+        queue = next.then(function () { }, function () { });
+        return next;
+    }
+
+    function showNow(message, title, isConfirm) {
         if (!overlay) build();
         return new Promise(function (resolve) {
             overlay.querySelector(".bh-modal-title").textContent = title || (isConfirm ? "Confirm" : "BigHappy Launcher");

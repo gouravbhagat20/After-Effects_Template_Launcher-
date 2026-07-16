@@ -187,19 +187,38 @@ var BH = (function () {
             var rq = proj.renderQueue;
             for (var i = 1; i <= rq.numItems; i++) {
                 for (var j = 1; j <= rq.item(i).numOutputModules; j++) {
-                    var om = rq.item(i).outputModule(j);
-                    if (om.file && om.file.fsName === target.fsName) {
-                        om.file = new File(Folder.temp.fsName + "/bh_lock_" + stamp + "_" + i + "_" + j + ".mp4");
-                        tokens.oms.push({ rq: i, om: j });
-                    }
+                    try {
+                        var om = rq.item(i).outputModule(j);
+                        if (om.file && om.file.fsName === target.fsName) {
+                            om.file = new File(Folder.temp.fsName + "/bh_lock_" + stamp + "_" + i + "_" + j + ".mp4");
+                            tokens.oms.push({ rq: i, om: j });
+                        }
+                    } catch (eOm) { }
                 }
             }
             for (var k = 1; k <= proj.numItems; k++) {
-                var it = proj.item(k);
-                if (it instanceof FootageItem && it.file && it.file.fsName === target.fsName) {
-                    it.replace(new File(Folder.temp.fsName + "/bh_place_" + stamp + "_" + k + ".mp4"));
-                    tokens.items.push(k);
-                }
+                // Per-item try: one bad item must not leave the rest locked
+                try {
+                    var it = proj.item(k);
+                    if (it instanceof FootageItem && it.file && it.file.fsName === target.fsName) {
+                        // replace() throws when the target file doesn't exist on
+                        // disk — use AE's built-in placeholder instead, clamped
+                        // to its documented limits (fps 1-99, duration <= 10800,
+                        // dimensions 4-30000). Keep the item name: the
+                        // placeholder renames it and replace() won't rename back.
+                        var phW = it.width > 0 ? it.width : 1920;
+                        if (phW < 4) phW = 4; if (phW > 30000) phW = 30000;
+                        var phH = it.height > 0 ? it.height : 1080;
+                        if (phH < 4) phH = 4; if (phH > 30000) phH = 30000;
+                        var phFps = it.frameRate > 0 ? it.frameRate : 30;
+                        if (phFps < 1) phFps = 1; if (phFps > 99) phFps = 99;
+                        var phDur = it.duration > 0 ? it.duration : 1;
+                        if (phDur > 10800) phDur = 10800;
+                        var keepName = it.name;
+                        it.replaceWithPlaceholder("BH_RELINK_" + k, phW, phH, phFps, phDur);
+                        tokens.items.push({ index: k, name: keepName });
+                    }
+                } catch (eItem) { }
             }
             return ok(tokens);
         } catch (e) { return fail(e); }
@@ -214,8 +233,16 @@ var BH = (function () {
             var oms = (tokens && tokens.oms) || [];
             for (var i = 0; i < items.length; i++) {
                 try {
-                    var it = app.project.item(items[i]);
-                    if (it instanceof FootageItem) { it.replace(f); done++; }
+                    // tokens.items entries are {index, name}; tolerate the old
+                    // bare-index shape from a stale panel page
+                    var rec = items[i];
+                    var idx = (rec && typeof rec === "object") ? rec.index : rec;
+                    var it = app.project.item(idx);
+                    if (it instanceof FootageItem) {
+                        it.replace(f);
+                        if (rec && typeof rec === "object" && rec.name) it.name = rec.name;
+                        done++;
+                    }
                 } catch (e) { }
             }
             for (var j = 0; j < oms.length; j++) {

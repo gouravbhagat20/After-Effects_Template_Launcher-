@@ -18,9 +18,16 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.2.5";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.2.6";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.2.6": [
+            "DOOH optimize: AE file locks are now actually released before replacing (relink used a nonexistent temp file and failed silently, breaking replacement on Windows)",
+            "Footage items keep their names and render-queue outputs are restored after optimizing",
+            "DOOH target size now syncs with the shared setting used by the ScriptUI version",
+            "Fixed overlapping dialogs hanging the panel (update check + What's New at boot)",
+            "A successful file swap is no longer reported as failed when backup cleanup is blocked"
+        ],
         "0.2.5": [
             "Update pipeline test release \u2014 if you are reading this, auto-update worked on your machine"
         ],
@@ -976,7 +983,7 @@
 
     $("btn-optimize").addEventListener("click", function () {
         if (optRunning || !optFiles.length) return;
-        var targetMB = parseFloat($("opt-target").value) || 7;
+        var targetMB = parseFloat($("opt-target").value) || 6.8;
 
         getFFmpegOrExplain().then(function (exe) {
             optRunning = true;
@@ -1519,6 +1526,8 @@
 
         // render tab state (shared with the script's settings)
         $("rq-ame").checked = S.ame_enabled === "true";
+        // DOOH target is shared with the ScriptUI version (dooh_target_mb)
+        $("opt-target").value = parseFloat(S.dooh_target_mb) || 6.8;
         $("pr-webm").checked = S.post_render_webm !== "false";
         $("pr-mov").checked = S.post_render_mov !== "false";
         $("pr-html").checked = S.post_render_html !== "false";
@@ -1537,6 +1546,11 @@
 
     $("btn-check-update").addEventListener("click", function () {
         checkForUpdate(true);
+    });
+
+    $("opt-target").addEventListener("change", function () {
+        var v = parseFloat(this.value);
+        if (v > 0) setSetting("dooh_target_mb", String(v));
     });
 
     refreshProject();
