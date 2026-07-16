@@ -1264,12 +1264,41 @@
         return false;
     }
 
+    /** Dev installs ARE the git repo — update them with git pull, then reload. */
+    function performDevUpdate(remoteVersion) {
+        var repoRoot = pathMod.join(cs.getExtensionPath(), "..");
+        ui.confirm("This is a development install (linked to the git repo).\n\n" +
+                   "Run git pull to update to v" + remoteVersion + " now?", "Dev Install Update")
+            .then(function (yes) {
+                if (!yes) return;
+                busy(true);
+                toast("Running git pull…");
+                var proc = cp.spawn("git", ["-C", repoRoot, "pull", "--ff-only"], { windowsHide: true });
+                var out = "";
+                proc.stdout.on("data", function (c) { out += String(c); });
+                proc.stderr.on("data", function (c) { out += String(c); });
+                proc.on("error", function (e) {
+                    busy(false);
+                    ui.alert("git pull could not start:\n" + e.message);
+                });
+                proc.on("close", function (code) {
+                    busy(false);
+                    if (code === 0) {
+                        toast("Updated — reloading panel…");
+                        setTimeout(function () { location.reload(); }, 800);
+                    } else {
+                        ui.alert("git pull failed:\n\n" + out.slice(-400) +
+                                 "\n\nResolve it in Terminal (uncommitted changes?), then try again.");
+                    }
+                });
+            });
+    }
+
     /** Download the new signed package and extract it over this install. */
     function performAutoUpdate(remoteVersion) {
         var extPath = cs.getExtensionPath();
         if (isDevInstall(extPath)) {
-            ui.alert("This is a development install (linked to the git repo).\n\n" +
-                     "Update with git pull instead of the auto-updater.");
+            performDevUpdate(remoteVersion);
             return;
         }
 
