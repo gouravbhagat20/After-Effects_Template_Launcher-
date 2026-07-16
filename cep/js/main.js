@@ -18,9 +18,14 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.2.0";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.2.1";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.2.1": [
+            "Update notifications now pop up automatically when a new version is released (once per version)",
+            "Update checks re-run hourly while the panel is open, not just at startup",
+            "Manual “Check for updates” button in Settings → About"
+        ],
         "0.2.0": [
             "New Render tab: Render Queue with template-specific output modules, Collect Project with pack report",
             "Diagnostics section in Settings with copyable troubleshooting report",
