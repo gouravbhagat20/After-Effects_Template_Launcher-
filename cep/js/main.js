@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.2.3";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.2.4";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.2.4": [
+            "Windows fix: when the extension lives in Program Files (admin-only), updates now install to your user extensions folder instead \u2014 no admin rights needed"
+        ],
         "0.2.3": [
             "Fixed self-update on development installs: the panel now finds the repo through the extension symlink"
         ],
@@ -1305,12 +1308,53 @@
             });
     }
 
+    function userExtensionsDir() {
+        return BHFFmpeg.isWin
+            ? pathMod.join(osMod.homedir(), "AppData", "Roaming", "Adobe", "CEP", "extensions")
+            : pathMod.join(osMod.homedir(), "Library", "Application Support", "Adobe", "CEP", "extensions");
+    }
+
+    function dirWritable(dir) {
+        try {
+            var probe = pathMod.join(dir, ".bh_write_test");
+            fsMod.writeFileSync(probe, "x");
+            fsMod.unlinkSync(probe);
+            return true;
+        } catch (e) { return false; }
+    }
+
+    function mkdirp(dir) {
+        if (fsMod.existsSync(dir)) return;
+        mkdirp(pathMod.dirname(dir));
+        fsMod.mkdirSync(dir);
+    }
+
     /** Download the new signed package and extract it over this install. */
     function performAutoUpdate(remoteVersion) {
         var extPath = cs.getExtensionPath();
         if (isDevInstall(extPath)) {
             performDevUpdate(remoteVersion);
             return;
+        }
+
+        // System-wide installs (Program Files / /Library) aren't writable
+        // without admin rights. Install to the per-user extensions folder
+        // instead — CEP loads the highest version of a duplicated bundle ID,
+        // so the user-folder copy takes over on next AE start.
+        var targetPath = extPath;
+        var sideInstall = false;
+        if (!dirWritable(extPath)) {
+            targetPath = pathMod.join(userExtensionsDir(), "com.bighappy.launcher");
+            sideInstall = true;
+            try { mkdirp(targetPath); } catch (e) {
+                ui.alert("Auto-update failed:\nCould not create " + targetPath + "\n" + e.message);
+                return;
+            }
+            if (!dirWritable(targetPath)) {
+                ui.alert("Auto-update failed:\nNo writable install location found.\n\n" +
+                         "Install the new .zxp manually from GitHub (dist folder).");
+                return;
+            }
         }
 
         var zxpUrl = "https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/dist/BigHappyLauncher_v" +
@@ -1334,8 +1378,8 @@
                 fsMod.writeFileSync(tmpZip, data);
                 return new Promise(function (resolve, reject) {
                     var proc = BHFFmpeg.isWin
-                        ? cp.spawn("tar", ["-xf", tmpZip, "-C", extPath], { windowsHide: true })
-                        : cp.spawn("unzip", ["-o", tmpZip, "-d", extPath]);
+                        ? cp.spawn("tar", ["-xf", tmpZip, "-C", targetPath], { windowsHide: true })
+                        : cp.spawn("unzip", ["-o", tmpZip, "-d", targetPath]);
                     var errTail = "";
                     proc.stderr.on("data", function (c) { errTail += String(c); });
                     proc.on("error", reject);
@@ -1346,13 +1390,16 @@
             })
             .then(function () {
                 // confirm the new manifest actually landed
-                var manifest = fsMod.readFileSync(pathMod.join(extPath, "CSXS", "manifest.xml"), "utf8");
+                var manifest = fsMod.readFileSync(pathMod.join(targetPath, "CSXS", "manifest.xml"), "utf8");
                 var m = manifest.match(/ExtensionBundleVersion="([\d.]+)"/);
                 if (!m || m[1] !== remoteVersion) throw new Error("Update extracted but version verification failed.");
                 try { fsMod.unlinkSync(tmpZip); } catch (e) { }
                 busy(false);
                 $("update-pill").classList.add("hidden");
                 return ui.alert("Updated to v" + remoteVersion + "!\n\n" +
+                    (sideInstall
+                        ? "Installed to your user extensions folder (the original install location needs admin rights). CEP loads the newest version automatically.\n\n"
+                        : "") +
                     "Restart After Effects to finish — the new version loads on next launch.", "Update Installed");
             })
             .catch(function (err) {
