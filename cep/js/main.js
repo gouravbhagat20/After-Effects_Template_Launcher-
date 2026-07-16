@@ -1321,19 +1321,21 @@
 
     /**
      * @param {boolean} [force] - true for the manual Settings button: bypass
-     *   the daily throttle and report every outcome (up to date / offline).
-     *   Falsy for the silent boot check.
+     *   the throttle and report every outcome (up to date / offline).
+     *   Falsy for the silent boot/periodic check, which throttles network
+     *   calls to one per 6 hours and pops the install dialog by itself the
+     *   first time each new version is seen (the pill stays for later).
      */
     function checkForUpdate(force) {
         if (!force) {
             var last = parseInt(localStorage.getItem("bh.updateCheckTs") || "0", 10);
-            if (Date.now() - last < 24 * 60 * 60 * 1000) return;   // once a day
+            if (Date.now() - last < 6 * 60 * 60 * 1000) return;
         }
         localStorage.setItem("bh.updateCheckTs", String(Date.now()));
 
         // cache-bust: raw branch URLs sit behind a ~5-min CDN cache
         fetch("https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/cep/CSXS/manifest.xml" +
-              (force ? "?t=" + Date.now() : ""))
+              "?t=" + Date.now())
             .then(function (r) { return r.ok ? r.text() : null; })
             .then(function (xml) {
                 if (!xml) {
@@ -1351,7 +1353,12 @@
                                    "Update Available")
                             .then(function (yes) { if (yes) performAutoUpdate(m[1]); });
                     };
-                    if (force) pill.onclick();
+                    // NOTIFY: open the install dialog automatically, but only
+                    // once per version — declining leaves the pill as reminder
+                    if (force || localStorage.getItem("bh.notifiedVersion") !== m[1]) {
+                        localStorage.setItem("bh.notifiedVersion", m[1]);
+                        pill.onclick();
+                    }
                 } else if (force) {
                     ui.alert("You are up to date.\n\nInstalled: v" + BH_VERSION +
                              (m ? "\nLatest on GitHub: v" + m[1] : ""), "No Update Available");
@@ -1443,4 +1450,8 @@
 
     refreshProject();
     setInterval(refreshProject, 4000); // keep the status card in sync
+
+    // Panels stay open for days — re-check for updates while running, not
+    // just at boot. Hourly tick; the 6h throttle limits actual network calls.
+    setInterval(function () { checkForUpdate(); }, 60 * 60 * 1000);
 })();
