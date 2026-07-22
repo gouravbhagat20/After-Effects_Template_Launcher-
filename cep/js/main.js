@@ -18,9 +18,15 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.2.9";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.3.0";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.3.0": [
+            "Renders now sort automatically into Render_R#/MP4 or Render_R#/PNG_Sequence by output type",
+            "Assets is now just Images and Screens for every template",
+            "Post-render and DOOH tools auto-find the new subfolders (older projects still work)",
+            "New folders apply to newly created projects; routing/detection works for both layouts"
+        ],
         "0.2.9": [
             "New project folder layout: Assets now has Images/Screens; AE_File adds Collect_Files and Render_R#/{MP4, PNG_Sequence}",
             "Applies to newly created projects only"
@@ -641,7 +647,7 @@
             '<div class="spec-list">' +
                 '<div class="spec-row"><span>Comp</span><b>' + escapeHtml(main.name) + " · " + main.width + "×" + main.height + " · " + main.duration.toFixed(1) + 's</b></div>' +
                 '<div class="spec-row"><span>Format</span><b>' + (isPng ? "PNG Sequence + Alpha" : "H.264 (MP4)") + '</b></div>' +
-                '<div class="spec-row"><span>Folder</span><b>Render_' + escapeHtml(revision) + '</b></div>' +
+                '<div class="spec-row"><span>Folder</span><b>Render_' + escapeHtml(revision) + '/' + (isPng ? 'PNG_Sequence' : 'MP4') + '</b></div>' +
                 '<div class="spec-row"><span>Output</span><b class="mono">' + escapeHtml(r.name) + '</b></div>' +
             '</div>';
     }
@@ -653,7 +659,9 @@
 
         var r = T.buildRenderName(currentProject.name, main.width, main.height);
         var revision = (r.parsed && r.parsed.revision) ? r.parsed.revision : "R1";
-        var renderFolder = pathMod.join(currentProject.folder, "Render_" + revision);
+        // Route output by format: PNG sequence -> Render_R#/PNG_Sequence, else MP4
+        var rIsPng = r.type === "sunrise" || r.type === "default";
+        var renderFolder = pathMod.join(currentProject.folder, "Render_" + revision, rIsPng ? "PNG_Sequence" : "MP4");
         try { fsMod.mkdirSync(renderFolder, { recursive: true }); }
         catch (e) { ui.alert("Could not create render folder:\n" + e.message); return; }
 
@@ -698,9 +706,13 @@
         if (!currentProject || !currentProject.folder) { ui.alert("Open a saved project first."); return; }
         var parsed = T.parseProjectName(currentProject.name || "");
         var rev = parsed && parsed.revision ? parsed.revision : "R1";
-        var guess = pathMod.join(currentProject.folder, "Render_" + rev);
+        // Prefer Render_R#/PNG_Sequence, fall back to the Render_R# root
+        // (projects created before the subfolder layout).
+        var guessRoot = pathMod.join(currentProject.folder, "Render_" + rev);
+        var guess = pathMod.join(guessRoot, "PNG_Sequence");
+        if (!fsMod.existsSync(guess)) guess = guessRoot;
         if (!fsMod.existsSync(guess)) {
-            ui.alert("Expected render folder not found:\n" + guess + "\n\nUse \"Choose Render Folder…\" instead.");
+            ui.alert("Expected render folder not found:\n" + guessRoot + "\n\nUse \"Choose Render Folder…\" instead.");
             return;
         }
         setPRSeq(guess);

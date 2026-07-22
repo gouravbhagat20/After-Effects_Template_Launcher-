@@ -24,10 +24,10 @@
     // Mirrors CONFIG.TEMPLATE_FOLDERS
     var TEMPLATE_FOLDERS = {
         sunrise: ["Images", "Screens"],
-        interscroller: ["Images", "Screens", "GIF"],
-        expandable: ["Images", "Screens", "GIF"],
-        dooh_horizontal: ["Images", "Screens", "PNG"],
-        dooh_vertical: ["Images", "Screens", "PNG"],
+        interscroller: ["Images", "Screens"],
+        expandable: ["Images", "Screens"],
+        dooh_horizontal: ["Images", "Screens"],
+        dooh_vertical: ["Images", "Screens"],
         "default": ["Images", "Screens"]
     };
 

@@ -255,10 +255,10 @@
         },
         TEMPLATE_FOLDERS: {
             "sunrise": ["Images", "Screens"],
-            "interscroller": ["Images", "Screens", "GIF"],
-            "expandable": ["Images", "Screens", "GIF"],
-            "dooh_horizontal": ["Images", "Screens", "PNG"],
-            "dooh_vertical": ["Images", "Screens", "PNG"],
+            "interscroller": ["Images", "Screens"],
+            "expandable": ["Images", "Screens"],
+            "dooh_horizontal": ["Images", "Screens"],
+            "dooh_vertical": ["Images", "Screens"],
             "default": ["Images", "Screens"]
         },
         RENDER_FORMATS: {
@@ -3278,7 +3278,10 @@
 
             var aeFolder = app.project.file.parent.fsName;
             var revision = (parsed && parsed.revision) ? parsed.revision : ("R" + ui.inputs.revision.text);
-            var renderFolder = joinPath(aeFolder, "Render_" + revision);
+            // Route output by format: PNG sequence -> Render_R#/PNG_Sequence, else MP4
+            var renderFmt = (CONFIG.RENDER_FORMATS[type] || CONFIG.RENDER_FORMATS["default"]).format;
+            var renderSub = (renderFmt === "png_sequence") ? "PNG_Sequence" : "MP4";
+            var renderFolder = joinPath(joinPath(aeFolder, "Render_" + revision), renderSub);
             createFolderRecursive(renderFolder);
             var outputPath = joinPath(renderFolder, renderName);
 
@@ -3557,9 +3560,12 @@
         var aeFile = (app.project.file) ? app.project.file : null;
         if (!aeFile) { alert("Save project first."); return; }
 
-        // Try to guess Render folder
+        // Try to guess Render folder — prefer Render_R#/PNG_Sequence, fall back
+        // to the Render_R# root (projects created before the subfolder layout).
         var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
-        var possibleRenderFolder = new Folder(aeFile.parent.fsName + "/" + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R" + projectRev);
+        var renderRoot = aeFile.parent.fsName + "/" + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R" + projectRev;
+        var pngSub = new Folder(renderRoot + "/PNG_Sequence");
+        var possibleRenderFolder = pngSub.exists ? pngSub : new Folder(renderRoot);
 
         var targetFolder = null;
         if (possibleRenderFolder.exists) {
@@ -4034,9 +4040,12 @@
             }
 
         } else {
-            // Mode 2: Try to find MP4 in project render folder
+            // Mode 2: Try to find MP4 in project render folder — prefer
+            // Render_R#/MP4, fall back to the Render_R# root (pre-subfolder projects).
             var projectRev = ui.inputs.revision.text.replace(/^R/i, "");
-            var possibleRenderFolder = new Folder(app.project.file.parent.fsName + "/" + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R" + projectRev);
+            var renderRoot = app.project.file.parent.fsName + "/" + CONFIG.PATHS.FOLDER_RENDER_PREFIX + "R" + projectRev;
+            var mp4Sub = new Folder(renderRoot + "/MP4");
+            var possibleRenderFolder = mp4Sub.exists ? mp4Sub : new Folder(renderRoot);
 
             if (possibleRenderFolder.exists) {
                 targetFolder = possibleRenderFolder;
