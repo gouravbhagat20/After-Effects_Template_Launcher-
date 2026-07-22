@@ -3942,8 +3942,10 @@
             "Strict Bitrate": strictVideo + " kbps"
         });
 
-        var strictFlags = "-b:v " + strictVideo + "k -maxrate " + strictVideo + "k -bufsize " + (strictVideo * 2) + "k";
-        var cmd = exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset medium -profile:v high -pix_fmt yuv420p -tune animation -movflags +faststart " + strictFlags + " -c:a aac -b:a 96k \"" + strictPath + "\"";
+        // 1.5x maxrate: pinning maxrate to the average bitrate starves busy
+        // frames and blurs detail; ABR still holds the total size on target.
+        var strictFlags = "-b:v " + strictVideo + "k -maxrate " + Math.floor(strictVideo * 1.5) + "k -bufsize " + (strictVideo * 3) + "k";
+        var cmd = exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow -profile:v high -pix_fmt yuv420p -tune animation -movflags +faststart " + strictFlags + " -c:a aac -b:a 96k \"" + strictPath + "\"";
         var body = isWin
             ? "@echo off\r\nchcp 65001 >NUL\r\n" + cmd + " 2>NUL\r\n"
             : "#!/bin/bash\n" + cmd + " 2>/dev/null\n";
@@ -6235,7 +6237,9 @@
             var totalBitrate = (targetMB * 8192) / duration;
             var videoBitrate = Math.floor(totalBitrate - 128);
             if (videoBitrate < 1000) videoBitrate = 1000;
-            bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + videoBitrate + "k -bufsize " + (videoBitrate * 2) + "k";
+            // 1.4x maxrate: maxrate == average starved busy frames and blurred
+            // detail; two-pass -b:v still holds the total size on target.
+            bitrateFlags = "-b:v " + videoBitrate + "k -maxrate " + Math.floor(videoBitrate * 1.4) + "k -bufsize " + (videoBitrate * 3) + "k";
         }
 
         // =================================================================================
@@ -6355,8 +6359,8 @@
                     script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
                 } else {
                     // DEFAULT CRF for non-DOOH
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
                 }
 
                 script += "if not exist \"" + outWebM + "\" (echo WebM: FAILED >> \"" + logPath + "\") else (for %%F in (\"" + outWebM + "\") do if %%~zF GTR 0 (echo WebM: SUCCESS >> \"" + logPath + "\") else (echo WebM: FAILED >> \"" + logPath + "\"))\r\n";
@@ -6400,8 +6404,8 @@
                     script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
                 } else {
                     // DEFAULT CRF
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
                 }
 
                 script += "[ -s \"" + outWebM + "\" ] && echo 'WebM: SUCCESS' >> \"" + logPath + "\" || echo 'WebM: FAILED' >> \"" + logPath + "\"\n";

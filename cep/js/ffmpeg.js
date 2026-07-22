@@ -127,16 +127,19 @@
     function twoPass(exe, input, output, videoKbps, durationSec, passLogBase, onProgress) {
         var common = [
             "-y", "-i", input,
-            "-c:v", "libx264", "-preset", "medium",
+            "-c:v", "libx264", "-preset", "slow", "-profile:v", "high",
             "-b:v", videoKbps + "k",
-            "-maxrate", Math.floor(videoKbps * 1.1) + "k",
-            "-bufsize", (videoKbps * 2) + "k",
+            // 1.5x maxrate: a tight cap (1.1x) starved busy frames and blurred
+            // detailed elements; two-pass -b:v keeps the total size on target.
+            "-maxrate", Math.floor(videoKbps * 1.5) + "k",
+            "-bufsize", (videoKbps * 3) + "k",
+            "-x264-params", "aq-mode=3",
             "-pix_fmt", "yuv420p", "-an",
             "-passlogfile", passLogBase,
             "-progress", "pipe:1", "-v", "error"
         ];
         var pass1 = common.concat(["-pass", "1", "-f", "mp4", NULL_DEV]);
-        var pass2 = common.concat(["-pass", "2", output]);
+        var pass2 = common.concat(["-pass", "2", "-movflags", "+faststart", output]);
 
         // pass 1 = 0-50 % of the bar, pass 2 = 50-100 %
         return spawnFFmpeg(exe, pass1, durationSec, function (p) { onProgress(p / 2); })
