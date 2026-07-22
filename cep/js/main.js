@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.3.0";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.3.1";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.3.1": [
+            "Fixed: the Expandable (750×1334) template now appears for everyone — it is added once to existing saved template lists (delete it and it stays deleted)"
+        ],
         "0.3.0": [
             "Renders now sort automatically into Render_R#/MP4 or Render_R#/PNG_Sequence by output type",
             "Assets is now just Images and Screens for every template",
@@ -103,7 +106,8 @@
     function loadSettings() {
         var keys = ["templates_data", "templates_folder", "base_work_folder",
                     "ffmpeg_path", "recent_files", "ame_enabled", "dooh_target_mb",
-                    "post_render_webm", "post_render_mov", "post_render_html", "post_render_zip"];
+                    "post_render_webm", "post_render_mov", "post_render_html", "post_render_zip",
+                    "seed_expandable"];
         return Promise.all(keys.map(function (k) { return host("getSetting", k, null); }))
             .then(function (vals) {
                 keys.forEach(function (k, i) { S[k] = vals[i]; });
@@ -119,15 +123,44 @@
     function templatesFolder() { return S.templates_folder || T.defaultTemplatesFolder(); }
 
     function loadTemplates() {
+        var list = null;
         if (S.templates_data) {
             try {
                 var arr = JSON.parse(S.templates_data);
-                if (arr && arr.length) return arr;
+                if (arr && arr.length) list = arr;
             } catch (e) { }
         }
-        return T.DEFAULT_TEMPLATES.map(function (t) {
-            return { name: t.name, width: t.width, height: t.height, fps: t.fps, duration: t.duration, path: t.path };
+        if (!list) {
+            list = T.DEFAULT_TEMPLATES.map(function (t) {
+                return { name: t.name, width: t.width, height: t.height, fps: t.fps, duration: t.duration, path: t.path };
+            });
+        }
+        return seedExpandable(list);
+    }
+
+    /** One-time: add the Expandable default to template lists saved before it
+        existed. Guarded by a persisted flag (shared with the ScriptUI tool) so a
+        user who later deletes it won't have it resurrected on the next launch. */
+    function seedExpandable(list) {
+        if (S.seed_expandable === "1") return list;
+        var has = list.some(function (t) {
+            return (t.width === 750 && t.height === 1334) ||
+                   String(t.name).toLowerCase() === "expandable";
         });
+        if (!has) {
+            var def = T.DEFAULT_TEMPLATES.filter(function (t) { return t.name === "Expandable"; })[0];
+            if (def) {
+                var entry = { name: def.name, width: def.width, height: def.height, fps: def.fps, duration: def.duration, path: def.path };
+                var at = list.length;
+                for (var i = 0; i < list.length; i++) {
+                    if (String(list[i].name).toLowerCase() === "interscroller") { at = i + 1; break; }
+                }
+                list.splice(at, 0, entry);
+                saveTemplates(list);
+            }
+        }
+        setSetting("seed_expandable", "1");
+        return list;
     }
 
     function saveTemplates(templates) {

@@ -817,14 +817,46 @@
     }
 
     function loadTemplates() {
+        var templates = null;
         try {
             var data = getSetting(CONFIG.SETTINGS.KEYS.TEMPLATES, null);
             if (data) {
-                var templates = jsonParse(data, null);
-                if (templates && templates.length > 0) return templates;
+                var parsed = jsonParse(data, null);
+                if (parsed && parsed.length > 0) templates = parsed;
             }
         } catch (e) { }
-        return CONFIG.DEFAULTS.TEMPLATES.slice();
+        if (!templates) templates = CONFIG.DEFAULTS.TEMPLATES.slice();
+        return seedExpandableTemplate(templates);
+    }
+
+    /** One-time: add the Expandable default to template lists saved before it
+        existed. Guarded by a persisted flag (shared with the CEP panel) so a user
+        who later deletes it won't have it resurrected on the next launch. */
+    function seedExpandableTemplate(templates) {
+        try {
+            if (getSetting("seed_expandable", null) === "1") return templates;
+            var has = false;
+            for (var i = 0; i < templates.length; i++) {
+                if ((templates[i].width === 750 && templates[i].height === 1334) ||
+                    String(templates[i].name).toLowerCase() === "expandable") { has = true; break; }
+            }
+            if (!has) {
+                var def = null;
+                for (var d = 0; d < CONFIG.DEFAULTS.TEMPLATES.length; d++) {
+                    if (CONFIG.DEFAULTS.TEMPLATES[d].name === "Expandable") { def = CONFIG.DEFAULTS.TEMPLATES[d]; break; }
+                }
+                if (def) {
+                    var at = templates.length;
+                    for (var j = 0; j < templates.length; j++) {
+                        if (String(templates[j].name).toLowerCase() === "interscroller") { at = j + 1; break; }
+                    }
+                    templates.splice(at, 0, { name: def.name, width: def.width, height: def.height, fps: def.fps, duration: def.duration, path: def.path });
+                    saveTemplates(templates);
+                }
+            }
+            setSetting("seed_expandable", "1");
+        } catch (e) { }
+        return templates;
     }
 
     function saveTemplates(templates) {
