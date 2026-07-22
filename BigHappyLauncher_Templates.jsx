@@ -230,7 +230,9 @@
             GLOBAL_ASSETS: "_GlobalAssets",
             FOLDER_AE: "AE_File",
             FOLDER_ASSETS: "Assets",
+            FOLDER_COLLECT: "Collect_Files",      // AE_File/Collect_Files
             FOLDER_RENDER_PREFIX: "Render_", // Prefix for Render_R1, Render_R2...
+            RENDER_SUBS: ["MP4", "PNG_Sequence"], // AE_File/Render_R#/{MP4,PNG_Sequence}
             FOLDER_FOOTAGE: "(Footage)"
         },
         DEFAULTS: {
@@ -252,12 +254,12 @@
             PATH_MAX: 240 // Windows approx limit
         },
         TEMPLATE_FOLDERS: {
-            "sunrise": ["Image", "Screen"],
-            "interscroller": ["Image", "Screen", "GIF"],
-            "expandable": ["Image", "Screen", "GIF"],
-            "dooh_horizontal": ["Image", "Screen", "PNG"],
-            "dooh_vertical": ["Image", "Screen", "PNG"],
-            "default": ["Image", "Screen"]
+            "sunrise": ["Images", "Screens"],
+            "interscroller": ["Images", "Screens", "GIF"],
+            "expandable": ["Images", "Screens", "GIF"],
+            "dooh_horizontal": ["Images", "Screens", "PNG"],
+            "dooh_vertical": ["Images", "Screens", "PNG"],
+            "default": ["Images", "Screens"]
         },
         RENDER_FORMATS: {
             "sunrise": { format: "png_sequence", outputModule: "PNG Sequence with Alpha" },
@@ -1950,6 +1952,7 @@
             var versionFolder = joinPath(sizeFolder, version);
             var aeFolder = joinPath(versionFolder, CONFIG.PATHS.FOLDER_AE);
             var publishedFolder = joinPath(aeFolder, CONFIG.PATHS.FOLDER_RENDER_PREFIX + revision);
+            var collectFolder = joinPath(aeFolder, CONFIG.PATHS.FOLDER_COLLECT);
             var assetsFolder = joinPath(versionFolder, CONFIG.PATHS.FOLDER_ASSETS);
 
             // Get template-specific asset folders or use default
@@ -1957,24 +1960,27 @@
 
             // FIX P2-1: PATH LENGTH CHECK (Prevent silent Windows failures)
             // Estimate max file length ~50 chars inside deepest folder
-            var deepestPathLen = publishedFolder.length + 50;
+            // (deepest is now Render_R#/PNG_Sequence)
+            var deepestPathLen = joinPath(publishedFolder, "PNG_Sequence").length + 50;
             if (deepestPathLen > CONFIG.LIMITS.PATH_MAX) {
                 showError("BH-1006", "Estimated path: " + deepestPathLen + " chars\nLimit: " + CONFIG.LIMITS.PATH_MAX + "\nPath: " + publishedFolder);
                 return null;
             }
 
             // Build list of all folders to create
-            var folders = [projectRoot, sizeFolder, versionFolder, aeFolder, publishedFolder, assetsFolder];
+            var folders = [projectRoot, sizeFolder, versionFolder, aeFolder, publishedFolder, collectFolder, assetsFolder];
 
-            // Add template-specific asset subfolders with revision subfolders inside each
+            // Render output subfolders: AE_File/Render_R#/{MP4,PNG_Sequence}
+            for (var rs = 0; rs < CONFIG.PATHS.RENDER_SUBS.length; rs++) {
+                folders.push(joinPath(publishedFolder, CONFIG.PATHS.RENDER_SUBS[rs]));
+            }
+
+            // Add template-specific asset subfolders (flat, no per-revision nesting)
             var assetFolderPaths = {};
             for (var a = 0; a < assetSubfolders.length; a++) {
                 var subfolderPath = joinPath(assetsFolder, assetSubfolders[a]);
-                var revisionSubfolderPath = joinPath(subfolderPath, revision);
                 folders.push(subfolderPath);
-                folders.push(revisionSubfolderPath);
                 assetFolderPaths[assetSubfolders[a]] = subfolderPath;
-                assetFolderPaths[assetSubfolders[a] + "_" + revision] = revisionSubfolderPath;
             }
 
             // Create all folders, tracking each for potential cleanup
@@ -2003,6 +2009,7 @@
                 versionFolder: versionFolder,
                 aeFolder: aeFolder,
                 publishedFolder: publishedFolder,
+                collectFolder: collectFolder,
                 assetsFolder: assetsFolder,
                 assetFolders: assetFolderPaths,
                 templateType: templateType,

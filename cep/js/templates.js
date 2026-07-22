@@ -23,13 +23,16 @@
 
     // Mirrors CONFIG.TEMPLATE_FOLDERS
     var TEMPLATE_FOLDERS = {
-        sunrise: ["Image", "Screen"],
-        interscroller: ["Image", "Screen", "GIF"],
-        expandable: ["Image", "Screen", "GIF"],
-        dooh_horizontal: ["Image", "Screen", "PNG"],
-        dooh_vertical: ["Image", "Screen", "PNG"],
-        "default": ["Image", "Screen"]
+        sunrise: ["Images", "Screens"],
+        interscroller: ["Images", "Screens", "GIF"],
+        expandable: ["Images", "Screens", "GIF"],
+        dooh_horizontal: ["Images", "Screens", "PNG"],
+        dooh_vertical: ["Images", "Screens", "PNG"],
+        "default": ["Images", "Screens"]
     };
+
+    var FOLDER_COLLECT = "Collect_Files";      // AE_File/Collect_Files
+    var RENDER_SUBS = ["MP4", "PNG_Sequence"]; // AE_File/Render_R#/{MP4,PNG_Sequence}
 
     var PATH_MAX = 240;           // CONFIG.LIMITS.PATH_MAX
     var FOLDER_AE = "AE_File";    // CONFIG.PATHS.FOLDER_AE
@@ -183,19 +186,21 @@
         var versionFolder = path.join(sizeFolder, version);
         var aeFolder = path.join(versionFolder, FOLDER_AE);
         var publishedFolder = path.join(aeFolder, RENDER_PREFIX + revision);
+        var collectFolder = path.join(aeFolder, FOLDER_COLLECT);
         var assetsFolder = path.join(versionFolder, "Assets");
 
-        if (publishedFolder.length + 50 > PATH_MAX) {
-            throw new Error("File path too long (BH-1006): ~" + (publishedFolder.length + 50) +
-                " chars, limit " + PATH_MAX + ".\n" + publishedFolder);
+        // deepest path is now Render_R#/PNG_Sequence — check against that
+        var deepest = path.join(publishedFolder, "PNG_Sequence");
+        if (deepest.length + 50 > PATH_MAX) {
+            throw new Error("File path too long (BH-1006): ~" + (deepest.length + 50) +
+                " chars, limit " + PATH_MAX + ".\n" + deepest);
         }
 
-        var folders = [projectRoot, sizeFolder, versionFolder, aeFolder, publishedFolder, assetsFolder];
+        var folders = [projectRoot, sizeFolder, versionFolder, aeFolder,
+            publishedFolder, collectFolder, assetsFolder];
+        RENDER_SUBS.forEach(function (sub) { folders.push(path.join(publishedFolder, sub)); });
         var subs = TEMPLATE_FOLDERS[templateType] || TEMPLATE_FOLDERS["default"];
-        subs.forEach(function (sub) {
-            folders.push(path.join(assetsFolder, sub));
-            folders.push(path.join(assetsFolder, sub, revision));
-        });
+        subs.forEach(function (sub) { folders.push(path.join(assetsFolder, sub)); });
 
         folders.forEach(function (f) { fs.mkdirSync(f, { recursive: true }); });
 
@@ -205,6 +210,7 @@
             versionFolder: versionFolder,
             aeFolder: aeFolder,
             publishedFolder: publishedFolder,
+            collectFolder: collectFolder,
             assetsFolder: assetsFolder
         };
     }

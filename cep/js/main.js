@@ -18,9 +18,13 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.2.8";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.2.9";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.2.9": [
+            "New project folder layout: Assets now has Images/Screens; AE_File adds Collect_Files and Render_R#/{MP4, PNG_Sequence}",
+            "Applies to newly created projects only"
+        ],
         "0.2.8": [
             "New template: Expandable (750×1334)"
         ],
