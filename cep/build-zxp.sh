@@ -54,3 +54,13 @@ rm -f "$OUT"
 "$SIGN" -verify "$OUT"
 echo ""
 echo "Built: $OUT"
+
+# 5. Prune superseded releases — the updater only ever fetches the version it is
+# notifying about (dist/BigHappyLauncher_v<remote>.zxp), so older zxps are dead
+# weight. Keep only the one we just built.
+for old in "$DIST"/BigHappyLauncher_v*.zxp; do
+    [ "$old" = "$OUT" ] && continue
+    [ -e "$old" ] || continue
+    rm -f "$old"
+    echo "Pruned: $(basename "$old")"
+done

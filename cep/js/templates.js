@@ -16,6 +16,7 @@
     var DEFAULT_TEMPLATES = [
         { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "" },
         { name: "InterScroller", width: 880, height: 1912, fps: 24, duration: 15, path: "" },
+        { name: "Expandable", width: 750, height: 1334, fps: 24, duration: 15, path: "" },
         { name: "DOOH Horizontal", width: 1920, height: 1080, fps: 29.97, duration: 15, path: "" },
         { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "" }
     ];
@@ -24,6 +25,7 @@
     var TEMPLATE_FOLDERS = {
         sunrise: ["Image", "Screen"],
         interscroller: ["Image", "Screen", "GIF"],
+        expandable: ["Image", "Screen", "GIF"],
         dooh_horizontal: ["Image", "Screen", "PNG"],
         dooh_vertical: ["Image", "Screen", "PNG"],
         "default": ["Image", "Screen"]
@@ -49,6 +51,7 @@
     function getTemplateType(width, height) {
         if (width === 750 && height === 300) return "sunrise";
         if (width === 880 && height === 1912) return "interscroller";
+        if (width === 750 && height === 1334) return "expandable";
         if (width === 1920 && height === 1080) return "dooh_horizontal";
         if (width === 1080 && height === 1920) return "dooh_vertical";
         return "default";
@@ -57,6 +60,7 @@
     function getTemplateFolderName(width, height) {
         if (width === 750 && height === 300) return "Sunrise";
         if (width === 880 && height === 1912) return "InterScroller";
+        if (width === 750 && height === 1334) return "Expandable";
         if (width === 1920 && height === 1080) return "DOOH-Horizontal";
         if (width === 1080 && height === 1920) return "DOOH-Vertical";
         return "Custom";

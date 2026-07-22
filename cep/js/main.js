@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.2.7";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.2.8";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.2.8": [
+            "New template: Expandable (750×1334)"
+        ],
         "0.2.7": [
             "Video quality: fixed detailed elements getting blurred during optimize/export — busy frames were being starved of bitrate by a maxrate ceiling pinned to the average",
             "MP4 optimizer now encodes with the higher-quality x264 'slow' preset and adaptive quantization (aq-mode 3) for the same target size",
