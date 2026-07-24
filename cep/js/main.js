@@ -18,9 +18,13 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.4.2";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.3";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.4.3": [
+            "Per-unit size caps: Expandable files (750×1334) are auto-detected and optimized to under 4 MB (3.8 target); DOOH units keep the under-7 MB target (6.8)",
+            "Mixed batches work — each file gets the right cap from its resolution"
+        ],
         "0.4.2": [
             "Output now lands closer to the target size: acceptance window tightened from 80–100% to 90–100% (e.g. 6.1–6.8 MB for a 6.8 target)"
         ],
@@ -1068,6 +1072,14 @@
         if (optRunning || !optFiles.length) return;
         var targetMB = parseFloat($("opt-target").value) || 6.8;
 
+        /** Per-unit delivery caps: Expandable (750x1334) must come in under
+            4 MB -> target 3.8 (same 0.2 safety margin the 6.8 default keeps
+            under DOOH's 7 MB wall). A manually lowered field still wins. */
+        function targetForFile(f) {
+            if (f.width === 750 && f.height === 1334) return Math.min(targetMB, 3.8);
+            return targetMB;
+        }
+
         getFFmpegOrExplain().then(function (exe) {
             optRunning = true;
             optCancelled = false;
@@ -1099,11 +1111,16 @@
                     setProgress("opt-bar-file", 0);
                     $("opt-pct").textContent = "0%";
 
+                    var fileTarget = targetForFile(f);
+                    if (fileTarget !== targetMB) {
+                        optLog(f.path.split(/[\\/]/).pop() + ": Expandable unit — targeting " +
+                            fileTarget + " MB (under-4 delivery cap)");
+                    }
                     return host("releaseFileLock", f.path)
                         .catch(function () { return { items: [], oms: [] }; })
                         .then(function (tokens) {
                             return BHFFmpeg.optimize(f.path,
-                                { ffmpegPath: exe, targetMB: targetMB, replaceOriginal: true },
+                                { ffmpegPath: exe, targetMB: fileTarget, replaceOriginal: true },
                                 function (pct) {
                                     setProgress("opt-bar-file", pct);
                                     $("opt-pct").textContent = Math.round(pct) + "%";
@@ -1123,7 +1140,7 @@
                                     } else {
                                         statuses[f.path] = "✗ over target (" + res.after.toFixed(1) + " MB)";
                                         optLog(short + ": best result " + res.after.toFixed(1) +
-                                            " MB still exceeds " + targetMB + " MB — original kept, output saved as " +
+                                            " MB still exceeds " + fileTarget + " MB — original kept, output saved as " +
                                             res.output.split(/[\\/]/).pop(), "err");
                                     }
                                 });
