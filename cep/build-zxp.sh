@@ -53,15 +53,21 @@ rm -f "$OUT"
     || "$SIGN" -sign "$STAGE" "$OUT" "$CERT" "$PASS"
 
 "$SIGN" -verify "$OUT"
+
+# 5. Publish the SHA-256 next to the zxp — the panel's updater refuses to
+# install a download whose hash doesn't match this file.
+shasum -a 256 "$OUT" | awk '{print $1}' > "$OUT.sha256"
+
 echo ""
 echo "Built: $OUT"
+echo "SHA-256: $(cat "$OUT.sha256")"
 
-# 5. Prune superseded releases — the updater only ever fetches the version it is
+# 6. Prune superseded releases — the updater only ever fetches the version it is
 # notifying about (dist/BigHappyLauncher_v<remote>.zxp), so older zxps are dead
-# weight. Keep only the one we just built.
+# weight. Keep only the one we just built (and its checksum).
 for old in "$DIST"/BigHappyLauncher_v*.zxp; do
     [ "$old" = "$OUT" ] && continue
     [ -e "$old" ] || continue
-    rm -f "$old"
+    rm -f "$old" "$old.sha256"
     echo "Pruned: $(basename "$old")"
 done

@@ -35,7 +35,7 @@ same commit as any feature change.
 | Shared `_Common_Assets` dedup on Drive | ✅ | ❌ | Part of the same routine |
 | **Infrastructure** |
 | ffmpeg auto-detect / auto-install (Win + Mac) | ✅ | ✅ | Windows download SHA-256-verified |
-| Auto-update | ✅ | ✅ | ScriptUI: commit-SHA check + raw download. CEP: version check + zxp install (hardening planned: checksum, staged extract, rollback) |
+| Auto-update | ✅ | ✅ | ScriptUI: commit-SHA check + raw download. CEP: SHA-256-verified download, staged extract + validation, atomic swap, rollback backup kept until the new version boots |
 | What's New changelog popup after update | ❌ | ✅ | |
 | Settings sync between the two tools | ✅ | ✅ | Same AE prefs section `BigHappyLauncher` |
 | Headless test suite + CI | ❌ | ✅ | `cep/test/`, GitHub Actions macOS+Windows |
@@ -45,4 +45,4 @@ same commit as any feature change.
 1. Sunrise post-render card verified in AE and un-hidden in CEP
 2. Google Drive mirror ported to CEP
 3. Import & standardize ported to CEP (or explicitly dropped)
-4. CEP updater hardened (checksum, staged extract, atomic swap, rollback)
+4. ~~CEP updater hardened~~ ✅ done (v0.4.0 — checksum, staged extract, atomic swap, rollback)

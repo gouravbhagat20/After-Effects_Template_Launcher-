@@ -18,9 +18,14 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.3.5";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.0";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.4.0": [
+            "Safer auto-updates: downloads are now verified against a published SHA-256 checksum before anything is touched",
+            "Updates extract to a staging area and are fully validated before an atomic swap into place",
+            "The previous version is kept as a rollback backup until the new version starts successfully"
+        ],
         "0.3.5": [
             "Optimizer now fills the size budget: ask for 6.8 MB and the output lands near 6.8 MB (80-100% of target), spending the whole budget on quality instead of stopping at 2-3 MB"
         ],
@@ -1411,7 +1416,20 @@
         fsMod.mkdirSync(dir);
     }
 
-    /** Download the new signed package and extract it over this install. */
+    /** CEP 11 ships Node 12 — fs.rmSync (14.14+) may not exist. */
+    function rmDirRecursive(p) {
+        try {
+            if (fsMod.rmSync) fsMod.rmSync(p, { recursive: true, force: true });
+            else if (fsMod.existsSync(p)) fsMod.rmdirSync(p, { recursive: true });
+        } catch (e) { }
+    }
+
+    /**
+     * Download the new signed package, verify its published SHA-256, extract
+     * into a staging folder, validate, then atomically swap it into place.
+     * The previous version is kept as <install>.backup until the new version
+     * boots successfully (see cleanupUpdateBackup).
+     */
     function performAutoUpdate(remoteVersion) {
         var extPath = cs.getExtensionPath();
         if (isDevInstall(extPath)) {
@@ -1439,43 +1457,103 @@
             }
         }
 
-        var zxpUrl = "https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/dist/BigHappyLauncher_v" +
+        var baseUrl = "https://raw.githubusercontent.com/gouravbhagat20/After-Effects_Template_Launcher-/main/dist/BigHappyLauncher_v" +
             remoteVersion + ".zxp";
         var tmpZip = pathMod.join(osMod.tmpdir(), "bh_update_" + remoteVersion + ".zip");
+        var stagingPath = targetPath + ".staging";
+        var backupPath = targetPath + ".backup";
+
+        var rmrf = rmDirRecursive;
+
+        function extractTo(dest) {
+            return new Promise(function (resolve, reject) {
+                var proc = BHFFmpeg.isWin
+                    ? cp.spawn("tar", ["-xf", tmpZip, "-C", dest], { windowsHide: true })
+                    : cp.spawn("unzip", ["-o", tmpZip, "-d", dest]);
+                var errTail = "";
+                proc.stderr.on("data", function (c) { errTail += String(c); });
+                proc.on("error", reject);
+                proc.on("close", function (code) {
+                    code === 0 ? resolve() : reject(new Error("Extract failed: " + errTail.slice(-300)));
+                });
+            });
+        }
+
+        /** Throws unless dir contains a complete extension at remoteVersion. */
+        function validateExtracted(dir) {
+            ["index.html", pathMod.join("js", "main.js"), pathMod.join("jsx", "host.jsx")].forEach(function (f) {
+                if (!fsMod.existsSync(pathMod.join(dir, f))) {
+                    throw new Error("Package is incomplete (missing " + f + ").");
+                }
+            });
+            var manifest = fsMod.readFileSync(pathMod.join(dir, "CSXS", "manifest.xml"), "utf8");
+            var m = manifest.match(/ExtensionBundleVersion="([\d.]+)"/);
+            if (!m || m[1] !== remoteVersion) {
+                throw new Error("Package version mismatch (expected " + remoteVersion + ", got " + (m ? m[1] : "none") + ").");
+            }
+        }
 
         busy(true);
         toast("Downloading v" + remoteVersion + "…");
-        fetch(zxpUrl)
-            .then(function (r) {
+        Promise.all([
+            fetch(baseUrl).then(function (r) {
                 if (!r.ok) throw new Error("Download failed (" + r.status + "). The release file may not be published yet.");
                 return r.arrayBuffer();
+            }),
+            fetch(baseUrl + ".sha256").then(function (r) {
+                if (!r.ok) throw new Error("Checksum file missing (" + r.status + ") — refusing to install an unverifiable package.");
+                return r.text();
             })
-            .then(function (buf) {
+        ])
+            .then(function (results) {
                 var B = (window.cep_node && window.cep_node.Buffer) || window.Buffer;
-                var data = B.from(buf);
+                var data = B.from(results[0]);
                 // sanity: real zip (PK header) and plausible size
                 if (data.length < 10 * 1024 || data[0] !== 0x50 || data[1] !== 0x4b) {
                     throw new Error("Downloaded file is not a valid package.");
                 }
+                // published SHA-256 must match the download exactly
+                var expected = (String(results[1]).match(/[a-f0-9]{64}/i) || [""])[0].toLowerCase();
+                var actual = nodeRequire("crypto").createHash("sha256").update(data).digest("hex");
+                if (!expected || actual !== expected) {
+                    throw new Error("Checksum mismatch — download discarded.\nExpected " + expected + "\nGot      " + actual);
+                }
                 fsMod.writeFileSync(tmpZip, data);
-                return new Promise(function (resolve, reject) {
-                    var proc = BHFFmpeg.isWin
-                        ? cp.spawn("tar", ["-xf", tmpZip, "-C", targetPath], { windowsHide: true })
-                        : cp.spawn("unzip", ["-o", tmpZip, "-d", targetPath]);
-                    var errTail = "";
-                    proc.stderr.on("data", function (c) { errTail += String(c); });
-                    proc.on("error", reject);
-                    proc.on("close", function (code) {
-                        code === 0 ? resolve() : reject(new Error("Extract failed: " + errTail.slice(-300)));
-                    });
-                });
+
+                // staged extraction: never touch the live install until the
+                // package is fully extracted AND validated
+                rmrf(stagingPath);
+                fsMod.mkdirSync(stagingPath, { recursive: true });
+                return extractTo(stagingPath);
             })
             .then(function () {
-                // confirm the new manifest actually landed
-                var manifest = fsMod.readFileSync(pathMod.join(targetPath, "CSXS", "manifest.xml"), "utf8");
-                var m = manifest.match(/ExtensionBundleVersion="([\d.]+)"/);
-                if (!m || m[1] !== remoteVersion) throw new Error("Update extracted but version verification failed.");
+                validateExtracted(stagingPath);
+
+                // atomic swap: live -> .backup, staging -> live. The previous
+                // version stays on disk until the new one boots successfully.
+                rmrf(backupPath);
+                var swappedOut = false;
+                try {
+                    if (fsMod.existsSync(targetPath)) {
+                        fsMod.renameSync(targetPath, backupPath);
+                        swappedOut = true;
+                    }
+                    fsMod.renameSync(stagingPath, targetPath);
+                } catch (swapErr) {
+                    if (swappedOut) {
+                        // put the old version back before reporting
+                        try { fsMod.renameSync(backupPath, targetPath); } catch (rbErr) { }
+                    }
+                    // Windows can refuse directory renames while AE holds a file
+                    // open. Staged files are already checksum-verified and
+                    // validated, so an in-place extract is a safe last resort.
+                    return extractTo(targetPath);
+                }
+            })
+            .then(function () {
+                validateExtracted(targetPath); // post-swap confirmation
                 try { fsMod.unlinkSync(tmpZip); } catch (e) { }
+                rmrf(stagingPath);
                 busy(false);
                 $("update-pill").classList.add("hidden");
                 return ui.alert("Updated to v" + remoteVersion + "!\n\n" +
@@ -1485,11 +1563,43 @@
                     "Restart After Effects to finish — the new version loads on next launch.", "Update Installed");
             })
             .catch(function (err) {
+                // best-effort rollback: if the live folder is gone/broken but a
+                // backup exists, restore it so the panel still loads next launch
+                try {
+                    if (fsMod.existsSync(backupPath) &&
+                        !fsMod.existsSync(pathMod.join(targetPath, "CSXS", "manifest.xml"))) {
+                        rmrf(targetPath);
+                        fsMod.renameSync(backupPath, targetPath);
+                    }
+                } catch (rbErr) { }
+                rmrf(stagingPath);
+                try { fsMod.unlinkSync(tmpZip); } catch (e) { }
                 busy(false);
                 ui.alert("Auto-update failed:\n" + err.message +
-                    "\n\nYou can update manually — the panel will open the GitHub page.").then(function () {
+                    "\n\nYour current version was left untouched." +
+                    "\nYou can update manually — the panel will open the GitHub page.").then(function () {
                     cp.spawn(BHFFmpeg.isWin ? "explorer" : "open", [REPO_URL], { detached: true });
                 });
+            });
+    }
+
+    /**
+     * Runs once per boot: this panel version started successfully, so the
+     * pre-update backup (kept for rollback) is no longer needed. Never touches
+     * a backup that is NEWER than us — that would be the rollback source after
+     * a failed update, not a leftover.
+     */
+    function cleanupUpdateBackup() {
+        [cs.getExtensionPath(), pathMod.join(userExtensionsDir(), "com.bighappy.launcher")]
+            .forEach(function (p) {
+                var bak = p + ".backup";
+                try {
+                    if (!fsMod.existsSync(bak)) return;
+                    var manifest = fsMod.readFileSync(pathMod.join(bak, "CSXS", "manifest.xml"), "utf8");
+                    var m = manifest.match(/ExtensionBundleVersion="([\d.]+)"/);
+                    if (m && versionNewer(m[1], BH_VERSION)) return; // rollback source, keep
+                    rmDirRecursive(bak);
+                } catch (e) { /* unreadable backup: leave it for manual recovery */ }
             });
     }
 
@@ -1607,6 +1717,7 @@
 
         showWhatsNew();
         checkForUpdate();
+        cleanupUpdateBackup();   // this version booted fine — retire the rollback copy
     });
 
     $("about-text").innerHTML = "BigHappy Launcher CEP v" + BH_VERSION +
