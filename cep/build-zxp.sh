@@ -44,7 +44,8 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 rsync -a "$CEP/" "$STAGE/" \
     --exclude ".debug" --exclude "install-mac.sh" --exclude "install-win.bat" \
-    --exclude "build-zxp.sh" --exclude "*.md"
+    --exclude "build-zxp.sh" --exclude "*.md" \
+    --exclude "test" --exclude "package.json" --exclude "node_modules"
 
 # 4. Sign (timestamped when the TSA is reachable, unsigned-timestamp fallback)
 rm -f "$OUT"

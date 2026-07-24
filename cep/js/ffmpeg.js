@@ -194,8 +194,8 @@
             }
             var duration = Math.max(info.duration, 0.5);
             // 6% container/muxing overhead margin, no audio (-an)
-            var kbps = Math.floor((targetMB * 8192 * 0.94) / duration);
-            if (kbps < 300) kbps = 300;
+            var kbps = global.BHCalc.computeTargetKbps(targetMB, info.duration,
+                { overhead: 0.94, floor: 300, minDuration: 0.5 });
 
             var attempt = 0;
             function encodeOnce() {
@@ -205,7 +205,7 @@
                         var outMB = fs.statSync(tmpOut).size / (1024 * 1024);
                         if (outMB > targetMB && attempt < 3) {
                             // Still over the cap — retry at a proportionally lower bitrate
-                            kbps = Math.floor(kbps * (targetMB / outMB) * 0.97);
+                            kbps = global.BHCalc.retryKbps(kbps, targetMB, outMB);
                             return encodeOnce();
                         }
                         return outMB;
@@ -355,6 +355,8 @@
         optimize: optimize,
         cancel: cancel,
         install: install,
-        isWin: IS_WIN
+        isWin: IS_WIN,
+        // pure/fs helpers exposed for the headless test suite only
+        _internals: { backupSwap: backupSwap, sha256File: sha256File }
     };
 })(window);

@@ -87,8 +87,8 @@
         var passLog = path.join(os.tmpdir(), "bh_vp9_" + Date.now());
         var rate;
         if (isDOOH) {
-            var kbps = Math.floor((targetMB * 8192) / Math.max(durationSec, 1)) - 128;
-            if (kbps < 1000) kbps = 1000;
+            var kbps = global.BHCalc.computeTargetKbps(targetMB, durationSec,
+                { subtract: 128, floor: 1000, minDuration: 1 });
             // 1.4x maxrate: maxrate == average starved busy frames and blurred
             // detail; two-pass -b:v still holds the total size on target.
             rate = ["-b:v", kbps + "k", "-maxrate", Math.floor(kbps * 1.4) + "k", "-bufsize", (kbps * 3) + "k"];

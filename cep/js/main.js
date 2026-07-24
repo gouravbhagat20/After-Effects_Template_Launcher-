@@ -18,9 +18,13 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.3.2";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.3.3";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.3.3": [
+            "Internal: bitrate math extracted into a shared, unit-tested module (no behavior change)",
+            "New automated test suite guards naming, parsing, folder creation, path limits, bitrate math, and file-swap recovery on every release"
+        ],
         "0.3.2": [
             "Sharper text when optimizing/size-capping MP4s: the re-encode no longer softens high-contrast text edges (negative deblock + psy-rd + stronger adaptive quantization)"
         ],

@@ -1,4 +1,4 @@
-# BigHappy Launcher — CEP Extension (v0.1.0)
+# BigHappy Launcher — CEP Extension
 
 Cross-platform After Effects panel (Windows + macOS, AE 2021+ / CEP 11). This is the
 long-term replacement for `BigHappyLauncher_Templates.jsx`: same AE-side logic
@@ -6,12 +6,18 @@ model, but the UI is HTML and all ffmpeg/filesystem work runs **asynchronously
 in Node.js** — real progress bars, a Cancel button that actually kills the
 encode, and no frozen AE during optimization.
 
-## What works in v0.1
+**Current version:** whatever `CSXS/manifest.xml` says (kept in sync with
+`BH_VERSION` in `js/main.js`) — this file deliberately doesn't repeat it.
+Feature-by-feature comparison with the ScriptUI tool: [../FEATURES.md](../FEATURES.md).
+
+## What works
 
 - **Launcher tab** — New Project from template: identical naming
   (`Brand_Campaign_Q#_WxH_V#_R#.aep`, DOOH variant) and folder structure
-  (`Base/Year/Quarter/Brand_Campaign/Template_WxH/V#/AE_File/Render_R#` +
-  `Assets/...`) to the ScriptUI version, with live filename preview,
+  (`Base/Year/Quarter/Brand_Campaign/Template_WxH/V#/` with
+  `Assets/{Images,Screens}` and
+  `AE_File/{Collect_Files, Render_R#/{MP4, PNG_Sequence}}`)
+  to the ScriptUI version, with live filename preview,
   `_GlobalAssets` import, and unsaved-changes guard. Plus live
   current-project card, Open/Save/Reveal, and recent projects.
 - **Render tab** — add the Main comp to the Render Queue with
@@ -86,6 +92,19 @@ render queue) lives in `jsx/host.jsx` and is called with
 `host("fnName", args...)` from the panel. **Everything else** (ffmpeg,
 downloads, file moves, dialogs) runs in the panel's Node context — no generated
 `.bat`/`.sh` scripts, no shell-quoting issues, identical behavior on both OSes.
+
+## Tests
+
+```
+cd cep && npm test        # node --test, zero dependencies
+```
+
+Headless suite in `test/`: naming/sanitization, project-name parsing (incl.
+round-trips), folder-structure creation, path-length limits (BH-1006), bitrate
+math (`js/calc.js`), backup-swap recovery, and PNG-sequence detection. The
+browser IIFEs load under Node via the `test/_load.js` shim. CI runs the suite
+on macOS + Windows (`.github/workflows/ci.yml`); AE-dependent behavior stays on
+the manual QA checklist in the root README.
 
 ## Debugging
 

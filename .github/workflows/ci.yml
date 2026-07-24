@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: CEP tests (${{ matrix.os }} / node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax-check extension scripts
+        working-directory: cep
+        shell: bash
+        run: |
+          for f in js/*.js; do node --check "$f"; done
+      - name: Run test suite
+        working-directory: cep
+        run: node --test
+
+  scriptui-parse:
+    name: ScriptUI parse check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # ExtendScript is ES3-ish but this file is written to also parse as
+      # modern JS — a parse failure means a broken push for ScriptUI clients,
+      # since any push to main IS the ScriptUI release.
+      - name: Parse BigHappyLauncher_Templates.jsx
+        run: cp BigHappyLauncher_Templates.jsx /tmp/check.js && node --check /tmp/check.js

@@ -1,278 +1,150 @@
-# Big Happy Launcher v1.0
-## After Effects Template & DOOH Optimization Tool
+# Big Happy Launcher
+## After Effects Template & DOOH Optimization Tools
 
 **Created by Gourav Bhagat**
+
+This repository ships **two tools that share one settings store** and stay in
+sync automatically (AE preferences section `BigHappyLauncher`):
+
+| Tool | File | Current version | Update channel |
+|---|---|---|---|
+| **CEP panel** (long-term replacement) | `cep/` | see `cep/CSXS/manifest.xml` | Versioned signed `.zxp` in `dist/` — the panel notifies users and self-updates |
+| **ScriptUI panel** (legacy, still supported) | `BigHappyLauncher_Templates.jsx` | rolling | Any push to `main` touching the file **is** the release (clients compare commit SHA) |
+
+For the authoritative feature-by-feature comparison, see **[FEATURES.md](FEATURES.md)**.
 
 ---
 
 ## What Does This Tool Do?
 
-Big Happy Launcher is a comprehensive After Effects automation tool that streamlines your production workflow:
+🎯 **Template Project Creation** — standardized projects with naming
+(`Brand_Campaign_Q#_WxH_V#_R#.aep`, DOOH variant) and an organized folder tree.
+Templates: Sunrise (750×300), InterScroller (880×1912), Expandable (750×1334),
+DOOH Horizontal (1920×1080), DOOH Vertical (1080×1920).
 
-### Core Capabilities
+📦 **DOOH Video Optimization** — batch-compress MP4s under a hard size cap
+(default 6.8 MB target for the 7 MB DOOH limit):
+- **CEP panel:** true **two-pass ABR** size targeting, output verified against
+  the cap, automatic retry at a lower bitrate, backup-swap replacement (the
+  original is never deleted before the optimized file is confirmed in place).
+  Fully async — AE stays responsive, Cancel kills the encode instantly.
+- **ScriptUI:** CRF-18-constrained single pass with a bitrate ceiling, plus a
+  **strict ABR fallback re-encode** when the CRF pass overshoots the cap.
+- Both use sharpness-tuned x264 settings (negative deblock, psy-rd, adaptive
+  quantization) so text and fine detail survive the re-encode.
 
-🎯 **Template Project Creation**
-- Creates standardized After Effects projects with proper naming conventions
-- Auto-generates organized folder structures (AE files, Assets, Renders)
-- Supports multiple template types: Sunrise (750×300), InterScroller, DOOH formats
+🎬 **Post-Render Processing** — PNG sequence → WebM (VP9 + alpha, two-pass),
+MOV (HEVC-alpha → ProRes 4444 → H.264 fallback chain), HTML preview
+(self-hosted Mediabunny player), ZIP bundle.
 
-📦 **DOOH Video Optimization**
-- Batch compress MP4 files to meet strict 7MB DOOH size requirements
-- CRF-constrained single-pass encoding with resolution-aware bitrate scaling
-- Real-time progress tracking with elapsed time and ETA
-- Detailed per-file results showing size savings and bitrate info
-- Works standalone — no After Effects project needs to be open
-
-🎬 **Post-Render Processing**
-- Converts PNG sequences to WebM (with transparency support)
-- Generates MOV files with ProRes 4444 codec
-- Creates HTML preview wrappers
-- Bundles everything into convenient ZIP files
-
-⚡ **Smart Automation**
-- Auto-detects and installs FFmpeg if missing (Windows & macOS)
-- Displays installed FFmpeg version in Settings
-- Version and revision management (V+ / R+ buttons)
-- Asset collection and Google Drive upload integration
-- Built-in path length safety checks
+⚡ **Smart Automation** — ffmpeg auto-detect/auto-install (Win + Mac), V+/R+
+version management, path-length safety checks, recent-files panel, update
+notifications.
 
 ---
 
-## Perfect For
+## Project Folder Structure
 
-✅ **Animators & Motion Designers** — Streamline project setup and asset management  
-✅ **DOOH Advertisers** — Easily meet strict file size requirements for digital signage  
-✅ **Production Studios** — Standardize naming conventions and folder structures  
-✅ **Freelancers** — Manage versions and revisions with one-click buttons  
-✅ **Teams** — Maintain consistent project organization across multiple people  
+`CREATE PROJECT` scaffolds (identical in both tools):
+
+```
+Base / Year / Quarter / Brand_Campaign / Template_WxH /
+└── V1/
+    ├── Assets/
+    │   ├── Images/
+    │   └── Screens/
+    └── AE_File/
+        ├── Brand_Campaign_Q#_WxH_V1_R1.aep
+        ├── Collect_Files/
+        └── Render_R1/
+            ├── MP4/            ← H.264 renders land here
+            └── PNG_Sequence/   ← PNG+Alpha renders land here
+```
+
+Renders route into `MP4/` or `PNG_Sequence/` automatically by output format;
+the post-render and DOOH tools look in those subfolders first and fall back to
+the `Render_R#` root for projects created with the older flat layout.
 
 ---
 
 ## Screenshots
 
-### Main Panel
+<!-- TODO(screenshots): retake against the current CEP panel and drop into screenshots/ -->
 ![Main Panel](screenshots/main_panel.png)
-*The main interface with template selection, project details, and action buttons*
+*Main interface — template selection, project details, actions*
 
-### Batch DOOH Optimization
 ![Batch Progress](screenshots/batch_progress.png)
-*Real-time progress with elapsed time and estimated remaining time*
+*DOOH batch optimization with per-file progress*
 
-### Optimization Results
 ![Batch Results](screenshots/batch_results.png)
-*Detailed results showing file sizes and savings percentage for each file*
+*Per-file results: size before/after and savings*
 
 ---
 
-## Quick Install
+## Install
 
-1. **Copy the script file** to:
+### CEP panel (recommended)
+1. Grab `dist/BigHappyLauncher_v*.zxp`
+2. Install with any ZXP installer (e.g. [aescripts ZXP Installer](https://aescripts.com/learn/zxp-installer/))
+3. Restart AE → **Window → Extensions → BigHappy Launcher**
+
+Requires AE 2021+ (CEP 11). Signed — no PlayerDebugMode needed. See
+[cep/README.md](cep/README.md) for dev installs, architecture, and release builds.
+
+### ScriptUI panel (legacy)
+1. Copy `BigHappyLauncher_Templates.jsx` to:
    ```
    Windows: C:\Program Files\Adobe\Adobe After Effects [version]\Support Files\Scripts\ScriptUI Panels\
    Mac:     /Applications/Adobe After Effects [version]/Scripts/ScriptUI Panels/
    ```
+2. Enable **Edit → Preferences → Scripting & Expressions →
+   "Allow Scripts to Write Files and Access Network"**
+3. Restart AE → `Window > BigHappyLauncher_Templates.jsx`
 
-2. **Enable Script Access** in After Effects:
-   - Edit > Preferences > Scripting & Expressions
-   - ✅ "Allow Scripts to Write Files and Access Network"
-
-3. **Restart After Effects** and find it under: `Window > BigHappyLauncher_Templates.jsx`
-
----
-
-## Features
-
-### 🎬 Template Management
-- Create new projects with standardized naming
-- Auto-generate folder structure (AE, Assets, Render)
-- Support for Sunrise, Interscroller, and DOOH templates
-- Import & standardize external projects to match naming conventions
-- Recent files panel with timestamps and quick-remove
-
-### 📦 DOOH Optimization
-Compress MP4 files to meet DOOH size requirements (< 7MB).
-
-**Features:**
-- Single file or **batch optimization**
-- CRF 18 quality-constrained encoding with bitrate ceiling
-- Resolution-aware bitrate scaling (1080p vs 4K vs portrait)
-- Auto-detects video duration and resolution via FFprobe
-- Real-time progress bar with per-file ETA
-- Enhanced results: file size, savings %, bitrate info
-- Works without a project open
-- **Auto-installs FFmpeg** if not found (Windows & macOS)
-
-**How to use:**
-1. Click **OPTIMIZE DOOH (7MB)**
-2. Select MP4 file(s) — Ctrl+Click for multiple
-3. Confirm settings in the preview dialog
-4. Wait for optimization — progress window closes automatically when done
-
-### 🌅 Optimize Sunrise
-Process Sunrise (750×300) post-render output:
-- Converts PNG sequence to **WebM** (with transparency)
-- Creates **MOV** (ProRes 4444)
-- Generates **HTML** preview wrapper
-- Creates **ZIP** bundle of all outputs
-
-### 🔄 Version & Revision Management
-- **R+** — Save as next revision (R1 → R2)
-- **V+** — Increment version and reset revision (V1 R3 → V2 R1)
-- Preview the new filename before saving
-
-### ☁ Collect & Upload
-- Removes unused footage from the project
-- Collects all linked assets into a clean folder
-- Groups AE files by template type
-- Uploads to configured Google Drive path
-
----
-
-## UI Reference
-
-### Header Toolbar
-
-| Button | Icon | Description |
-|--------|------|-------------|
-| **Open Project** | 📂 | Browse and open an existing `.aep` project file |
-| **Import & Standardize** | 📥 | Import an external project and rename it to the standardized naming convention |
-| **Recent Files** | 🕒 | View and quickly access recently opened projects |
-| **Settings** | ⚙ | Configure paths, FFmpeg, post-render options, and DOOH target size |
-
----
-
-### Input Fields
-
-#### Template Dropdown
-Select from available templates (Sunrise, InterScroller, DOOH Horizontal, DOOH Vertical). Each template has predefined:
-- **Dimensions** (Width × Height)
-- **Frame Rate** (FPS)
-- **Duration** (seconds)
-
-#### Brand (Required)
-Enter the client or brand name. This becomes part of the folder structure and filename.
-- **Minimum:** 2 characters
-- **Maximum:** 50 characters
-- **Example:** `Coca-Cola`, `Nike`, `Apple`
-
-#### Campaign
-Enter the campaign or project name. Optional but recommended.
-- **Maximum:** 50 characters
-- **Example:** `Summer_Sale`, `Holiday_2026`, `Launch_Campaign`
-
----
-
-### Time & Versioning Row
-
-| Control | Description |
-|---------|-------------|
-| **Quarter** | Q1–Q4 — auto-set to current quarter on launch |
-| **Year** | Project year — shows current year ±1 |
-| **V** | Major version number (increment for significant creative changes) |
-| **R** | Minor revision number (increment for small edits) |
-
----
-
-### Base Folder Row
-
-#### 📂 Base Path
-Shows the root folder where all projects are saved. Click **"..."** to open the folder or browse to a new one.
-
----
-
-### Preview Section
-
-| Label | Description |
-|-------|-------------|
-| **📂 Path** | Full path where the project will be created |
-| **📄 Filename** | Standardized filename that will be generated |
-
----
-
-### Action Buttons
-
-#### CREATE PROJECT
-Main action button. Creates a new project with:
-- Standardized naming: `Brand_Campaign_WxH_V#_R#.aep`
-- Folder structure: `Year/Quarter/Brand_Campaign/AE_File/`
-- Asset folders: `Assets/Image/`, `Assets/Screen/`, etc.
-
-#### Save As...
-Save the current project as a copy with a new name or location.
-
-#### R+ (Quick Revision)
-One-click revision increment. Saves the current project as a new revision:
-- Before: `Brand_Q2_750x300_V1_R1.aep`
-- After: `Brand_Q2_750x300_V1_R2.aep`
-
-#### V+ (Version Up)
-Increment version and reset revision. For major changes:
-- Before: `Brand_Q2_750x300_V1_R3.aep`
-- After: `Brand_Q2_750x300_V2_R1.aep`
-
-#### ☁ Collect
-Collect all project assets and upload to Google Drive:
-1. Removes unused footage
-2. Collects all linked files
-3. Creates organized folder structure grouped by template type
-4. Uploads to configured Google Drive path
-
----
-
-### Output Panel
-
-#### ADD TO RENDER QUEUE
-Adds the "Main" composition to After Effects Render Queue with appropriate output settings based on template type.
-
-#### OPTIMIZE SUNRISE
-Process Sunrise (750×300) renders into WebM, MOV, HTML, and ZIP.
-
-#### OPTIMIZE DOOH (7MB)
-Compress DOOH MP4(s) to meet the strict 7MB size limit. Supports single and batch mode.
-
----
-
-### Settings Dialog
-
-Access via the ⚙ button. Configure:
-
-| Section | Options |
-|---------|---------|
-| **Paths** | Base Work Folder, Templates Folder, Google Drive Root |
-| **Post-Render** | WebM output, MOV output, HTML generation, ZIP bundling |
-| **FFmpeg** | Path to FFmpeg executable, installed version display, auto-install |
-| **DOOH** | Target size (default: 6.8 MB for safety margin below 7 MB) |
-
----
-
-## Requirements
-
-- **After Effects CC 2019+**
-- **FFmpeg** (auto-installed on first use, or configure manually in Settings)
+Requires AE CC 2019+.
 
 ---
 
 ## FFmpeg Setup
 
-### Automatic (Recommended)
-1. Click **OPTIMIZE DOOH (7MB)**
-2. If FFmpeg is not found, click **"⚡ Auto Install"**
-3. Wait for download and setup (~1–2 min)
-4. The installed version will appear in Settings ⚙
+**Automatic (recommended):** run any optimize action — if ffmpeg is missing
+you'll be offered a one-click install (Homebrew on Mac; verified
+gyan.dev download on Windows, SHA-256 checked).
 
-### Manual
-1. Download from [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
-2. Extract to `C:\ffmpeg` (Windows) or `/usr/local/bin` (Mac)
-3. In the script: Settings ⚙ → set path to `C:\ffmpeg\bin\ffmpeg.exe`
+**Manual:** download from [ffmpeg.org](https://ffmpeg.org/download.html),
+then set the path in Settings (`C:\ffmpeg\bin\ffmpeg.exe` or
+`/opt/homebrew/bin/ffmpeg`).
 
 ---
 
-## Keyboard Shortcuts
+## Versioning Workflow
 
-| Action | Shortcut |
-|--------|----------|
-| Create Project | Ctrl + Enter |
-| Save As | Ctrl + S |
+| Action | Effect |
+|---|---|
+| **R+** | `…_V1_R1.aep` → `…_V1_R2.aep` (small edits) |
+| **V+** | `…_V1_R3.aep` → `…_V2_R1.aep` (major changes, revision resets) |
+| **Collect** | Removes unused footage, collects linked assets, mirrors to the configured Google Drive folder (ScriptUI; CEP collect is local — see FEATURES.md) |
+
+---
+
+## Development
+
+- **Tests:** `cd cep && npm test` — headless Node test suite (naming, parsing,
+  folder creation, path limits, bitrate math, backup-swap recovery, sequence
+  detection). Runs in CI on macOS + Windows (`.github/workflows/ci.yml`).
+- **Releases:** ScriptUI ships on push; the CEP panel needs 4 synced changes —
+  `manifest.xml` versions, `BH_VERSION` + `CHANGELOG` in `cep/js/main.js`, and
+  the rebuilt `dist/*.zxp` (`./cep/build-zxp.sh`).
+
+### Manual QA checklist (before a CEP release)
+CI covers the pure logic; these need a human in front of AE:
+
+- [ ] Create project from each template → folder tree + naming correct
+- [ ] Render queue: Sunrise (PNG+Alpha → `PNG_Sequence/`), DOOH (H.264 → `MP4/`)
+- [ ] DOOH optimize: single + batch, output ≤ target, original recoverable on cancel
+- [ ] Post-render convert: WebM/MOV/HTML/ZIP from a real render
+- [ ] Update flow: previous version notifies → installs → What's New shows
+- [ ] Matrix: Windows 10/11 + macOS, AE 2021 → current
 
 ---
 
@@ -280,63 +152,30 @@ Access via the ⚙ button. Configure:
 
 | Issue | Solution |
 |-------|----------|
-| "FFmpeg not found" | Auto-install or set path in Settings ⚙ |
-| Optimize window stays open after processing | Reload the script panel — changes require an AE restart |
-| "Path too long" error | Use shorter Brand/Campaign names |
-| "Permission denied" | Enable script permissions: Edit > Preferences > Scripting & Expressions |
-| Script won't load | Restart After Effects after copying the file |
-| Progress bar stuck during DOOH optimization | Processing is running — wait for the current file to finish encoding |
+| "FFmpeg not found" | Auto-install, or set the path in Settings |
+| "Path too long" (BH-1006) | Use shorter Brand/Campaign names |
+| "Permission denied" | Enable script write access in AE preferences |
+| Panel/script won't load | Restart AE after installing |
+| Update notification but download fails | The release may still be publishing — retry in a few minutes |
 
 ---
 
-## Known Constraints & Decisions
+## Known Constraints
 
-These are accepted behaviors, not open bugs:
-
-- **FFmpeg is an external dependency** — the script detects it (`where`/`which`), auto-installs it on Windows and macOS if missing, and shows the installed version in Settings. No manual setup is required in the normal case.
-- **HTML previews load Mediabunny from `cdn.bighappy.co`** — the player library is self-hosted (pinned to v1.25.0) rather than pulled from a public CDN, so we control availability and versioning. Previews still require network access.
-- **Generated templates are spec placeholders by design** — the Templates tab generates bare comps labeled with name/size/fps/duration as a quick-start fallback. The full creative templates ship as the `.aep` files in `Templates/`.
-- **AE is blocked during FFmpeg encoding** — JSX's `system.callSystem` is synchronous, so the UI freezes while a file encodes; progress updates between files, not within them. A truly async pipeline would require moving encoding into the CEP panel's Node context (see `cep/`).
-
----
-
-## Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| **v1.0** | May 2026 | Production stability release |
-| | | • Fixed FFmpeg stdin hang (`-nostdin`) causing AE UI freeze during optimization |
-| | | • Fixed palette progress windows not closing after processing (`w.hide()`) |
-| | | • Fixed batch progress window re-appearing on cancel |
-| | | • FFmpeg version display in Settings dialog |
-| | | • Auto-install FFmpeg support on macOS |
-| | | • DOOH encoding upgraded to CRF-constrained mode with resolution-aware bitrate |
-| | | • 2-pass VBR option to guarantee 7MB limit while maximizing quality |
-| | | • Auto-detect video duration and resolution via FFprobe |
-| | | • Project status panel with "Ready" indicator |
-| | | • Recent files panel with timestamps and remove button |
-| | | • Path preview shown before R+/V+ saves |
-| | | • Collect now groups AE files by template type |
-| | | • Drive collect uses current quarter from UI (not filename) |
-| | | • Fixed ReferenceError crash in `runMP4Optimizer` |
-| | | • Fixed silent ScriptUI dialog errors (statictext → edittext) |
-| | | • MOV fallback chain, zero-byte file checks, ZIP filtering |
-| | | • Cross-platform compatibility (Windows & macOS) |
-| **v1.0** | Feb 2026 | Initial production release |
-| | | • Template management with standardized naming |
-| | | • DOOH batch optimization with real-time progress |
-| | | • Auto FFmpeg download & setup (Windows) |
-| | | • Post-render conversion: WebM / MOV / HTML / ZIP |
-| | | • Path length safety checks |
-| | | • Version and revision management (V+ / R+) |
+- **FFmpeg is an external dependency** — auto-detected and auto-installable on
+  both OSes; Windows downloads are SHA-256-verified against the publisher.
+- **HTML previews load Mediabunny from `cdn.bighappy.co`** (self-hosted,
+  pinned) — previews need network access.
+- **ScriptUI blocks AE during encodes** — `system.callSystem` is synchronous.
+  This is the core reason the CEP panel exists; its encodes are fully async.
+- **Generated templates are spec placeholders** — bare comps at the right
+  size/fps/duration; the full creative templates ship as `.aep` files.
 
 ---
 
 ## Author
 
-**Gourav Bhagat**  
+**Gourav Bhagat**
 Big Happy Launcher © 2026
-
----
 
 *Made with ❤️ for the animators*
