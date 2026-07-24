@@ -3975,10 +3975,10 @@
      */
     function enforceSizeTarget(exe, inputPath, outputFile, targetMB, duration, isWin, tempFolder, tag) {
         var outSizeMB = outputFile.length / (1024 * 1024);
-        // Accept only when the CRF pass lands NEAR the cap (80-100% of target).
+        // Accept only when the CRF pass lands NEAR the cap (90-100% of target).
         // Overshoot -> must re-encode smaller. Big undershoot -> quality budget
         // left unused; re-encode at the full target bitrate to fill it.
-        if (outSizeMB <= targetMB && outSizeMB >= targetMB * 0.8) return outSizeMB;
+        if (outSizeMB <= targetMB && outSizeMB >= targetMB * 0.9) return outSizeMB;
 
         var dur = duration < 1 ? 1 : duration;
         // 95% of the target leaves headroom for container overhead

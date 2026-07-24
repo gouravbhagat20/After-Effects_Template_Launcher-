@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.4.1";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.2";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.4.2": [
+            "Output now lands closer to the target size: acceptance window tightened from 80–100% to 90–100% (e.g. 6.1–6.8 MB for a 6.8 target)"
+        ],
         "0.4.1": [
             "Strict size cap: if retries somehow still end over the target, a final conservative encode guarantees the output fits under it"
         ],

@@ -237,12 +237,12 @@
             }
 
             // Quality-first, budget-filling: try CRF 18 with the target bitrate
-            // as ceiling. Accept it only when it lands NEAR the cap (80-100% of
+            // as ceiling. Accept it only when it lands NEAR the cap (90-100% of
             // target). If it overshoots OR undershoots badly (quality budget
             // left unused — the user asked for a ~targetMB file), re-encode
             // with two-pass ABR at the full target bitrate, which lands the
             // output close to the cap and spends the whole budget on quality.
-            var FILL_RATIO = 0.8;
+            var FILL_RATIO = 0.9;
             function qualityThenSize() {
                 attempt++;
                 return crfPass(exe, file, tmpOut, kbps, duration, onProgress)
