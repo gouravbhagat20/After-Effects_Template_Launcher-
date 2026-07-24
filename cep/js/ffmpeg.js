@@ -133,7 +133,10 @@
             // detailed elements; two-pass -b:v keeps the total size on target.
             "-maxrate", Math.floor(videoKbps * 1.5) + "k",
             "-bufsize", (videoKbps * 3) + "k",
-            "-x264-params", "aq-mode=3",
+            // Text/edge sharpness on a re-encode: negative deblock stops the
+            // in-loop filter from smearing high-contrast text; psy-rd keeps fine
+            // detail; aq-strength 1.2 steers bits toward text over flat gradients.
+            "-x264-params", "aq-mode=3:aq-strength=1.2:psy-rd=1.00,0.15:deblock=-1,-1:trellis=2:subme=9:me=umh:rc-lookahead=60",
             "-pix_fmt", "yuv420p", "-an",
             "-passlogfile", passLogBase,
             "-progress", "pipe:1", "-v", "error"

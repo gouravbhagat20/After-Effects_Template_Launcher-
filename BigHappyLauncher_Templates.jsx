@@ -3995,7 +3995,10 @@
         // 1.5x maxrate: pinning maxrate to the average bitrate starves busy
         // frames and blurs detail; ABR still holds the total size on target.
         var strictFlags = "-b:v " + strictVideo + "k -maxrate " + Math.floor(strictVideo * 1.5) + "k -bufsize " + (strictVideo * 3) + "k";
-        var cmd = exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow -profile:v high -pix_fmt yuv420p -tune animation -movflags +faststart " + strictFlags + " -c:a aac -b:a 96k \"" + strictPath + "\"";
+        // Sharp text on the re-encode: negative deblock (was -tune animation,
+        // which softens edges with deblock 1,1), psy-rd + aq-strength for detail.
+        var strictParams = "-x264-params \"aq-mode=3:aq-strength=1.2:psy-rd=1.00,0.15:deblock=-1,-1:trellis=2\"";
+        var cmd = exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow -profile:v high -pix_fmt yuv420p -movflags +faststart " + strictParams + " " + strictFlags + " -c:a aac -b:a 96k \"" + strictPath + "\"";
         var body = isWin
             ? "@echo off\r\nchcp 65001 >NUL\r\n" + cmd + " 2>NUL\r\n"
             : "#!/bin/bash\n" + cmd + " 2>/dev/null\n";

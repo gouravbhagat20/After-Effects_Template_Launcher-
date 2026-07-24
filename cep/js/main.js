@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.3.1";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.3.2";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.3.2": [
+            "Sharper text when optimizing/size-capping MP4s: the re-encode no longer softens high-contrast text edges (negative deblock + psy-rd + stronger adaptive quantization)"
+        ],
         "0.3.1": [
             "Fixed: the Expandable (750×1334) template now appears for everyone — it is added once to existing saved template lists (delete it and it stays deleted)"
         ],
