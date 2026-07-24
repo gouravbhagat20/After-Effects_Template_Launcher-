@@ -227,7 +227,7 @@
                 return twoPass(exe, file, tmpOut, kbps, duration, passLog, onProgress)
                     .then(function () {
                         var outMB = fs.statSync(tmpOut).size / (1024 * 1024);
-                        if (outMB > targetMB && attempt < 3) {
+                        if (outMB > targetMB && attempt < 4) {
                             // Still over the cap — retry at a proportionally lower bitrate
                             kbps = global.BHCalc.retryKbps(kbps, targetMB, outMB);
                             return encodeOnce();
@@ -236,16 +236,19 @@
                     });
             }
 
-            // Quality-first: try CRF 18 (visually clean) with the target bitrate
-            // as ceiling. If it lands under the cap, ship that — sharper than any
-            // size-targeted ABR encode. Only when it overshoots do we fall back
-            // to strict two-pass size targeting.
+            // Quality-first, budget-filling: try CRF 18 with the target bitrate
+            // as ceiling. Accept it only when it lands NEAR the cap (80-100% of
+            // target). If it overshoots OR undershoots badly (quality budget
+            // left unused — the user asked for a ~targetMB file), re-encode
+            // with two-pass ABR at the full target bitrate, which lands the
+            // output close to the cap and spends the whole budget on quality.
+            var FILL_RATIO = 0.8;
             function qualityThenSize() {
                 attempt++;
                 return crfPass(exe, file, tmpOut, kbps, duration, onProgress)
                     .then(function () {
                         var outMB = fs.statSync(tmpOut).size / (1024 * 1024);
-                        if (outMB <= targetMB) return outMB;
+                        if (outMB <= targetMB && outMB >= targetMB * FILL_RATIO) return outMB;
                         if (cancelled) throw new Error("CANCELLED");
                         return encodeOnce();
                     });

@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.3.4";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.3.5";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.3.5": [
+            "Optimizer now fills the size budget: ask for 6.8 MB and the output lands near 6.8 MB (80-100% of target), spending the whole budget on quality instead of stopping at 2-3 MB"
+        ],
         "0.3.4": [
             "Optimizer is now quality-first: clips are encoded at constant visual quality (CRF 18) whenever they fit under the size cap — noticeably sharper output",
             "Strict two-pass size targeting only kicks in when the quality pass would exceed the cap"

@@ -3975,7 +3975,10 @@
      */
     function enforceSizeTarget(exe, inputPath, outputFile, targetMB, duration, isWin, tempFolder, tag) {
         var outSizeMB = outputFile.length / (1024 * 1024);
-        if (outSizeMB <= targetMB) return outSizeMB;
+        // Accept only when the CRF pass lands NEAR the cap (80-100% of target).
+        // Overshoot -> must re-encode smaller. Big undershoot -> quality budget
+        // left unused; re-encode at the full target bitrate to fill it.
+        if (outSizeMB <= targetMB && outSizeMB >= targetMB * 0.8) return outSizeMB;
 
         var dur = duration < 1 ? 1 : duration;
         // 95% of the target leaves headroom for container overhead
@@ -3986,7 +3989,7 @@
         var strictPath = tempFolder.fsName + sep + "strict_" + tag + ".mp4";
         var strictScriptPath = tempFolder.fsName + sep + "strict_" + tag + (isWin ? ".bat" : ".sh");
 
-        logWarn("CRF pass exceeded size target — running strict ABR fallback", {
+        logWarn("CRF pass missed the size window (over cap or <80% of it) — running strict ABR at full target bitrate", {
             "CRF Output": outSizeMB.toFixed(2) + " MB",
             "Target": targetMB + " MB",
             "Strict Bitrate": strictVideo + " kbps"
@@ -4011,7 +4014,15 @@
         try { sf.remove(); } catch (e) { }
 
         var strictFile = new File(strictPath);
-        if (strictFile.exists && strictFile.length > 1024 && strictFile.length < outputFile.length) {
+        // Swap in the strict result when it's an improvement: on overshoot it
+        // must be smaller than the CRF output; on undershoot it must be larger
+        // (filling the budget) while still under the cap.
+        var strictMB = strictFile.exists ? strictFile.length / (1024 * 1024) : 0;
+        var strictBetter = strictFile.exists && strictFile.length > 1024 && (
+            outSizeMB > targetMB
+                ? strictFile.length < outputFile.length
+                : (strictMB > outSizeMB && strictMB <= targetMB));
+        if (strictBetter) {
             var strictSizeMB = strictFile.length / (1024 * 1024);
             var outName = decodePath(outputFile.name);
             // Stage next to the output, then swap — the CRF output is never
