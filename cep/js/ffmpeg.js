@@ -124,6 +124,33 @@
         });
     }
 
+    // Text/edge sharpness on a re-encode: negative deblock stops the in-loop
+    // filter from smearing high-contrast text; psy-rd keeps fine detail;
+    // aq-strength 1.2 steers bits toward text over flat gradients.
+    var SHARP_PARAMS = "aq-mode=3:aq-strength=1.2:psy-rd=1.00,0.15:deblock=-1,-1:trellis=2:subme=9:me=umh:rc-lookahead=60";
+
+    /**
+     * Quality-first pass: constant quality (CRF 18) with a bitrate ceiling.
+     * When the clip fits under the size cap this way, it looks visibly better
+     * than a bitrate-starved ABR encode; if it overshoots, the caller falls
+     * back to strict two-pass size targeting.
+     */
+    function crfPass(exe, input, output, ceilingKbps, durationSec, onProgress) {
+        var args = [
+            "-y", "-i", input,
+            "-c:v", "libx264", "-preset", "slow", "-profile:v", "high",
+            "-crf", "18",
+            "-maxrate", Math.floor(ceilingKbps * 1.5) + "k",
+            "-bufsize", (ceilingKbps * 3) + "k",
+            "-x264-params", SHARP_PARAMS,
+            "-pix_fmt", "yuv420p", "-an",
+            "-movflags", "+faststart",
+            "-progress", "pipe:1", "-v", "error",
+            output
+        ];
+        return spawnFFmpeg(exe, args, durationSec, onProgress);
+    }
+
     function twoPass(exe, input, output, videoKbps, durationSec, passLogBase, onProgress) {
         var common = [
             "-y", "-i", input,
@@ -133,10 +160,7 @@
             // detailed elements; two-pass -b:v keeps the total size on target.
             "-maxrate", Math.floor(videoKbps * 1.5) + "k",
             "-bufsize", (videoKbps * 3) + "k",
-            // Text/edge sharpness on a re-encode: negative deblock stops the
-            // in-loop filter from smearing high-contrast text; psy-rd keeps fine
-            // detail; aq-strength 1.2 steers bits toward text over flat gradients.
-            "-x264-params", "aq-mode=3:aq-strength=1.2:psy-rd=1.00,0.15:deblock=-1,-1:trellis=2:subme=9:me=umh:rc-lookahead=60",
+            "-x264-params", SHARP_PARAMS,
             "-pix_fmt", "yuv420p", "-an",
             "-passlogfile", passLogBase,
             "-progress", "pipe:1", "-v", "error"
@@ -212,7 +236,22 @@
                     });
             }
 
-            return encodeOnce().then(function (outMB) {
+            // Quality-first: try CRF 18 (visually clean) with the target bitrate
+            // as ceiling. If it lands under the cap, ship that — sharper than any
+            // size-targeted ABR encode. Only when it overshoots do we fall back
+            // to strict two-pass size targeting.
+            function qualityThenSize() {
+                attempt++;
+                return crfPass(exe, file, tmpOut, kbps, duration, onProgress)
+                    .then(function () {
+                        var outMB = fs.statSync(tmpOut).size / (1024 * 1024);
+                        if (outMB <= targetMB) return outMB;
+                        if (cancelled) throw new Error("CANCELLED");
+                        return encodeOnce();
+                    });
+            }
+
+            return qualityThenSize().then(function (outMB) {
                 var met = outMB <= targetMB;
                 var replaced = false;
                 // HARD CAP: never replace the original with an over-target file —

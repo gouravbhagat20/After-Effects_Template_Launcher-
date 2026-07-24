@@ -18,9 +18,13 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.3.3";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.3.4";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.3.4": [
+            "Optimizer is now quality-first: clips are encoded at constant visual quality (CRF 18) whenever they fit under the size cap — noticeably sharper output",
+            "Strict two-pass size targeting only kicks in when the quality pass would exceed the cap"
+        ],
         "0.3.3": [
             "Internal: bitrate math extracted into a shared, unit-tested module (no behavior change)",
             "New automated test suite guards naming, parsing, folder creation, path limits, bitrate math, and file-swap recovery on every release"
