@@ -254,7 +254,21 @@
                     });
             }
 
-            return qualityThenSize().then(function (outMB) {
+            // STRICT CAP backstop: if the proportional retries somehow still
+            // ended over the target, run one final encode at a conservative
+            // 15% safety margin — at that bitrate the two-pass rate control
+            // cannot realistically miss the cap.
+            function strictBackstop(outMB) {
+                if (outMB <= targetMB) return outMB;
+                if (cancelled) throw new Error("CANCELLED");
+                attempt++;
+                kbps = global.BHCalc.computeTargetKbps(targetMB, info.duration,
+                    { overhead: 0.85, floor: 200, minDuration: 0.5 });
+                return twoPass(exe, file, tmpOut, kbps, duration, passLog, onProgress)
+                    .then(function () { return fs.statSync(tmpOut).size / (1024 * 1024); });
+            }
+
+            return qualityThenSize().then(strictBackstop).then(function (outMB) {
                 var met = outMB <= targetMB;
                 var replaced = false;
                 // HARD CAP: never replace the original with an over-target file —

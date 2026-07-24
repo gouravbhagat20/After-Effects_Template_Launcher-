@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.4.0";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.1";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.4.1": [
+            "Strict size cap: if retries somehow still end over the target, a final conservative encode guarantees the output fits under it"
+        ],
         "0.4.0": [
             "Safer auto-updates: downloads are now verified against a published SHA-256 checksum before anything is touched",
             "Updates extract to a staging area and are fully validated before an atomic swap into place",
