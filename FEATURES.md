@@ -26,7 +26,7 @@ same commit as any feature change.
 | Backup-swap replacement (original never lost) | 🟡 | ✅ | CEP path is unit-tested (`cep/test/backupswap.test.js`) |
 | AE file-lock release + relink on replace | ✅ | ✅ | |
 | **Post-render (Sunrise)** |
-| PNG sequence → WebM (VP9+alpha, two-pass) | ✅ | 🟡 | CEP: implemented + wired, card hidden in UI pending AE verification (`cep/index.html` `#pr-card`) |
+| PNG sequence → WebM (VP9+alpha, two-pass) | ✅ | ✅ | CEP card enabled v0.4.4 — needs one real conversion verified in AE |
 | MOV fallback chain (HEVC-alpha → ProRes 4444 → H.264) | ✅ | 🟡 | Same code path as above |
 | HTML preview (Mediabunny) + ZIP bundle | ✅ | 🟡 | Same code path as above |
 | **Collect & upload** |
@@ -42,7 +42,7 @@ same commit as any feature change.
 
 ## Retirement blockers for the ScriptUI panel
 
-1. Sunrise post-render card verified in AE and un-hidden in CEP
+1. ~~Sunrise post-render card un-hidden in CEP~~ ✅ enabled (v0.4.4) — pending one verified conversion in AE
 2. Google Drive mirror ported to CEP
 3. Import & standardize ported to CEP (or explicitly dropped)
 4. ~~CEP updater hardened~~ ✅ done (v0.4.0 — checksum, staged extract, atomic swap, rollback)

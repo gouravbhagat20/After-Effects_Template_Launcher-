@@ -18,9 +18,12 @@
     var osMod = nodeRequire("os");
     var T = window.BHTemplates;
 
-    var BH_VERSION = "0.4.3";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.4";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
     var CHANGELOG = {
+        "0.4.4": [
+            "Sunrise post-render is now available in the Render tab: convert a rendered PNG sequence to WebM / MOV / HTML / ZIP with progress and cancel"
+        ],
         "0.4.3": [
             "Per-unit size caps: Expandable files (750×1334) are auto-detected and optimized to under 4 MB (3.8 target); DOOH units keep the under-7 MB target (6.8)",
             "Mixed batches work — each file gets the right cap from its resolution"

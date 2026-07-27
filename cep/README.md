@@ -24,8 +24,7 @@ Feature-by-feature comparison with the ScriptUI tool: [../FEATURES.md](../FEATUR
   template-specific output modules (PNG+Alpha for Sunrise, H.264 for
   InterScroller/DOOH), optional send-to-Media-Encoder, project collect
   (standardized local copy with all linked assets + pack report), and
-  PNG-sequence post-render conversion (the Sunrise card is temporarily
-  hidden in the UI).
+  PNG-sequence post-render conversion (Sunrise card enabled since v0.4.4).
 - **Templates management (in Settings)** — add/edit/delete templates and
   generate missing placeholder `.aep` files. Templates, base folder, ffmpeg
   path, and recents are stored in AE preferences under the SAME section
