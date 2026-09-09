@@ -441,7 +441,16 @@
             var li = document.createElement("li");
             var base = r.path.split(/[\\/]/).pop();
             li.innerHTML = escapeHtml(base) + '<span class="path">' + escapeHtml(r.path) + "</span>";
+            li.tabIndex = 0;
+            li.setAttribute("role", "button");
+            li.title = r.path;
             li.addEventListener("click", function () { openProject(r.path); });
+            li.addEventListener("keydown", function (event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openProject(r.path);
+                }
+            });
             ul.appendChild(li);
         });
     }
@@ -504,7 +513,15 @@
     function updatePreview() {
         var v = npValues();
         var box = $("np-preview");
+        var summary = $("template-summary");
+        summary.classList.toggle("hidden", !v.t);
         if (!v.t) { box.textContent = "—"; return; }
+        $("template-summary-name").textContent = v.t.name;
+        $("template-summary-spec").textContent = v.t.width + " × " + v.t.height +
+            "  ·  " + v.t.fps + " fps  ·  " + v.t.duration + " s";
+        var ratio = Math.max(0.05, Number(v.t.width) / Number(v.t.height) || 1);
+        $("template-shape").style.width = Math.max(3, Math.min(44, 32 * ratio)) + "px";
+        $("template-shape").style.height = Math.max(3, Math.min(32, 44 / ratio)) + "px";
         var err = T.validate(v.brand || "Brand", v.campaign);
         var name = T.buildFilename(v.brand || "Brand", v.campaign, v.quarter,
             v.t.width + "x" + v.t.height, v.version, v.revision, T.isDOOHTemplate(v.t.name));

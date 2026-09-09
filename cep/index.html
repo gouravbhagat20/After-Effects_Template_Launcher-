@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BigHappy Launcher</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -9,6 +10,7 @@
 
 <!-- monochrome icon set (currentColor) -->
 <svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-sliders" viewBox="0 0 16 16"><path d="M3 2v12M8 2v12M13 2v12" stroke="currentColor" fill="none"/><path d="M1 5h4M6 11h4M11 6h4" stroke="currentColor" stroke-width="3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></symbol>
     <symbol id="i-folder" viewBox="0 0 16 16"><path d="M1.5 4.5h4.2l1.6 2h7.2v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/></symbol>
     <symbol id="i-save" viewBox="0 0 16 16"><path d="M3 2.5h8.5L14 5v8.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M5 2.5V6h5.5V2.5M5 14v-4.5h6V14" stroke="currentColor" stroke-width="1.4" fill="none"/></symbol>
@@ -26,7 +28,7 @@
         <span class="brand-mark" aria-hidden="true">BH</span>
         <span class="brand-copy">
             <span class="brand-name">BigHappy</span>
-            <span class="brand-sub">Project launcher</span>
+            <span class="brand-sub">Motion workspace</span>
         </span>
     </div>
     <div class="header-right">
@@ -37,10 +39,10 @@
 </header>
 
 <nav class="tabs" role="tablist" aria-label="BigHappy tools">
-    <button class="tab active" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-launcher" data-tab="launcher">Launcher</button>
-    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-render" data-tab="render">Render</button>
-    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-optimizer" data-tab="optimizer">DOOH</button>
-    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-settings" data-tab="settings">Settings</button>
+    <button class="tab active" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-launcher" data-tab="launcher"><svg class="ic" aria-hidden="true"><use href="#i-folder"/></svg>Launcher</button>
+    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-render" data-tab="render"><svg class="ic" aria-hidden="true"><use href="#i-film"/></svg>Render</button>
+    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-optimizer" data-tab="optimizer"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>DOOH</button>
+    <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-settings" data-tab="settings"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg>Settings</button>
 </nav>
 
 <!-- ============================= LAUNCHER ============================= -->
@@ -49,17 +51,26 @@
     <div class="page-intro">
         <div>
             <span class="eyebrow">Workspace</span>
-            <h1>Create a project</h1>
+            <h1>Make something great.</h1>
+            <p class="page-description">Your next project starts here.</p>
         </div>
-        <span class="page-intro-note">Template → named file</span>
+        <span class="page-intro-note">CREATE / ORGANIZE</span>
     </div>
 
-    <div class="card card-primary">
+    <div class="card card-primary" id="create-card">
         <div class="card-title"><span>Project details</span><span class="card-step">01</span></div>
         <label class="field">
             <span>Template</span>
             <select id="np-template"></select>
         </label>
+        <div id="template-summary" class="template-summary hidden">
+            <div class="template-stage" aria-hidden="true"><span id="template-shape"></span></div>
+            <div class="template-summary-copy">
+                <strong id="template-summary-name"></strong>
+                <span id="template-summary-spec"></span>
+            </div>
+            <span class="template-filetype" aria-hidden="true">AEP</span>
+        </div>
         <div class="row gap">
             <label class="field grow">
                 <span>Brand <b class="required" aria-label="required">*</b></span>
@@ -70,7 +81,7 @@
                 <input type="text" id="np-campaign" placeholder="SummerSale">
             </label>
         </div>
-        <div class="row gap">
+        <div class="row gap project-version-row">
             <label class="field grow">
                 <span>Year</span>
                 <select id="np-year"></select>
@@ -100,7 +111,7 @@
     </div>
 
     <div class="card" id="project-card">
-        <div class="card-title"><span>Current project</span><span class="card-step">02</span></div>
+        <div class="card-title"><span>Current project</span></div>
         <div id="project-info" class="project-info">
             <div class="muted">No project open.</div>
         </div>
@@ -111,7 +122,7 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="recents-card">
         <div class="card-title">Recent projects</div>
         <ul id="recent-list" class="recent-list">
             <li class="muted">Nothing yet — projects you open appear here.</li>
@@ -266,14 +277,14 @@
                 <span>Base work folder</span>
                 <div class="row gap">
                     <input type="text" id="set-basefolder" class="grow" placeholder="e.g. /Users/you/Work">
-                    <button id="btn-browse-base" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
+                    <button id="btn-browse-base" aria-label="Choose base work folder" title="Choose base work folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
                 </div>
             </label>
             <label class="field">
                 <span>Templates folder</span>
                 <div class="row gap">
                     <input type="text" id="set-tplfolder" class="grow" placeholder="Documents/BH_Templates">
-                    <button id="btn-browse-tpl" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
+                    <button id="btn-browse-tpl" aria-label="Choose templates folder" title="Choose templates folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
                 </div>
             </label>
         </div></div>
@@ -308,7 +319,7 @@
             <span>Template .aep (optional — leave empty to generate a placeholder)</span>
             <div class="row gap">
                 <input type="text" id="tpl-path" class="grow" placeholder="auto-generate">
-                <button id="btn-tpl-browse" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
+                <button id="btn-tpl-browse" aria-label="Choose template project file" title="Choose template project file" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
             </div>
         </label>
         <div class="row gap">

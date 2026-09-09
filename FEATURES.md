@@ -33,6 +33,8 @@ same commit as any feature change.
 | Collect linked assets (remove unused, pack report) | ✅ | ✅ | CEP collects to a chosen local folder |
 | Google Drive mirror (copy into local Drive-sync folder) | ✅ | ❌ | Not an API upload — filesystem mirror to the `gdrive_root` path. Port planned |
 | Shared `_Common_Assets` dedup on Drive | ✅ | ❌ | Part of the same routine |
+| **Interface** |
+| Responsive motion workspace (dark/light themes, template proportions and specs, keyboard-accessible recents) | ❌ | ✅ | Compact docked layout; two-column launcher at 720px and wider |
 | **Infrastructure** |
 | ffmpeg auto-detect / auto-install (Win + Mac) | ✅ | ✅ | Windows download SHA-256-verified |
 | Auto-update | ✅ | ✅ | ScriptUI: commit-SHA check + raw download. CEP: SHA-256-verified download, staged extract + validation, atomic swap, rollback backup kept until the new version boots |
