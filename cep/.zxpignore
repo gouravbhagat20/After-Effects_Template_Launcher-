@@ -1,0 +1,15 @@
+# Files that stay OUT of the packaged .zxp.
+#
+# Shared deliberately: build-zxp.sh stages with --exclude-from=this, and CI's
+# package-drift check stages the same way before diffing against the committed
+# zxp. Two copies of this list would drift and the check would report phantom
+# differences.
+.debug
+.zxpignore
+install-mac.sh
+install-win.bat
+build-zxp.sh
+*.md
+test
+package.json
+node_modules

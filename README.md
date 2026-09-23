@@ -103,6 +103,13 @@ Requires AE 2021+ (CEP 11). Signed — no PlayerDebugMode needed. See
 
 Requires AE CC 2019+.
 
+## How to Use
+
+See the **[BigHappy Launcher User Guide](USER_GUIDE.md)** for first-time setup
+and step-by-step instructions for creating projects, rendering, Sunrise
+conversion, collecting files, DOOH optimization, templates, updates, and
+troubleshooting.
+
 ---
 
 ## FFmpeg Setup
@@ -123,7 +130,7 @@ then set the path in Settings (`C:\ffmpeg\bin\ffmpeg.exe` or
 |---|---|
 | **R+** | `…_V1_R1.aep` → `…_V1_R2.aep` (small edits) |
 | **V+** | `…_V1_R3.aep` → `…_V2_R1.aep` (major changes, revision resets) |
-| **Collect** | Removes unused footage, collects linked assets, mirrors to the configured Google Drive folder (ScriptUI; CEP collect is local — see FEATURES.md) |
+| **Collect** | Removes unused footage, collects linked assets, mirrors to the configured NAS folder (ScriptUI; CEP collect is local — see FEATURES.md) |
 
 ---
 
@@ -132,9 +139,16 @@ then set the path in Settings (`C:\ffmpeg\bin\ffmpeg.exe` or
 - **Tests:** `cd cep && npm test` — headless Node test suite (naming, parsing,
   folder creation, path limits, bitrate math, backup-swap recovery, sequence
   detection). Runs in CI on macOS + Windows (`.github/workflows/ci.yml`).
-- **Releases:** ScriptUI ships on push; the CEP panel needs 4 synced changes —
-  `manifest.xml` versions, `BH_VERSION` + `CHANGELOG` in `cep/js/main.js`, and
-  the rebuilt `dist/*.zxp` (`./cep/build-zxp.sh`).
+- **Releases:** ScriptUI ships on push — any edit to
+  `BigHappyLauncher_Templates.jsx` must also regenerate its published checksum
+  (`shasum -a 256 BigHappyLauncher_Templates.jsx > BigHappyLauncher_Templates.jsx.sha256`);
+  the self-updater refuses downloads that don't match it, and CI fails if it is
+  stale. The CEP panel needs 4 synced changes — `manifest.xml` versions,
+  `BH_VERSION` in `cep/js/core.js`, a `CHANGELOG` entry in `cep/js/update-ui.js`,
+  and the rebuilt `dist/*.zxp` (`./cep/build-zxp.sh`); CI's
+  `release-consistency` job verifies they agree **and** that the committed zxp
+  was actually built from the current `cep/` tree — editing sources after
+  packaging used to ship a stale panel under a current version number.
 
 ### Manual QA checklist (before a CEP release)
 CI covers the pure logic; these need a human in front of AE:
@@ -143,6 +157,9 @@ CI covers the pure logic; these need a human in front of AE:
 - [ ] Render queue: Sunrise (PNG+Alpha → `PNG_Sequence/`), DOOH (H.264 → `MP4/`)
 - [ ] DOOH optimize: single + batch, output ≤ target, original recoverable on cancel
 - [ ] Post-render convert: WebM/MOV/HTML/ZIP from a real render
+- [ ] Interrupted-optimize recovery: start an optimize on footage used in the
+      project, force-quit AE mid-encode, reopen → the `BH_RELINK_*` placeholder
+      is relinked automatically and keeps its original name
 - [ ] Update flow: previous version notifies → installs → What's New shows
 - [ ] Matrix: Windows 10/11 + macOS, AE 2021 → current
 
@@ -170,6 +187,17 @@ CI covers the pure logic; these need a human in front of AE:
   This is the core reason the CEP panel exists; its encodes are fully async.
 - **Generated templates are spec placeholders** — bare comps at the right
   size/fps/duration; the full creative templates ship as `.aep` files.
+- **Updates trust this repository, and only this repository.** The panel
+  verifies every download against a published SHA-256 before installing, which
+  stops a corrupted or truncated transfer — but the checksum is served from the
+  same GitHub endpoint as the package itself. Anyone who could alter the
+  release could alter its checksum to match. There is no independent signing
+  key, so the security boundary is push access to this repo, not the checksum.
+  That is a deliberate trade-off for an internal tool distributed to a known
+  team.
+- **A host call that times out is abandoned, not cancelled.** If After Effects
+  is wedged on a modal dialog, the panel gives up after its per-call budget and
+  tells you so. AE may still finish the work afterwards.
 
 ---
 

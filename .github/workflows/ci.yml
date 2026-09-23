@@ -24,6 +24,14 @@ jobs:
         shell: bash
         run: |
           for f in js/*.js; do node --check "$f"; done
+      - name: Syntax-check host.jsx
+        working-directory: cep
+        shell: bash
+        # host.jsx is ExtendScript but written to also parse as modern JS;
+        # node --check refuses the .jsx extension, so check a .js copy.
+        run: |
+          cp jsx/host.jsx "$RUNNER_TEMP/host-check.js"
+          node --check "$RUNNER_TEMP/host-check.js"
       - name: Run test suite
         working-directory: cep
         run: node --test
@@ -40,4 +48,57 @@ jobs:
       # modern JS — a parse failure means a broken push for ScriptUI clients,
       # since any push to main IS the ScriptUI release.
       - name: Parse BigHappyLauncher_Templates.jsx
-        run: cp BigHappyLauncher_Templates.jsx /tmp/check.js && node --check /tmp/check.js
+        run: cp BigHappyLauncher_Templates.jsx "$RUNNER_TEMP/check.js" && node --check "$RUNNER_TEMP/check.js"
+      # The ScriptUI self-updater verifies downloads against this published
+      # checksum — a stale one bricks the update for every user.
+      - name: Verify ScriptUI published checksum
+        run: |
+          expected="$(awk '{print tolower($1)}' BigHappyLauncher_Templates.jsx.sha256)"
+          actual="$(shasum -a 256 BigHappyLauncher_Templates.jsx | awk '{print $1}')"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::BigHappyLauncher_Templates.jsx.sha256 is stale — regenerate with: shasum -a 256 BigHappyLauncher_Templates.jsx > BigHappyLauncher_Templates.jsx.sha256"
+            exit 1
+          fi
+
+  release-consistency:
+    name: CEP release consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A CEP release touches four places that must agree: the manifest
+      # (twice), BH_VERSION in main.js, a CHANGELOG entry, and the packaged
+      # zxp in dist/. A mismatch aborts users' auto-updates with
+      # "Package version mismatch", so fail the build instead.
+      - name: Check version sync
+        run: |
+          bundle_v="$(grep -oE 'ExtensionBundleVersion="[0-9.]+"' cep/CSXS/manifest.xml | grep -oE '[0-9.]+')"
+          ext_v="$(grep -oE '<Extension [^>]*Version="[0-9.]+"' cep/CSXS/manifest.xml | grep -oE '[0-9]+\.[0-9.]+')"
+          js_v="$(grep -oE 'BH_VERSION = "[0-9.]+"' cep/js/core.js | grep -oE '[0-9.]+')"
+          echo "manifest bundle=$bundle_v extension=$ext_v core.js=$js_v"
+          [ -n "$bundle_v" ] || { echo "::error::could not read ExtensionBundleVersion"; exit 1; }
+          [ -n "$js_v" ] || { echo "::error::could not read BH_VERSION from cep/js/core.js"; exit 1; }
+          [ "$bundle_v" = "$ext_v" ] && [ "$bundle_v" = "$js_v" ] || { echo "::error::manifest.xml and BH_VERSION disagree"; exit 1; }
+          grep -qF "\"$js_v\": [" cep/js/update-ui.js || { echo "::error::CHANGELOG in update-ui.js has no entry for $js_v"; exit 1; }
+          zxp="dist/BigHappyLauncher_v${js_v}.zxp"
+          [ -f "$zxp" ] || { echo "::error::$zxp not found — run cep/build-zxp.sh"; exit 1; }
+          expected="$(awk '{print tolower($1)}' "$zxp.sha256")"
+          actual="$(shasum -a 256 "$zxp" | awk '{print $1}')"
+          [ "$expected" = "$actual" ] || { echo "::error::$zxp.sha256 does not match $zxp"; exit 1; }
+
+      # The checks above only prove the zxp is internally consistent — its
+      # checksum matches ITSELF. They cannot tell a freshly built package from
+      # one built weeks ago, so editing cep/ after building shipped a stale
+      # panel under a current version number. Compare the contents.
+      - name: Check the packaged zxp matches the source tree
+        run: |
+          js_v="$(grep -oE 'BH_VERSION = "[0-9.]+"' cep/js/core.js | grep -oE '[0-9.]+')"
+          zxp="dist/BigHappyLauncher_v${js_v}.zxp"
+          mkdir -p /tmp/zxp /tmp/src
+          unzip -q "$zxp" -d /tmp/zxp
+          rm -rf /tmp/zxp/META-INF /tmp/zxp/mimetype   # added by the signer
+          rsync -a cep/ /tmp/src/ --exclude-from=cep/.zxpignore
+          if ! diff -r /tmp/src /tmp/zxp; then
+            echo "::error::$zxp does not match cep/ — it was built from different sources. Rebuild with cep/build-zxp.sh and commit the new zxp + .sha256."
+            exit 1
+          fi
+          echo "Package matches the source tree."

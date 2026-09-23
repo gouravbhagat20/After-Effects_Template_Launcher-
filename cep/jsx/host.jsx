@@ -169,6 +169,9 @@ var BH = (function () {
         } catch (e) { return fail(e); }
     };
 
+    /** Name prefix stamped onto footage items parked by releaseFileLock. */
+    var RELINK_PREFIX = "BH_RELINK_";
+
     /**
      * Release AE's lock on a file (point footage + render-queue output
      * modules at a temp placeholder) so ffmpeg/Node can replace it.
@@ -178,29 +181,40 @@ var BH = (function () {
      */
     api.releaseFileLock = function (path) {
         try {
-            var tokens = { items: [], oms: [] };
+            var tokens = { items: [], oms: [], failed: [] };
             var proj = app.project;
             if (!proj) return ok(tokens);
             var target = new File(path);
+            // Case-insensitive compare — Windows paths can differ only in
+            // case (same normalization getFootageIn uses); an exact compare
+            // left such items locked and the file swap failing.
+            var targetNorm = target.fsName.toLowerCase();
             var stamp = String(new Date().getTime());
 
             var rq = proj.renderQueue;
             for (var i = 1; i <= rq.numItems; i++) {
                 for (var j = 1; j <= rq.item(i).numOutputModules; j++) {
+                    var omMatched = false;
                     try {
                         var om = rq.item(i).outputModule(j);
-                        if (om.file && om.file.fsName === target.fsName) {
+                        if (om.file && om.file.fsName.toLowerCase() === targetNorm) {
+                            omMatched = true;
                             om.file = new File(Folder.temp.fsName + "/bh_lock_" + stamp + "_" + i + "_" + j + ".mp4");
                             tokens.oms.push({ rq: i, om: j });
                         }
-                    } catch (eOm) { }
+                    } catch (eOm) {
+                        // only report modules we KNOW reference the target
+                        if (omMatched) tokens.failed.push("render queue item " + i + " output " + j);
+                    }
                 }
             }
             for (var k = 1; k <= proj.numItems; k++) {
                 // Per-item try: one bad item must not leave the rest locked
+                var itName = null;
                 try {
                     var it = proj.item(k);
-                    if (it instanceof FootageItem && it.file && it.file.fsName === target.fsName) {
+                    if (it instanceof FootageItem && it.file && it.file.fsName.toLowerCase() === targetNorm) {
+                        itName = it.name;
                         // replace() throws when the target file doesn't exist on
                         // disk — use AE's built-in placeholder instead, clamped
                         // to its documented limits (fps 1-99, duration <= 10800,
@@ -215,43 +229,128 @@ var BH = (function () {
                         var phDur = it.duration > 0 ? it.duration : 1;
                         if (phDur > 10800) phDur = 10800;
                         var keepName = it.name;
-                        it.replaceWithPlaceholder("BH_RELINK_" + k, phW, phH, phFps, phDur);
+                        it.replaceWithPlaceholder(RELINK_PREFIX + k, phW, phH, phFps, phDur);
                         tokens.items.push({ index: k, name: keepName });
                     }
-                } catch (eItem) { }
+                } catch (eItem) {
+                    // only report items we KNOW reference the target file
+                    if (itName !== null) tokens.failed.push(itName);
+                }
             }
             return ok(tokens);
         } catch (e) { return fail(e); }
     };
 
-    /** Restore everything released by releaseFileLock to the given path. */
+    /** Restore everything released by releaseFileLock to the given path.
+        Items that fail to relink stay as BH_RELINK_* placeholders — their
+        names are returned in `failed` so the panel can warn the user. */
     api.restoreFileLock = function (tokens, path) {
         try {
             var f = new File(path);
             var done = 0;
+            var failed = [];
             var items = (tokens && tokens.items) || [];
             var oms = (tokens && tokens.oms) || [];
             for (var i = 0; i < items.length; i++) {
+                // tokens.items entries are {index, name}; tolerate the old
+                // bare-index shape from a stale panel page
+                var rec = items[i];
+                var idx = (rec && typeof rec === "object") ? rec.index : rec;
+                var label = (rec && typeof rec === "object" && rec.name)
+                    ? rec.name : ("footage item #" + idx);
                 try {
-                    // tokens.items entries are {index, name}; tolerate the old
-                    // bare-index shape from a stale panel page
-                    var rec = items[i];
-                    var idx = (rec && typeof rec === "object") ? rec.index : rec;
                     var it = app.project.item(idx);
                     if (it instanceof FootageItem) {
                         it.replace(f);
                         if (rec && typeof rec === "object" && rec.name) it.name = rec.name;
                         done++;
+                    } else {
+                        failed.push(label);
                     }
-                } catch (e) { }
+                } catch (e) {
+                    failed.push(label);
+                }
             }
             for (var j = 0; j < oms.length; j++) {
                 try {
                     app.project.renderQueue.item(oms[j].rq).outputModule(oms[j].om).file = f;
                     done++;
-                } catch (e) { }
+                } catch (e) {
+                    failed.push("render queue item " + oms[j].rq + " output " + oms[j].om);
+                }
             }
-            return ok({ restored: done });
+            return ok({ restored: done, failed: failed });
+        } catch (e) { return fail(e); }
+    };
+
+    /**
+     * Footage items still parked as BH_RELINK_* placeholders.
+     *
+     * A complete optimize round-trip leaves none behind — restoreFileLock
+     * relinks everything releaseFileLock parked. Any item that shows up here
+     * is the residue of an INTERRUPTED run (panel closed, AE quit, or the
+     * encode crashed between release and restore). Before this existed such
+     * footage was stranded as a placeholder with no route back except a
+     * manual relink the user had to figure out themselves.
+     */
+    api.findRelinkPlaceholders = function () {
+        try {
+            var out = [];
+            var proj = app.project;
+            if (!proj) return ok(out);
+            for (var i = 1; i <= proj.numItems; i++) {
+                try {
+                    var it = proj.item(i);
+                    if (it instanceof FootageItem && String(it.name).indexOf(RELINK_PREFIX) === 0) {
+                        out.push({ index: i, name: it.name });
+                    }
+                } catch (eItem) { /* skip unreadable item, keep scanning */ }
+            }
+            return ok(out);
+        } catch (e) { return fail(e); }
+    };
+
+    /**
+     * Point every stranded BH_RELINK_* placeholder back at `path` — the
+     * panel's boot-time recovery sweep.
+     *
+     * `tokens` is the record the panel saved before releasing, when it still
+     * has it: its items carry the ORIGINAL names so they can be restored
+     * exactly. Without it (the record is lost if AE died before the panel
+     * could persist it) the items are still relinked, but take the
+     * replacement file's name — recoverable footage beats a pristine name.
+     */
+    api.recoverPlaceholders = function (path, tokens) {
+        try {
+            var f = new File(path);
+            if (!f.exists) return fail("File not found: " + path);
+
+            var named = {};
+            var recorded = (tokens && tokens.items) || [];
+            for (var t = 0; t < recorded.length; t++) {
+                var rec = recorded[t];
+                if (rec && typeof rec === "object" && rec.name) named[rec.index] = rec.name;
+            }
+
+            var restored = 0;
+            var failed = [];
+            var proj = app.project;
+            if (!proj) return ok({ restored: 0, failed: failed });
+            for (var i = 1; i <= proj.numItems; i++) {
+                var label = null;
+                try {
+                    var it = proj.item(i);
+                    if (!(it instanceof FootageItem)) continue;
+                    if (String(it.name).indexOf(RELINK_PREFIX) !== 0) continue;
+                    label = it.name;
+                    it.replace(f);
+                    if (named[i]) it.name = named[i];
+                    restored++;
+                } catch (eItem) {
+                    if (label !== null) failed.push(label);
+                }
+            }
+            return ok({ restored: restored, failed: failed });
         } catch (e) { return fail(e); }
     };
 
@@ -572,9 +671,9 @@ var BH = (function () {
             var mainComp = findMainComp();
             if (mainComp) mainComp.openInViewer();
 
-            importGlobalAssets();
+            var globalAssets = importGlobalAssets();
 
-            return ok({ saved: app.project.file.fsName });
+            return ok({ saved: app.project.file.fsName, globalAssets: globalAssets });
         } catch (e) { return fail(e); }
     };
 
@@ -637,8 +736,11 @@ var BH = (function () {
         layer.property("Position").setValue([x, y]);
     }
 
-    /** Port of importGlobalAssets: pull templatesFolder/_GlobalAssets into a 00_Global_Assets bin. */
+    /** Port of importGlobalAssets: pull templatesFolder/_GlobalAssets into a
+        00_Global_Assets bin. Returns { imported, failed: [fileNames], error? }
+        so a partial import no longer looks like a clean success. */
     function importGlobalAssets() {
+        var result = { imported: 0, failed: [] };
         try {
             var templatesFolder = null;
             if (app.settings.haveSetting(SETTINGS_SECTION, "templates_folder")) {
@@ -647,10 +749,10 @@ var BH = (function () {
                 templatesFolder = Folder.myDocuments.fsName + "/BH_Templates";
             }
             var folder = new Folder(templatesFolder + "/_GlobalAssets");
-            if (!folder.exists) return;
+            if (!folder.exists) return result;
 
             var files = folder.getFiles();
-            if (!files || files.length === 0) return;
+            if (!files || files.length === 0) return result;
 
             var binName = "00_Global_Assets";
             var bin = null;
@@ -667,10 +769,17 @@ var BH = (function () {
                     var io = new ImportOptions(fileObj);
                     if (io.canImportAs(ImportAsType.FOOTAGE)) {
                         app.project.importFile(io).parentFolder = bin;
+                        result.imported++;
                     }
-                } catch (impErr) { }
+                } catch (impErr) {
+                    result.failed.push(decodeURI(fileObj.name));
+                }
             }
-        } catch (e) { }
+        } catch (e) {
+            // whole-import failure (bin creation, folder listing, …)
+            result.error = String(e);
+        }
+        return result;
     }
 
     return api;

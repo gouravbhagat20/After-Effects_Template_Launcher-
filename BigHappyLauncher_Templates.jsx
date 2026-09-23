@@ -72,7 +72,11 @@
         if (!a) return b;
         if (!b) return a;
         var combo = a + SEP + b;
-        return combo.replace(/[\/\\]+/g, SEP);
+        // Keep a leading UNC prefix (\\nas\share) intact — collapsing it to a
+        // single slash would turn a network share into a local path.
+        var unc = /^[\/\\]{2}[^\/\\]/.test(a);
+        combo = combo.replace(/[\/\\]+/g, SEP);
+        return unc ? SEP + combo : combo;
     }
 
     /**
@@ -194,7 +198,7 @@
     // =========================================================================
 
     var CONFIG = {
-        VERSION: "1.2", // Production Release
+        VERSION: "1.3", // Production Release — shell-quoting hardening, verified self-update + ffmpeg downloads, per-unit size caps
         UPDATE: {
             // Any push to main that touches this file makes every installed
             // copy offer the update on next launch (see SECTION 4C)
@@ -221,7 +225,7 @@
                 POST_RENDER_ZIP: "post_render_zip",
                 TARGET_SIZE_MB: "target_size_mb",
                 DOOH_TARGET_MB: "dooh_target_mb",
-                GDRIVE_ROOT: "gdrive_root"
+                NAS_ROOT: "nas_root"
             },
             MAX_RECENT_FILES: 10
         },
@@ -237,11 +241,11 @@
         },
         DEFAULTS: {
             TEMPLATES: [
-                { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\Sunrise_750x300.aep" },
-                { name: "InterScroller", width: 880, height: 1912, fps: 24, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\InterScroller_880x1912_.aep" },
-                { name: "Expandable", width: 750, height: 1334, fps: 24, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\Expandable_750x1334.aep" },
-                { name: "DOOH Horizontal", width: 1920, height: 1080, fps: 29.97, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\Dooh-Horizontal_1920x1080.aep" },
-                { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "C:\\Work\\Animate CC\\Scripts_Tools\\BH_Launcher_Plugin\\templates\\Dooh-Vertical_1080X1920.aep" }
+                { name: "Sunrise", width: 750, height: 300, fps: 24, duration: 15, path: "" },
+                { name: "InterScroller", width: 880, height: 1912, fps: 24, duration: 15, path: "" },
+                { name: "Expandable", width: 750, height: 1334, fps: 24, duration: 15, path: "" },
+                { name: "DOOH Horizontal", width: 1920, height: 1080, fps: 29.97, duration: 15, path: "" },
+                { name: "DOOH Vertical", width: 1080, height: 1920, fps: 29.97, duration: 15, path: "" }
             ]
         },
         LIMITS: {
@@ -362,8 +366,12 @@
     }
 
     // =========================================================================
-    // SECTION 1B.1: GOOGLE DRIVE SYNC LOGIC
+    // SECTION 1B.1: NAS SYNC LOGIC
     // =========================================================================
+
+    function getNasRoot() {
+        return getSetting(CONFIG.SETTINGS.KEYS.NAS_ROOT, "");
+    }
 
     function copyFolderRecursive(sourceFolder, destFolder) {
         if (!sourceFolder.exists) return false;
@@ -385,7 +393,7 @@
     /**
      * Get or create a numbered project folder in the target directory.
      * Scans for existing "##.FolderName" patterns and reuses if found, otherwise increments.
-     * @param {string} quarterFolderPath - Path to the quarter folder (e.g., "Drive/2026/Q1")
+     * @param {string} quarterFolderPath - Path to the quarter folder (e.g., "NAS/2026/Q1")
      * @param {string} projectName - The project name without number prefix (e.g., "Brand_Campaign")
      * @returns {string} The full numbered folder name (e.g., "03.Brand_Campaign")
      */
@@ -437,9 +445,13 @@
         // 1. Validation
         if (!app.project || !app.project.file) { showError("BH-2003"); return; }
 
-        var driveRoot = getSetting(CONFIG.SETTINGS.KEYS.GDRIVE_ROOT, "");
-        if (!driveRoot || !new Folder(driveRoot).exists) {
-            alert("Google Drive Root path is not set or invalid.\n\nPlease go to Settings > System > Google Drive Root.");
+        var nasRoot = getNasRoot();
+        if (!nasRoot) {
+            alert("NAS Root path is not set.\n\nPlease go to Settings > System > NAS Root.");
+            return;
+        }
+        if (!new Folder(nasRoot).exists) {
+            alert("NAS Root is not reachable:\n" + nasRoot + "\n\nCheck the NAS is connected / the share is mounted, or update Settings > System > NAS Root.");
             return;
         }
 
@@ -570,8 +582,8 @@
 
             if (checkCancelled(currentFile)) return;
 
-            // 4. UPLOAD TO DRIVE (Smart Mirroring)
-            updateProgress("Connecting to Drive...", 7);
+            // 4. UPLOAD TO NAS (Smart Mirroring)
+            updateProgress("Connecting to NAS...", 7);
 
             var year = ui.dropdowns.year.selection ? ui.dropdowns.year.selection.text : String(getCurrentYear());
             // Always use current quarter from UI dropdown (defaults to current date quarter)
@@ -591,8 +603,8 @@
                 if (cName) projectFolderName += "_" + cName;
             }
 
-            // Construct Drive Paths
-            var pYear = joinPath(driveRoot, year);
+            // Construct NAS Paths
+            var pYear = joinPath(nasRoot, year);
             var pQuarter = joinPath(pYear, quarter);
 
             // Use incremental numbering helper
@@ -615,14 +627,14 @@
             var pTemplateFolder = joinPath(pAEBase, templateGroup);
             var pAE = joinPath(pTemplateFolder, collectFolderName);
 
-            // Define Drive Path for Shared Assets
-            var driveCommonAssets = new Folder(joinPath(pAE, "_Common_Assets"));
+            // Define NAS Path for Shared Assets
+            var nasCommonAssets = new Folder(joinPath(pAE, "_Common_Assets"));
 
-            // Create Drive Structure
-            updateProgress("Creating Drive structure...", 8);
+            // Create NAS Structure
+            updateProgress("Creating NAS structure...", 8);
             if (!createFolderRecursive(pAE)) {
                 w.close();
-                alert("Failed to create Drive folders:\n" + pAE + "\n\nCheck permissions.");
+                alert("Failed to create NAS folders:\n" + pAE + "\n\nCheck the NAS is connected and you have write permission.");
                 return;
             }
 
@@ -632,23 +644,23 @@
             updateProgress("Syncing Shared Assets...", 9);
 
             if (localCommonAssets.exists) {
-                // Ensure drive common folder exists
-                if (!createFolderRecursive(driveCommonAssets.fsName)) {
+                // Ensure NAS common folder exists
+                if (!createFolderRecursive(nasCommonAssets.fsName)) {
                     // Try standard create if recursive fails or returns false
-                    driveCommonAssets.create();
+                    nasCommonAssets.create();
                 }
 
                 var commonFiles = localCommonAssets.getFiles();
                 for (var cf = 0; cf < commonFiles.length; cf++) {
                     var cFile = commonFiles[cf];
                     if (cFile instanceof File) {
-                        var driveFile = new File(joinPath(driveCommonAssets.fsName, cFile.name));
-                        if (!driveFile.exists) {
-                            cFile.copy(driveFile); // Only copy if missing
+                        var nasFile = new File(joinPath(nasCommonAssets.fsName, cFile.name));
+                        if (!nasFile.exists) {
+                            cFile.copy(nasFile); // Only copy if missing
                         }
                     }
                 }
-                writeLog("Synced Shared Assets to: " + driveCommonAssets.fsName, "INFO");
+                writeLog("Synced Shared Assets to: " + nasCommonAssets.fsName, "INFO");
             }
 
             if (checkCancelled(currentFile)) return;
@@ -656,10 +668,10 @@
             // Project File Destination — pAE already ends in collectFolderName
             // (joined at pTemplateFolder above); joining it again would create
             // .../ProjectName/ProjectName/
-            var driveRevisionFolder = new Folder(pAE);
-            if (!driveRevisionFolder.exists) driveRevisionFolder.create();
+            var nasRevisionFolder = new Folder(pAE);
+            if (!nasRevisionFolder.exists) nasRevisionFolder.create();
 
-            var driveAepPath = joinPath(driveRevisionFolder.fsName, currentName + ".aep");
+            var nasAepPath = joinPath(nasRevisionFolder.fsName, currentName + ".aep");
 
             // Copy AEP with Retry
             updateProgress("Uploading Project File...", 10);
@@ -668,9 +680,9 @@
             var maxRetries = 3;
 
             for (var attempt = 1; attempt <= maxRetries; attempt++) {
-                if (localFile.copy(driveAepPath)) {
+                if (localFile.copy(nasAepPath)) {
                     uploadSuccess = true;
-                    writeLog("Uploaded Project: " + driveAepPath, "INFO");
+                    writeLog("Uploaded Project: " + nasAepPath, "INFO");
                     break;
                 } else {
                     writeLog("Upload attempt " + attempt + " failed. Retrying...", "WARN");
@@ -680,7 +692,7 @@
 
             if (!uploadSuccess) {
                 w.close();
-                alert("Failed to copy project file to Drive after " + maxRetries + " attempts.");
+                alert("Failed to copy project file to NAS after " + maxRetries + " attempts.\n\nCheck the NAS connection.");
                 return;
             }
 
@@ -688,7 +700,7 @@
             $.sleep(200);
             w.close();
 
-            var resultMsg = "Pack & Upload Complete: " + driveAepPath;
+            var resultMsg = "Pack & Upload Complete: " + nasAepPath;
             ui.setStatus(resultMsg, [0, 0.8, 0]); // GREEN Status
             // alert(resultMsg); // Disabled per user request
 
@@ -733,6 +745,80 @@
     function fileExists(path) {
         if (!path) return false;
         return new File(path).exists;
+    }
+
+    // -------------------------------------------------------------------------
+    // Shell-safe quoting helpers (SECURITY)
+    // Every path/filename/variable interpolated into a system.callSystem()
+    // command or into a generated .bat/.sh script MUST go through one of these.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Reject strings that can never be quoted safely: newlines and carriage
+     * returns break out of any quoting and corrupt generated script files.
+     * Throws so the caller aborts before building the command.
+     */
+    function assertShellSafe(str) {
+        str = String(str);
+        if (str.indexOf("\n") !== -1 || str.indexOf("\r") !== -1) {
+            throw new Error("Unsafe path or argument (contains a line break) — cannot build a shell command from it.");
+        }
+        return str;
+    }
+
+    /**
+     * POSIX-safe single-quoting for macOS: wrap in single quotes with embedded
+     * single quotes escaped as '\''. Safe for direct callSystem() strings and
+     * for content written into generated .sh files.
+     */
+    function shQuote(str) {
+        str = assertShellSafe(str);
+        return "'" + str.replace(/'/g, "'\\''") + "'";
+    }
+
+    /**
+     * Windows cmd quoting for direct callSystem() strings: wrap in double
+     * quotes. `"` is illegal in Windows filenames, so strip it defensively
+     * rather than trying to escape it.
+     */
+    function cmdQuote(str) {
+        str = assertShellSafe(str).replace(/"/g, "");
+        return "\"" + str + "\"";
+    }
+
+    /**
+     * Same as cmdQuote, but for text written into a .bat file: `%` must be
+     * doubled or cmd expands it as a variable reference. Inside double quotes
+     * cmd treats & ^ ( ) ; literally, so quoting + %-escaping is sufficient.
+     */
+    function batQuote(str) {
+        str = assertShellSafe(str).replace(/"/g, "").replace(/%/g, "%%");
+        return "\"" + str + "\"";
+    }
+
+    /**
+     * Quote one argument for the current platform's direct callSystem() line.
+     */
+    function shellQuote(str) {
+        return ($.os.indexOf("Windows") !== -1) ? cmdQuote(str) : shQuote(str);
+    }
+
+    /**
+     * Quote one argument for generated script CONTENT (.bat on Windows,
+     * .sh on macOS).
+     */
+    function quoteForScript(str, isWin) {
+        return isWin ? batQuote(str) : shQuote(str);
+    }
+
+    /**
+     * PowerShell single-quoting (embedded ' doubled). Pass forBat=true when
+     * the PowerShell command line is written into a .bat file (% doubled too).
+     */
+    function psQuote(str, forBat) {
+        str = assertShellSafe(str).replace(/'/g, "''");
+        if (forBat) str = str.replace(/%/g, "%%");
+        return "'" + str + "'";
     }
 
     // Removed Duplicate folderExists and createFolderRecursive
@@ -1517,6 +1603,24 @@
     }
 
     /**
+     * Per-unit delivery caps (parity with the CEP panel v0.4.3): Expandable
+     * (750x1334) must ship under 4 MB -> effective target capped at 3.8;
+     * DOOH units must ship under 7 MB -> capped at 6.8 (same 0.2 safety
+     * margin). Only the EFFECTIVE target is clamped — the user's saved
+     * settings are untouched, and a manually lowered target still wins.
+     * @param {number} targetMB - User-configured target size
+     * @param {number} width - Unit width in px (0/undefined = unknown)
+     * @param {number} height - Unit height in px
+     * @returns {number} Effective target size in MB
+     */
+    function capTargetForUnit(targetMB, width, height) {
+        var type = getTemplateType(width || 0, height || 0);
+        if (type === "expandable") return Math.min(targetMB, 3.8);
+        if (type === "dooh_horizontal" || type === "dooh_vertical") return Math.min(targetMB, 6.8);
+        return targetMB;
+    }
+
+    /**
      * Robust project name parser - parses from the END
      * 
      * REQUIRED pattern at end: _<width>x<height>_V<n>_R<n>
@@ -2165,6 +2269,52 @@
     }
 
     /**
+     * Compute the SHA-256 of a file using the OS: shasum on macOS, certutil
+     * on Windows. Returns the lowercase 64-hex digest, or "" on failure.
+     */
+    function computeFileSHA256(filePath) {
+        var out = "";
+        try {
+            var isWin = ($.os.indexOf("Windows") !== -1);
+            var cmd = isWin
+                ? "certutil -hashfile " + cmdQuote(filePath) + " SHA256"
+                : "/usr/bin/shasum -a 256 " + shQuote(filePath);
+            out = system.callSystem(cmd) || "";
+        } catch (e) { out = ""; }
+        if (!out) return "";
+        var lines = String(out).replace(/\r/g, "").split("\n");
+        for (var i = 0; i < lines.length; i++) {
+            // certutil prints the hex on its own line, possibly with spaces
+            var flat = lines[i].replace(/\s+/g, "").toLowerCase();
+            if (/^[0-9a-f]{64}$/.test(flat)) return flat;
+            // shasum prints "<hash>  <filename>"
+            var m = lines[i].toLowerCase().match(/^([0-9a-f]{64})\s/);
+            if (m) return m[1];
+        }
+        return "";
+    }
+
+    /**
+     * Download the companion checksum file "<rawUrl>.sha256" (published by the
+     * release pipeline at the same pinned commit) and return the expected
+     * lowercase SHA-256, or "" if it cannot be fetched or parsed.
+     */
+    function fetchRemoteSha256(rawUrl) {
+        var shaFile = new File(Folder.temp.fsName + "/bh_launcher_update.sha256");
+        try { if (shaFile.exists) shaFile.remove(); } catch (e) { }
+        try {
+            system.callSystem("curl -s -L -m 30 -o " + shellQuote(shaFile.fsName) + " " + shellQuote(rawUrl + ".sha256"));
+        } catch (e) { }
+        var text = readFileText(shaFile);
+        try { if (shaFile.exists) shaFile.remove(); } catch (e) { }
+        // Standard `shasum` output is well under 300 chars; anything larger is
+        // an error page, not a checksum file.
+        if (!text || text.length > 300) return "";
+        var m = text.match(/\b[0-9a-fA-F]{64}\b/);
+        return m ? m[0].toLowerCase() : "";
+    }
+
+    /**
      * Check GitHub for a newer version of this script and (with the user's
      * one-click confirmation) install it over the running copy.
      * Update detection: latest commit SHA touching this file on main,
@@ -2193,7 +2343,7 @@
 
             // 1. Latest commit SHA for this file on main
             var apiRaw = "";
-            try { apiRaw = system.callSystem('curl -s -m 8 "' + CONFIG.UPDATE.API_URL + '"') || ""; } catch (e) { apiRaw = ""; }
+            try { apiRaw = system.callSystem('curl -s -m 8 ' + shellQuote(CONFIG.UPDATE.API_URL)) || ""; } catch (e) { apiRaw = ""; }
             var shaMatch = apiRaw.match(/"sha"\s*:\s*"([0-9a-f]{40})"/);
             if (!shaMatch) {
                 // Offline, rate-limited, or GitHub unreachable — never nag at launch
@@ -2217,7 +2367,9 @@
             var rawUrl = CONFIG.UPDATE.RAW_URL.replace("/main/", "/" + remoteSha + "/");
             var tmpFile = new File(Folder.temp.fsName + "/bh_launcher_update.jsx");
             try { if (tmpFile.exists) tmpFile.remove(); } catch (e) { }
-            try { system.callSystem('curl -s -L -m 60 -o "' + tmpFile.fsName + '" "' + rawUrl + '"'); } catch (e) { }
+            try { system.callSystem('curl -s -L -m 60 -o ' + shellQuote(tmpFile.fsName) + ' ' + shellQuote(rawUrl)); } catch (e) {
+                writeLog("Update download command failed: " + e.toString(), "WARN");
+            }
 
             var newContent = readFileText(tmpFile);
             if (!isValidScriptDownload(newContent)) {
@@ -2251,6 +2403,25 @@
                 return;
             }
 
+            // 5. INTEGRITY CHECK — fail closed. The release pipeline publishes
+            // BigHappyLauncher_Templates.jsx.sha256 at the same pinned commit;
+            // if it can't be fetched, is malformed, or doesn't match the
+            // download, abort without touching the installed script.
+            var expectedSha = fetchRemoteSha256(rawUrl);
+            if (!expectedSha) {
+                try { if (tmpFile.exists) tmpFile.remove(); } catch (e) { }
+                writeLog("Self-update aborted: checksum file missing or malformed for " + remoteSha.substring(0, 7), "WARN");
+                alert("Update aborted: the update's checksum file could not be downloaded or was malformed.\n\nThe installed script was NOT changed. Please try again later.");
+                return;
+            }
+            var actualSha = computeFileSHA256(tmpFile.fsName);
+            if (!actualSha || actualSha !== expectedSha) {
+                try { if (tmpFile.exists) tmpFile.remove(); } catch (e) { }
+                writeLog("Self-update aborted: SHA-256 mismatch (expected " + expectedSha + ", got " + (actualSha || "none") + ")", "WARN");
+                alert("Update aborted: the downloaded file failed integrity verification (SHA-256 mismatch).\n\nThe installed script was NOT changed.");
+                return;
+            }
+
             var target = new File(SCRIPT_SELF_PATH);
 
             // Keep a recovery copy next to the install (overwritten each update)
@@ -2281,6 +2452,16 @@
     }
 
     function generateLoaderFile(sourcePath, isUrl) {
+        // SECURITY: sourcePath is embedded in a generated JSX string literal
+        // that is later interpolated into a curl command line. Reject line
+        // breaks and escape backslashes/quotes so it cannot break out of the
+        // literal (or out of the quoted curl argument) in the generated file.
+        try {
+            sourcePath = assertShellSafe(sourcePath).replace(/\\/g, "\\\\").replace(/"/g, "");
+        } catch (e) {
+            alert("Cannot generate loader: the source path/URL contains characters that cannot be embedded safely (line breaks).");
+            return;
+        }
         var loaderContent =
             '/**\n' +
             ' * BigHappyLauncher LOADER Script\n' +
@@ -2683,7 +2864,7 @@
             if (!exePath) { ffmpegVerLbl.text = "—"; return; }
             try {
                 var _isWinVer = ($.os.indexOf("Windows") !== -1);
-                var cmd = _isWinVer ? ("\"" + exePath + "\" -version") : ("\"" + exePath + "\" -version 2>&1");
+                var cmd = _isWinVer ? (cmdQuote(exePath) + " -version") : (shQuote(exePath) + " -version 2>&1");
                 var raw = system.callSystem(cmd);
                 var firstLine = raw ? raw.split(/[\r\n]/)[0] : "";
                 var m = firstLine.match(/version\s+(\S+)/);
@@ -2766,19 +2947,19 @@
             if (f.exists) f.execute(); else alert("Log file not found.");
         };
 
-        // Google Drive
-        var driveGrp = sysTab.add("panel", undefined, "Google Drive Sync");
-        driveGrp.alignChildren = ["left", "top"];
-        driveGrp.add("statictext", undefined, "Google Drive Root Folder:");
-        var driveRow = driveGrp.add("group");
-        var driveInput = driveRow.add("edittext", undefined, getSetting(CONFIG.SETTINGS.KEYS.GDRIVE_ROOT, ""));
-        driveInput.preferredSize.width = 250;
-        var driveBtn = driveRow.add("button", undefined, "...");
-        driveBtn.onClick = function () {
-            var f = Folder.selectDialog("Select Google Drive Root (e.g. G:/My Drive)");
-            if (f) driveInput.text = f.fsName;
+        // NAS
+        var nasGrp = sysTab.add("panel", undefined, "NAS Sync");
+        nasGrp.alignChildren = ["left", "top"];
+        nasGrp.add("statictext", undefined, "NAS Root Folder:");
+        var nasRow = nasGrp.add("group");
+        var nasInput = nasRow.add("edittext", undefined, getNasRoot());
+        nasInput.preferredSize.width = 250;
+        var nasBtn = nasRow.add("button", undefined, "...");
+        nasBtn.onClick = function () {
+            var f = Folder.selectDialog("Select NAS Root (e.g. \\\\NAS\\Projects or /Volumes/Projects)");
+            if (f) nasInput.text = f.fsName;
         };
-        driveGrp.add("statictext", undefined, "Structure: Root / Year / Quarter / 00.Brand_Campaign / AE");
+        nasGrp.add("statictext", undefined, "Structure: Root / Year / Quarter / 00.Brand_Campaign / AE");
 
 
         // --- BOTTOM BUTTONS ---
@@ -2908,7 +3089,7 @@
             if (!isNaN(dSize)) setSetting(CONFIG.SETTINGS.KEYS.DOOH_TARGET_MB, String(dSize));
 
             // Save System Settings
-            setSetting(CONFIG.SETTINGS.KEYS.GDRIVE_ROOT, driveInput.text);
+            setSetting(CONFIG.SETTINGS.KEYS.NAS_ROOT, nasInput.text);
 
             // Save Templates
             saveTemplates(ui.templates);
@@ -3378,7 +3559,10 @@
     // =========================================================================
 
     function escapePath(path) {
-        return "\"" + path + "\"";
+        // Platform-aware shell quoting (see shellQuote/cmdQuote/shQuote in
+        // SECTION 2) — previously this only wrapped in double quotes with no
+        // escaping, which allowed shell injection through crafted paths.
+        return shellQuote(path);
     }
 
     function getNullDev() {
@@ -3405,7 +3589,7 @@
             var f = new File(portablePaths[i]);
             if (f.exists) {
                 // Verify it works
-                var cmdPortable = '"' + portablePaths[i] + '" -version'; // Use simple quotes, avoid escapePath for now to be safe
+                var cmdPortable = escapePath(portablePaths[i]) + " -version";
                 if (isWin) cmdPortable = 'cmd /c "' + cmdPortable + '"';
 
                 var resP = system.callSystem(cmdPortable);
@@ -3677,8 +3861,8 @@
         // Method 1: Try FFprobe (preferred)
         if (ffprobePath) {
             try {
-                var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
-                var cmd = exe + ' -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + inputPath + '"';
+                var exe = ffprobePath ? shellQuote(ffprobePath) : "ffprobe";
+                var cmd = exe + ' -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ' + shellQuote(inputPath);
                 if (isWin) cmd = 'cmd /c ' + cmd;
 
                 var result = system.callSystem(cmd);
@@ -3698,13 +3882,13 @@
         if (ffmpegPath) {
             try {
                 var tempOutput = Folder.temp.fsName + (isWin ? "\\ffmpeg_dur_" + new Date().getTime() + ".txt" : "/ffmpeg_dur_" + new Date().getTime() + ".txt");
-                var exe = '"' + ffmpegPath + '"';
-                var cmd2 = exe + ' -nostdin -i "' + inputPath + '"';
-                
+                var exe = shellQuote(ffmpegPath);
+                var cmd2 = exe + ' -nostdin -i ' + shellQuote(inputPath);
+
                 if (isWin) {
-                    cmd2 = 'cmd /c ' + cmd2 + ' > "' + tempOutput + '" 2>&1';
+                    cmd2 = 'cmd /c ' + cmd2 + ' > ' + shellQuote(tempOutput) + ' 2>&1';
                 } else {
-                    cmd2 = cmd2 + ' > "' + tempOutput + '" 2>&1';
+                    cmd2 = cmd2 + ' > ' + shellQuote(tempOutput) + ' 2>&1';
                 }
                 
                 system.callSystem(cmd2);
@@ -3756,15 +3940,15 @@
 
         // Try FFprobe to get width, height, and duration
         try {
-            var exe = ffprobePath ? '"' + ffprobePath + '"' : "ffprobe";
+            var exe = ffprobePath ? shellQuote(ffprobePath) : "ffprobe";
             var tempOutput = Folder.temp.fsName + (isWin ? "\\ffprobe_info_" + new Date().getTime() + ".txt" : "/ffprobe_info_" + new Date().getTime() + ".txt");
 
             // Get width, height from video stream, duration from format
-            var cmd = exe + ' -v error -select_streams v:0 -show_entries stream=width,height -show_entries format=duration -of default=noprint_wrappers=1 "' + inputPath + '"';
+            var cmd = exe + ' -v error -select_streams v:0 -show_entries stream=width,height -show_entries format=duration -of default=noprint_wrappers=1 ' + shellQuote(inputPath);
             if (isWin) {
-                cmd = 'cmd /c ' + cmd + ' > "' + tempOutput + '" 2>&1';
+                cmd = 'cmd /c ' + cmd + ' > ' + shellQuote(tempOutput) + ' 2>&1';
             } else {
-                cmd = cmd + ' > "' + tempOutput + '" 2>&1';
+                cmd = cmd + ' > ' + shellQuote(tempOutput) + ' 2>&1';
             }
 
             system.callSystem(cmd);
@@ -4001,7 +4185,7 @@
         // Sharp text on the re-encode: negative deblock (was -tune animation,
         // which softens edges with deblock 1,1), psy-rd + aq-strength for detail.
         var strictParams = "-x264-params \"aq-mode=3:aq-strength=1.2:psy-rd=1.00,0.15:deblock=-1,-1:trellis=2\"";
-        var cmd = exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset slow -profile:v high -pix_fmt yuv420p -movflags +faststart " + strictParams + " " + strictFlags + " -c:a aac -b:a 96k \"" + strictPath + "\"";
+        var cmd = exe + " -y -i " + quoteForScript(inputPath, isWin) + " -c:v libx264 -preset slow -profile:v high -pix_fmt yuv420p -movflags +faststart " + strictParams + " " + strictFlags + " -c:a aac -b:a 96k " + quoteForScript(strictPath, isWin);
         var body = isWin
             ? "@echo off\r\nchcp 65001 >NUL\r\n" + cmd + " 2>NUL\r\n"
             : "#!/bin/bash\n" + cmd + " 2>/dev/null\n";
@@ -4010,7 +4194,7 @@
         if (!isWin) sf.lineFeed = "unix";
         sf.write(body);
         sf.close();
-        system.callSystem(isWin ? 'cmd /c "' + strictScriptPath + '"' : "chmod +x \"" + strictScriptPath + "\" && \"" + strictScriptPath + "\"");
+        system.callSystem(isWin ? 'cmd /c ' + cmdQuote(strictScriptPath) : "chmod +x " + shQuote(strictScriptPath) + " && " + shQuote(strictScriptPath));
         try { sf.remove(); } catch (e) { }
 
         var strictFile = new File(strictPath);
@@ -4199,7 +4383,9 @@
                 height: fInfo.height,
                 duration: fDur,
                 pixelCount: fInfo.pixelCount,
-                estimatedMB: fEstimate
+                estimatedMB: fEstimate,
+                // Per-unit cap: Expandable -> 3.8 MB, DOOH -> 6.8 MB
+                effTargetMB: capTargetForUnit(targetMB, fInfo.width, fInfo.height)
             });
             totalSize += fSizeMB;
             totalEstimated += fEstimate;
@@ -4221,6 +4407,9 @@
             var resStr = (fi.width > 0 && fi.height > 0) ? fi.width + "\u00D7" + fi.height : "unknown";
             confirmMsg += "  \u2022 " + fi.file.name + "\n";
             confirmMsg += "    " + fi.sizeMB.toFixed(1) + " MB | " + resStr + " | " + fi.duration.toFixed(1) + "s | ~" + fi.estimatedMB.toFixed(1) + " MB est.\n";
+            if (fi.effTargetMB < targetMB) {
+                confirmMsg += "    Unit cap applies: target < " + fi.effTargetMB + " MB\n";
+            }
         }
 
         confirmMsg += "\n";
@@ -4235,7 +4424,8 @@
         // Process files
         if (mp4Files.length === 1) {
             // Single file - use existing function with resolution info
-            runMP4Optimizer(mp4Files[0], targetFolder, targetMB, duration, fileInfos[0].pixelCount);
+            // (per-unit cap applied: Expandable -> 3.8 MB, DOOH -> 6.8 MB)
+            runMP4Optimizer(mp4Files[0], targetFolder, fileInfos[0].effTargetMB, duration, fileInfos[0].pixelCount);
         } else {
             // Batch processing with resolution info
             runBatchOptimizer(mp4Files, targetFolder, targetMB, duration, fileInfos);
@@ -4248,7 +4438,9 @@
     function runBatchOptimizer(mp4Files, outFolder, targetMB, duration, fileInfos) {
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var isWin = ($.os.indexOf("Windows") !== -1);
-        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
+        // exe is only ever written into generated script content, so quote it
+        // for the script dialect (.bat needs % doubled, .sh single quotes)
+        var exe = ffmpegPath ? quoteForScript(ffmpegPath, isWin) : "ffmpeg";
         var tempFolder = Folder.temp;
 
         // Results tracking
@@ -4388,13 +4580,15 @@
             // and the strict size fallback for any file of a different length
             var fileDur = (fileInfos && fileInfos[i] && fileInfos[i].duration > 0) ? fileInfos[i].duration : duration;
             var dur = fileDur < 1 ? 1 : fileDur;
-            var totalBitrate = (targetMB * 8192) / dur;
+            // Per-unit effective target (Expandable -> 3.8 MB, DOOH -> 6.8 MB)
+            var fileTarget = (fileInfos && fileInfos[i] && fileInfos[i].effTargetMB) ? fileInfos[i].effTargetMB : targetMB;
+            var totalBitrate = (fileTarget * 8192) / dur;
             var videoBitrate = Math.floor(totalBitrate - 128);
             if (videoBitrate < 500) videoBitrate = 500;
             var sourceSize = mp4File.length / (1024 * 1024);
 
             // GUARD: If source is already at or below target, skip this file
-            if (sourceSize <= targetMB) {
+            if (sourceSize <= fileTarget) {
                 results.push({ name: mp4File.name, success: true, sourceSize: sourceSize, outputSize: sourceSize, savings: 0, meetsTarget: true, replaced: false, skipped: true });
                 successCount++;
                 logInfo("Skipped (already under target)", { "File": decodePath(mp4File.name), "Size": sourceSize.toFixed(2) + " MB" });
@@ -4440,21 +4634,32 @@
             var batchScript = "";
 
             // CRF single-pass encoding
+            var qLog, qIn, qOut;
+            try {
+                qLog = quoteForScript(logPath, isWin);
+                qIn = quoteForScript(inputPath, isWin);
+                qOut = quoteForScript(outMP4, isWin);
+            } catch (qe) {
+                logError("Unsafe path skipped", { "File": decodePath(mp4File.name), "Error": qe.toString() });
+                results.push({ name: mp4File.name, success: false, reason: "Unsafe path (contains a line break)" });
+                failCount++;
+                continue;
+            }
             if (isWin) {
                 batchScript += "@echo off\r\n";
                 batchScript += "chcp 65001 >NUL\r\n";
-                batchScript += "echo STARTED > \"" + logPath + "\"\r\n";
-                batchScript += "echo Encoding (CRF 18)... >> \"" + logPath + "\"\r\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
-                batchScript += "if %errorlevel% neq 0 (echo ENCODE_FAILED >> \"" + logPath + "\" & exit /b 1)\r\n";
-                batchScript += "echo COMPLETE >> \"" + logPath + "\"\r\n";
+                batchScript += "echo STARTED > " + qLog + "\r\n";
+                batchScript += "echo Encoding (CRF 18)... >> " + qLog + "\r\n";
+                batchScript += exe + " -y -i " + qIn + " -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k " + qOut + " 2>>" + qLog + "\r\n";
+                batchScript += "if %errorlevel% neq 0 (echo ENCODE_FAILED >> " + qLog + " & exit /b 1)\r\n";
+                batchScript += "echo COMPLETE >> " + qLog + "\r\n";
             } else {
                 batchScript += "#!/bin/bash\n";
-                batchScript += "echo 'STARTED' > \"" + logPath + "\"\n";
-                batchScript += "echo 'Encoding (CRF 18)...' >> \"" + logPath + "\"\n";
-                batchScript += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
-                batchScript += "[ $? -ne 0 ] && echo 'ENCODE_FAILED' >> \"" + logPath + "\" && exit 1\n";
-                batchScript += "echo 'COMPLETE' >> \"" + logPath + "\"\n";
+                batchScript += "echo 'STARTED' > " + qLog + "\n";
+                batchScript += "echo 'Encoding (CRF 18)...' >> " + qLog + "\n";
+                batchScript += exe + " -y -i " + qIn + " -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k " + qOut + " 2>>" + qLog + "\n";
+                batchScript += "[ $? -ne 0 ] && echo 'ENCODE_FAILED' >> " + qLog + " && exit 1\n";
+                batchScript += "echo 'COMPLETE' >> " + qLog + "\n";
             }
 
             // Write the batch script
@@ -4480,9 +4685,9 @@
             // Run batch synchronously — system.callSystem blocks until FFmpeg finishes.
             // tempFolder path has no spaces so cmd /c "path" works correctly.
             if (isWin) {
-                system.callSystem('cmd /c "' + batchScriptPath + '"');
+                system.callSystem('cmd /c ' + cmdQuote(batchScriptPath));
             } else {
-                system.callSystem("chmod +x \"" + batchScriptPath + "\" && \"" + batchScriptPath + "\"");
+                system.callSystem("chmod +x " + shQuote(batchScriptPath) + " && " + shQuote(batchScriptPath));
             }
 
             // Read log once after completion
@@ -4524,15 +4729,15 @@
 
                 // ENFORCE TARGET: the CRF pass can overshoot the cap — re-encode
                 // with strict ABR before deciding whether to replace the original
-                if (outputSize > targetMB) {
+                if (outputSize > fileTarget) {
                     fileLbl.text = mp4File.name + " (Over target — strict re-encode...)";
                     w.update();
-                    outputSize = enforceSizeTarget(exe, inputPath, outputFile, targetMB, dur, isWin, tempFolder, "batch_" + i);
+                    outputSize = enforceSizeTarget(exe, inputPath, outputFile, fileTarget, dur, isWin, tempFolder, "batch_" + i);
                     outputFile = new File(outMP4);
                 }
 
                 var savings = ((sourceSize - outputSize) / sourceSize * 100);
-                var meetsTarget = outputSize <= targetMB;
+                var meetsTarget = outputSize <= fileTarget;
 
                 // REPLACEMENT LOGIC FOR BATCH (backup-swap: original is never
                 // deleted before the optimized file is confirmed in place).
@@ -4546,7 +4751,7 @@
                     logWarn("Output exceeds target even after strict fallback — original kept", {
                         "File": decodePath(sourceName),
                         "Output Size": outputSize.toFixed(2) + " MB",
-                        "Target": targetMB + " MB"
+                        "Target": fileTarget + " MB"
                     });
                 }
 
@@ -4760,7 +4965,7 @@
             w.update();
 
             // Use curl (blocking)
-            var curlCmd = 'curl -L -o "' + zipPath + '" "' + url + '"';
+            var curlCmd = 'curl -L -o ' + cmdQuote(zipPath) + ' ' + cmdQuote(url);
             system.callSystem(curlCmd);
 
             if (!new File(zipPath).exists || new File(zipPath).length < 1000) {
@@ -4776,7 +4981,7 @@
 
             // PowerShell Expand-Archive
             // Note: This matches the folder structure inside the zip
-            var psCmd = 'powershell -command "Expand-Archive -Path \'' + zipPath + '\' -DestinationPath \'' + installBase.fsName + '\' -Force"';
+            var psCmd = 'powershell -command "Expand-Archive -Path ' + psQuote(zipPath, false) + ' -DestinationPath ' + psQuote(installBase.fsName, false) + ' -Force"';
             system.callSystem(psCmd);
 
             // STEP 3: LOCATE BINARY
@@ -4884,7 +5089,6 @@
         if (!installBase.exists) installBase.create();
 
         var zipPath = joinPath(installBase.fsName, "ffmpeg_mac.zip");
-        var url = "https://evermeet.cx/ffmpeg/get/zip";
 
         var w = new Window("palette", "Downloading FFmpeg", undefined, { closeButton: false });
         w.orientation = "column"; w.alignChildren = ["fill", "top"]; w.spacing = 10; w.margins = 20;
@@ -4895,11 +5099,59 @@
         w.center(); w.show(); w.update();
 
         try {
-            system.callSystem('curl -L --max-time 300 -o "' + zipPath + '" "' + url + '"');
+            // STEP 1: Ask evermeet.cx's info API for the release's pinned
+            // download URL and exact byte size. The API publishes no sha256
+            // (only a GPG .sig), so integrity is enforced via exact size match
+            // + `unzip -t` CRC test + a final `ffmpeg -version` probe before
+            // the binary is accepted.
+            st.text = "Fetching release info...";
+            pb.value = 5;
+            w.update();
+            var url = "https://evermeet.cx/ffmpeg/get/zip"; // fallback: latest release zip
+            var expectedSize = 0;
+            var infoRaw = "";
+            try {
+                infoRaw = system.callSystem("curl -s -L -m 30 " + shQuote("https://evermeet.cx/ffmpeg/info/ffmpeg/release")) || "";
+            } catch (eInfo) { infoRaw = ""; }
+            var zm = infoRaw.match(/"zip"\s*:\s*\{\s*"url"\s*:\s*"(https:\/\/evermeet\.cx\/[^"]+)"\s*,\s*"size"\s*:\s*(\d+)/);
+            if (zm) {
+                url = zm[1];
+                expectedSize = parseInt(zm[2], 10);
+            } else {
+                writeLog("evermeet.cx info API unavailable/unparseable — using latest-zip URL without a size check", "WARN");
+            }
 
-            if (!new File(zipPath).exists || new File(zipPath).length < 1000) {
+            st.text = "Downloading FFmpeg (~80 MB)...";
+            pb.value = 10;
+            w.update();
+            system.callSystem('curl -L --max-time 300 -o ' + shQuote(zipPath) + ' ' + shQuote(url));
+
+            var zipFile = new File(zipPath);
+            if (!zipFile.exists || zipFile.length < 1000) {
                 w.close();
                 alert("Download failed. Check your internet connection, or install manually:\n  brew install ffmpeg");
+                return false;
+            }
+
+            // STEP 2: Integrity — exact size published by the info API
+            if (expectedSize > 0 && zipFile.length !== expectedSize) {
+                var gotLen = zipFile.length;
+                try { zipFile.remove(); } catch (eRm) { }
+                w.close();
+                alert("FFmpeg download failed integrity check:\nexpected " + expectedSize + " bytes, got " + gotLen + " bytes.\n\nThe file was discarded. Try again, or install manually:\n  brew install ffmpeg");
+                return false;
+            }
+
+            // STEP 3: Integrity — the archive must pass unzip's CRC test
+            st.text = "Verifying archive...";
+            pb.value = 55;
+            w.update();
+            var testOut = "";
+            try { testOut = system.callSystem("unzip -t " + shQuote(zipPath) + " 2>&1") || ""; } catch (eTest) { testOut = ""; }
+            if (testOut.indexOf("No errors detected") === -1) {
+                try { zipFile.remove(); } catch (eRm2) { }
+                w.close();
+                alert("FFmpeg download failed integrity check (corrupt archive).\n\nThe file was discarded. Try again, or install manually:\n  brew install ffmpeg");
                 return false;
             }
 
@@ -4907,8 +5159,8 @@
             pb.value = 70;
             w.update();
 
-            system.callSystem('unzip -o "' + zipPath + '" -d "' + installBase.fsName + '"');
-            system.callSystem('chmod +x "' + installBase.fsName + '/ffmpeg" 2>/dev/null');
+            system.callSystem('unzip -o ' + shQuote(zipPath) + ' -d ' + shQuote(installBase.fsName));
+            system.callSystem('chmod +x ' + shQuote(installBase.fsName + "/ffmpeg") + ' 2>/dev/null');
             new File(zipPath).remove();
 
             pb.value = 100;
@@ -4928,6 +5180,14 @@
             }
 
             if (binPath) {
+                // STEP 4: The binary must actually run and identify as ffmpeg
+                var verOut = "";
+                try { verOut = system.callSystem(shQuote(binPath) + " -version 2>&1") || ""; } catch (eVer) { verOut = ""; }
+                if (verOut.indexOf("ffmpeg version") === -1) {
+                    try { new File(binPath).remove(); } catch (eRm3) { }
+                    alert("The downloaded FFmpeg binary failed verification (it did not run as ffmpeg) and was removed.\n\nInstall manually instead:\n  brew install ffmpeg");
+                    return false;
+                }
                 setSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, binPath);
                 alert("FFmpeg installed successfully!\n\nLocation: " + binPath);
                 return true;
@@ -4950,7 +5210,9 @@
 
         var ffmpegPath = getSetting(CONFIG.SETTINGS.KEYS.FFMPEG_PATH, "");
         var isWin = ($.os.indexOf("Windows") !== -1);
-        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
+        // exe is only ever written into generated script content, so quote it
+        // for the script dialect (.bat needs % doubled, .sh single quotes)
+        var exe = ffmpegPath ? quoteForScript(ffmpegPath, isWin) : "ffmpeg";
 
         // Decode paths to fix URL-encoded characters (e.g., %20 -> space) on macOS
         var inputPath = decodePath(mp4File.fsName);
@@ -5023,30 +5285,34 @@
             "Lookahead": lookahead
         });
 
-        // CRF single-pass encoding
+        // CRF single-pass encoding — every interpolated path/name is quoted
+        // for the script dialect (batQuote/shQuote via quoteForScript)
+        var qLog = quoteForScript(logPath, isWin);
+        var qIn = quoteForScript(inputPath, isWin);
+        var qOut = quoteForScript(outMP4, isWin);
         if (isWin) {
             script += "@echo off\r\n";
             script += "chcp 65001 >NUL\r\n";
-            script += "echo STARTED > \"" + logPath + "\"\r\n";
-            script += "echo Source: " + mp4File.name + " >> \"" + logPath + "\"\r\n";
-            script += "echo Target: " + targetMB + "MB >> \"" + logPath + "\"\r\n";
-            script += "echo Mode: CRF 18 >> \"" + logPath + "\"\r\n";
-            script += "echo Encoding... >> \"" + logPath + "\"\r\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\r\n";
-            script += "if %errorlevel% neq 0 (echo ENCODE_FAILED >> \"" + logPath + "\" & goto ERROR)\r\n";
-            script += "if exist \"" + outMP4 + "\" (echo SUCCESS >> \"" + logPath + "\") else (echo OUTPUT_MISSING >> \"" + logPath + "\" & goto ERROR)\r\n";
+            script += "echo STARTED > " + qLog + "\r\n";
+            script += "echo Source: " + batQuote(mp4File.name) + " >> " + qLog + "\r\n";
+            script += "echo Target: " + targetMB + "MB >> " + qLog + "\r\n";
+            script += "echo Mode: CRF 18 >> " + qLog + "\r\n";
+            script += "echo Encoding... >> " + qLog + "\r\n";
+            script += exe + " -y -i " + qIn + " -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k " + qOut + " 2>>" + qLog + "\r\n";
+            script += "if %errorlevel% neq 0 (echo ENCODE_FAILED >> " + qLog + " & goto ERROR)\r\n";
+            script += "if exist " + qOut + " (echo SUCCESS >> " + qLog + ") else (echo OUTPUT_MISSING >> " + qLog + " & goto ERROR)\r\n";
             script += "exit /b 0\r\n";
             script += ":ERROR\r\n";
-            script += "echo FAILED >> \"" + logPath + "\"\r\n";
+            script += "echo FAILED >> " + qLog + "\r\n";
             script += "exit /b 1\r\n";
         } else {
             script += "#!/bin/bash\n";
-            script += "echo 'STARTED' > \"" + logPath + "\"\n";
-            script += "echo 'Source: " + outName.replace(/_Optimized\.mp4$/i, ".mp4") + "' >> \"" + logPath + "\"\n";
-            script += "echo 'Encoding...' >> \"" + logPath + "\"\n";
-            script += exe + " -y -i \"" + inputPath + "\" -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k \"" + outMP4 + "\" 2>>\"" + logPath + "\"\n";
-            script += "[ $? -eq 0 ] || { echo 'ENCODE_FAILED' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
-            script += "[ -f \"" + outMP4 + "\" ] && echo 'SUCCESS' >> \"" + logPath + "\" || { echo 'OUTPUT_MISSING' >> \"" + logPath + "\"; echo 'FAILED' >> \"" + logPath + "\"; exit 1; }\n";
+            script += "echo 'STARTED' > " + qLog + "\n";
+            script += "echo " + shQuote("Source: " + outName.replace(/_Optimized\.mp4$/i, ".mp4")) + " >> " + qLog + "\n";
+            script += "echo 'Encoding...' >> " + qLog + "\n";
+            script += exe + " -y -i " + qIn + " -c:v libx264 -preset " + presetFlag + " " + qualityFlags + " " + bitrateFlags + " -c:a aac -b:a 128k " + qOut + " 2>>" + qLog + "\n";
+            script += "[ $? -eq 0 ] || { echo 'ENCODE_FAILED' >> " + qLog + "; echo 'FAILED' >> " + qLog + "; exit 1; }\n";
+            script += "[ -f " + qOut + " ] && echo 'SUCCESS' >> " + qLog + " || { echo 'OUTPUT_MISSING' >> " + qLog + "; echo 'FAILED' >> " + qLog + "; exit 1; }\n";
         }
 
         // Write Script
@@ -5055,7 +5321,7 @@
         if (!isWin) sFile.lineFeed = "unix"; // Force Unix line endings on macOS
         sFile.write(script);
         sFile.close();
-        if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
+        if (!isWin) system.callSystem("chmod +x " + shQuote(scriptPath));
 
         // Progress UI
         var w = new Window("palette", "DOOH Optimization", undefined, { closeButton: true });
@@ -5100,9 +5366,9 @@
         w.update();
 
         if (isWin) {
-            system.callSystem('cmd /c "' + scriptPath + '"');
+            system.callSystem('cmd /c ' + cmdQuote(scriptPath));
         } else {
-            system.callSystem("chmod +x \"" + scriptPath + "\" && \"" + scriptPath + "\"");
+            system.callSystem("chmod +x " + shQuote(scriptPath) + " && " + shQuote(scriptPath));
         }
 
         progressBar.value = 100;
@@ -5512,7 +5778,7 @@
         // Collect
         ui.btns.collect = toolsRow.add("button", undefined, "☁ Collect");
         ui.btns.collect.preferredSize.height = 28;
-        ui.btns.collect.helpTip = "Local Collect + Upload to Google Drive";
+        ui.btns.collect.helpTip = "Local Collect + Copy to NAS";
         try { ui.btns.collect.graphics.font = ScriptUI.newFont("Arial", "REGULAR", 11); } catch (e) { }
         ui.btns.collect.onClick = function () {
             collectAndUpload(ui);
@@ -6301,6 +6567,9 @@
             var duration = options.duration || 15;
             if (duration < 1) duration = 1;
             var targetMB = parseFloat(getSetting(CONFIG.SETTINGS.KEYS.DOOH_TARGET_MB, "6.8")) || 6.8;
+            // DOOH delivery cap: files must ship under 7 MB — clamp the
+            // effective target to 6.8 (settings value itself is untouched)
+            if (targetMB > 6.8) targetMB = 6.8;
             var totalBitrate = (targetMB * 8192) / duration;
             var videoBitrate = Math.floor(totalBitrate - 128);
             if (videoBitrate < 1000) videoBitrate = 1000;
@@ -6402,12 +6671,30 @@
         if (logFile.exists) logFile.remove();
 
         var script = "";
-        var exe = ffmpegPath ? '"' + ffmpegPath + '"' : "ffmpeg";
-        var pattern = seq.fileObj.parent.fsName + (isWin ? "\\" : "/") + seq.prefix + (isWin ? "%%0" : "%0") + seq.padding + "d.png";
+        // exe is only ever written into generated script content, so quote it
+        // for the script dialect (.bat needs % doubled, .sh single quotes)
+        var exe = ffmpegPath ? quoteForScript(ffmpegPath, isWin) : "ffmpeg";
+        // The input pattern needs a literal %0Nd printf token for ffmpeg, so it
+        // cannot go through batQuote (which doubles every %). Quote the real
+        // path portion, then append the printf token inside the same quotes
+        // (on Windows the token itself is written as %%0Nd for the .bat).
+        var patternDir = seq.fileObj.parent.fsName + (isWin ? "\\" : "/") + seq.prefix;
+        var patternArg = isWin
+            ? '"' + assertShellSafe(patternDir).replace(/"/g, "").replace(/%/g, "%%") + "%%0" + seq.padding + 'd.png"'
+            : shQuote(patternDir + "%0" + seq.padding + "d.png");
         var fps = dims.fps;
 
         // Zip Path
         var zipPath = outFolder.fsName + (isWin ? "\\" : "/") + seq.prefix.replace(/_+$/, "") + "_Optimized.zip";
+
+        // Pre-quoted output/log paths for the generated script content
+        var qLog = quoteForScript(logPath, isWin);
+        var qWebM = quoteForScript(outWebM, isWin);
+        var qMov = quoteForScript(outMov, isWin);
+        var qPass = quoteForScript(passLog, isWin);
+        var qPassLog0 = quoteForScript(passLog + "-0.log", isWin);
+        var qZip = quoteForScript(zipPath, isWin);
+        var qHtml = quoteForScript(outHtml, isWin);
 
         // =================================================================================
         // 2. CONVERSION COMMANDS
@@ -6415,97 +6702,99 @@
         if (isWin) {
             script += "@echo off\r\n";
             script += "chcp 65001 >NUL\r\n";
-            script += "echo Starting conversion... > \"" + logPath + "\"\r\n";
+            script += "echo Starting conversion... > " + qLog + "\r\n";
 
             if (options.webm) {
-                script += "echo [1/3] Converting to WebM... >> \"" + logPath + "\"\r\n";
+                script += "echo [1/3] Converting to WebM... >> " + qLog + "\r\n";
                 if (isDOOH) {
-                    script += "echo (Enforcing 7MB Limit for DOOH) >> \"" + logPath + "\"\r\n";
+                    script += "echo (Enforcing 7MB Limit for DOOH) >> " + qLog + "\r\n";
                     // 2-PASS BITRATE TARGET
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 4 -quality good -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 4 -quality good -row-mt 1 -pass 1 -passlogfile " + qPass + " -an -f null NUL 2>> " + qLog + "\r\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile " + qPass + " -an " + qWebM + " 2>> " + qLog + "\r\n";
                 } else {
                     // DEFAULT CRF for non-DOOH
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null NUL 2>> \"" + logPath + "\"\r\n";
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\r\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile " + qPass + " -an -f null NUL 2>> " + qLog + "\r\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile " + qPass + " -an " + qWebM + " 2>> " + qLog + "\r\n";
                 }
 
-                script += "if not exist \"" + outWebM + "\" (echo WebM: FAILED >> \"" + logPath + "\") else (for %%F in (\"" + outWebM + "\") do if %%~zF GTR 0 (echo WebM: SUCCESS >> \"" + logPath + "\") else (echo WebM: FAILED >> \"" + logPath + "\"))\r\n";
-                script += "del \"" + passLog + "-0.log\" 2>nul\r\n";
+                script += "if not exist " + qWebM + " (echo WebM: FAILED >> " + qLog + ") else (for %%F in (" + qWebM + ") do if %%~zF GTR 0 (echo WebM: SUCCESS >> " + qLog + ") else (echo WebM: FAILED >> " + qLog + "))\r\n";
+                script += "del " + qPassLog0 + " 2>nul\r\n";
             }
 
             if (options.mov) {
-                script += "echo [2/3] Converting to MOV (High Quality)... >> \"" + logPath + "\"\r\n";
+                script += "echo [2/3] Converting to MOV (High Quality)... >> " + qLog + "\r\n";
                 // Windows MOV fallback chain: HEVC (alpha) -> ProRes 4444 (alpha) -> H.264 (no alpha)
-                var cmdHevc = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx265 -pix_fmt yuva444p10le -x265-params alpha=1 -crf 24 -preset slow -tag:v hvc1 \"" + outMov + "\" 2>>\"" + logPath + "\"";
-                var cmdProRes = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le -vendor apl0 \"" + outMov + "\" 2>>\"" + logPath + "\"";
-                var cmdH264 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libx264 -pix_fmt yuv420p -crf 18 -preset slow \"" + outMov + "\" 2>>\"" + logPath + "\"";
-                script += "(" + cmdHevc + ") || (echo HEVC_FAILED_TRYING_PRORES >> \"" + logPath + "\" && " + cmdProRes + ") || (echo PRORES_FAILED_TRYING_H264 >> \"" + logPath + "\" && " + cmdH264 + ")\r\n";
-                script += "if not exist \"" + outMov + "\" (echo MOV: FAILED >> \"" + logPath + "\") else (for %%F in (\"" + outMov + "\") do if %%~zF GTR 0 (echo MOV: SUCCESS >> \"" + logPath + "\") else (echo MOV: FAILED >> \"" + logPath + "\"))\r\n";
+                var cmdHevc = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libx265 -pix_fmt yuva444p10le -x265-params alpha=1 -crf 24 -preset slow -tag:v hvc1 " + qMov + " 2>>" + qLog;
+                var cmdProRes = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le -vendor apl0 " + qMov + " 2>>" + qLog;
+                var cmdH264 = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libx264 -pix_fmt yuv420p -crf 18 -preset slow " + qMov + " 2>>" + qLog;
+                script += "(" + cmdHevc + ") || (echo HEVC_FAILED_TRYING_PRORES >> " + qLog + " && " + cmdProRes + ") || (echo PRORES_FAILED_TRYING_H264 >> " + qLog + " && " + cmdH264 + ")\r\n";
+                script += "if not exist " + qMov + " (echo MOV: FAILED >> " + qLog + ") else (for %%F in (" + qMov + ") do if %%~zF GTR 0 (echo MOV: SUCCESS >> " + qLog + ") else (echo MOV: FAILED >> " + qLog + "))\r\n";
             }
 
             // HTML is already written, no embedding step needed
 
             if (options.zip) {
-                script += "echo [4/4] Creating ZIP... >> \"" + logPath + "\"\r\n";
+                script += "echo [4/4] Creating ZIP... >> " + qLog + "\r\n";
+                // Paths inside the PowerShell command are single-quoted with
+                // psQuote(x, true): embedded ' doubled + % doubled for the .bat
                 var psCmd = "$f=@();";
-                if (options.html) psCmd += "if((Get-Item '" + outHtml + "' -EA SilentlyContinue).Length -gt 0){$f+='" + outHtml + "'};";
-                if (options.webm) psCmd += "if((Get-Item '" + outWebM + "' -EA SilentlyContinue).Length -gt 0){$f+='" + outWebM + "'};";
-                if (options.mov) psCmd += "if((Get-Item '" + outMov + "' -EA SilentlyContinue).Length -gt 0){$f+='" + outMov + "'};";
-                psCmd += "if($f.Count -gt 0){Compress-Archive -Path $f -DestinationPath '" + zipPath + "' -Force}";
-                script += "powershell -Command \"" + psCmd + "\" 2>> \"" + logPath + "\"\r\n";
-                script += "if not exist \"" + zipPath + "\" (echo ZIP: FAILED >> \"" + logPath + "\") else (for %%F in (\"" + zipPath + "\") do if %%~zF GTR 0 (echo ZIP: SUCCESS >> \"" + logPath + "\") else (echo ZIP: FAILED >> \"" + logPath + "\"))\r\n";
+                if (options.html) psCmd += "if((Get-Item " + psQuote(outHtml, true) + " -EA SilentlyContinue).Length -gt 0){$f+=" + psQuote(outHtml, true) + "};";
+                if (options.webm) psCmd += "if((Get-Item " + psQuote(outWebM, true) + " -EA SilentlyContinue).Length -gt 0){$f+=" + psQuote(outWebM, true) + "};";
+                if (options.mov) psCmd += "if((Get-Item " + psQuote(outMov, true) + " -EA SilentlyContinue).Length -gt 0){$f+=" + psQuote(outMov, true) + "};";
+                psCmd += "if($f.Count -gt 0){Compress-Archive -Path $f -DestinationPath " + psQuote(zipPath, true) + " -Force}";
+                script += "powershell -Command \"" + psCmd + "\" 2>> " + qLog + "\r\n";
+                script += "if not exist " + qZip + " (echo ZIP: FAILED >> " + qLog + ") else (for %%F in (" + qZip + ") do if %%~zF GTR 0 (echo ZIP: SUCCESS >> " + qLog + ") else (echo ZIP: FAILED >> " + qLog + "))\r\n";
             }
-            script += "echo CONVERSION_COMPLETE >> \"" + logPath + "\"\r\n";
+            script += "echo CONVERSION_COMPLETE >> " + qLog + "\r\n";
 
         } else {
             // MACOS
             script += "#!/bin/bash\n";
-            script += "echo 'Starting conversion...' > \"" + logPath + "\"\n";
+            script += "echo 'Starting conversion...' > " + qLog + "\n";
 
             if (options.webm) {
                 if (isDOOH) {
-                    script += "echo '(Enforcing 7MB Limit for DOOH)' >> \"" + logPath + "\"\n";
+                    script += "echo '(Enforcing 7MB Limit for DOOH)' >> " + qLog + "\n";
                     // 2-PASS BITRATE TARGET
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 4 -quality good -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 4 -quality good -row-mt 1 -pass 1 -passlogfile " + qPass + " -an -f null /dev/null 2>> " + qLog + "\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libvpx-vp9 -pix_fmt yuva420p " + bitrateFlags + " -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile " + qPass + " -an " + qWebM + " 2>> " + qLog + "\n";
                 } else {
                     // DEFAULT CRF
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile \"" + passLog + "\" -an -f null /dev/null 2>> \"" + logPath + "\"\n";
-                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile \"" + passLog + "\" -an \"" + outWebM + "\" 2>> \"" + logPath + "\"\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 1 -passlogfile " + qPass + " -an -f null /dev/null 2>> " + qLog + "\n";
+                    script += exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 20 -speed 0 -quality best -row-mt 1 -pass 2 -passlogfile " + qPass + " -an " + qWebM + " 2>> " + qLog + "\n";
                 }
 
-                script += "[ -s \"" + outWebM + "\" ] && echo 'WebM: SUCCESS' >> \"" + logPath + "\" || echo 'WebM: FAILED' >> \"" + logPath + "\"\n";
-                script += "rm -f \"" + passLog + "-0.log\" 2>/dev/null\n";
+                script += "[ -s " + qWebM + " ] && echo 'WebM: SUCCESS' >> " + qLog + " || echo 'WebM: FAILED' >> " + qLog + "\n";
+                script += "rm -f " + qPassLog0 + " 2>/dev/null\n";
             }
 
             if (options.mov) {
                 // macOS MOV fallback chain: ProRes 4444 (alpha, widely supported) -> QTRLE (alpha, universal)
-                script += "echo '[2/3] Converting to MOV (ProRes 4444 + Alpha)...' >> \"" + logPath + "\"\n";
-                var macProRes = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le -vendor apl0 \"" + outMov + "\"";
-                var macQtrle = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i \"" + pattern + "\" -c:v qtrle -pix_fmt argb \"" + outMov + "\"";
-                script += macProRes + " 2>>\"" + logPath + "\"\n";
-                script += "if [ ! -s \"" + outMov + "\" ]; then\n";
-                script += "  echo 'PRORES_FAILED_TRYING_QTRLE' >> \"" + logPath + "\"\n";
-                script += "  " + macQtrle + " 2>>\"" + logPath + "\"\n";
+                script += "echo '[2/3] Converting to MOV (ProRes 4444 + Alpha)...' >> " + qLog + "\n";
+                var macProRes = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le -vendor apl0 " + qMov;
+                var macQtrle = exe + " -y -framerate " + fps + " -start_number " + seq.start + " -i " + patternArg + " -c:v qtrle -pix_fmt argb " + qMov;
+                script += macProRes + " 2>>" + qLog + "\n";
+                script += "if [ ! -s " + qMov + " ]; then\n";
+                script += "  echo 'PRORES_FAILED_TRYING_QTRLE' >> " + qLog + "\n";
+                script += "  " + macQtrle + " 2>>" + qLog + "\n";
                 script += "fi\n";
-                script += "[ -s \"" + outMov + "\" ] && echo 'MOV: SUCCESS' >> \"" + logPath + "\" || echo 'MOV: FAILED' >> \"" + logPath + "\"\n";
+                script += "[ -s " + qMov + " ] && echo 'MOV: SUCCESS' >> " + qLog + " || echo 'MOV: FAILED' >> " + qLog + "\n";
             }
 
             // HTML is already written
 
             if (options.zip) {
-                script += "echo '[4/4] Zip...' >> \"" + logPath + "\"\n";
+                script += "echo '[4/4] Zip...' >> " + qLog + "\n";
                 script += "ZIPFILES=()\n";
-                if (options.html) script += "[ -s \"" + outHtml + "\" ] && ZIPFILES+=(\"" + outHtml + "\")\n";
-                if (options.webm) script += "[ -s \"" + outWebM + "\" ] && ZIPFILES+=(\"" + outWebM + "\")\n";
-                if (options.mov) script += "[ -s \"" + outMov + "\" ] && ZIPFILES+=(\"" + outMov + "\")\n";
+                if (options.html) script += "[ -s " + qHtml + " ] && ZIPFILES+=(" + qHtml + ")\n";
+                if (options.webm) script += "[ -s " + qWebM + " ] && ZIPFILES+=(" + qWebM + ")\n";
+                if (options.mov) script += "[ -s " + qMov + " ] && ZIPFILES+=(" + qMov + ")\n";
                 script += "if [ ${#ZIPFILES[@]} -gt 0 ]; then\n";
-                script += "  zip -j \"" + zipPath + "\" \"${ZIPFILES[@]}\" 2>> \"" + logPath + "\"\n";
+                script += "  zip -j " + qZip + " \"${ZIPFILES[@]}\" 2>> " + qLog + "\n";
                 script += "fi\n";
-                script += "[ -s \"" + zipPath + "\" ] && echo 'ZIP: SUCCESS' >> \"" + logPath + "\" || echo 'ZIP: FAILED' >> \"" + logPath + "\"\n";
+                script += "[ -s " + qZip + " ] && echo 'ZIP: SUCCESS' >> " + qLog + " || echo 'ZIP: FAILED' >> " + qLog + "\n";
             }
-            script += "echo 'CONVERSION_COMPLETE' >> \"" + logPath + "\"\n";
+            script += "echo 'CONVERSION_COMPLETE' >> " + qLog + "\n";
         }
 
         // Write Script File
@@ -6516,7 +6805,7 @@
         scriptFile.close();
 
         // Execute
-        if (!isWin) system.callSystem("chmod +x \"" + scriptPath + "\"");
+        if (!isWin) system.callSystem("chmod +x " + shQuote(scriptPath));
         writeLog("Running conversion script: " + scriptPath, "INFO");
 
         // Show "Busy" UI
@@ -6539,13 +6828,11 @@
         w.show();
         w.update(); // Force paint
 
-        // Execute (Blocking)
-        var execCmd = isWin ? "cmd /c \"" + scriptPath + "\"" : "bash \"" + scriptPath + "\"";
-        if (!isWin) {
-            // Safe execution for Mac
-            var safePath = scriptPath.replace(/"/g, '\\"');
-            execCmd = 'osascript -e \'do shell script "/bin/bash \\"' + safePath + '\\""\'';
-        }
+        // Execute (Blocking) — script path fully quoted for each platform.
+        // (The old macOS osascript wrapper could not safely carry paths with
+        // quotes through its three nested quoting layers; /bin/bash with a
+        // POSIX-quoted path is the same blocking call the optimizers use.)
+        var execCmd = isWin ? "cmd /c " + cmdQuote(scriptPath) : "/bin/bash " + shQuote(scriptPath);
 
         try {
             system.callSystem(execCmd);

@@ -67,3 +67,19 @@ test("bucket edges are inclusive", () => {
     assert.strictEqual(Calc.getResolutionScale(2073600), 1.0);
     assert.strictEqual(Calc.getResolutionScale(2073601), 1.4);
 });
+
+// --- unitTargetMB (per-unit delivery caps, shared by optimizer + post-render) ---
+
+test("Expandable (750x1334) is capped at 3.8 MB", () => {
+    assert.strictEqual(Calc.unitTargetMB(750, 1334, 6.8), 3.8);
+});
+
+test("a manually lowered target still wins for Expandable", () => {
+    assert.strictEqual(Calc.unitTargetMB(750, 1334, 2.5), 2.5);
+});
+
+test("non-Expandable units keep the base target", () => {
+    assert.strictEqual(Calc.unitTargetMB(1920, 1080, 6.8), 6.8);  // DOOH horizontal
+    assert.strictEqual(Calc.unitTargetMB(750, 300, 2.5), 2.5);    // Sunrise
+    assert.strictEqual(Calc.unitTargetMB(0, 0, 6.8), 6.8);        // unknown dims
+});

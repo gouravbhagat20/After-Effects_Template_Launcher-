@@ -38,9 +38,9 @@ Feature-by-feature comparison with the ScriptUI tool: [../FEATURES.md](../FEATUR
 - **Settings tab** — ffmpeg path (auto-detect covers PATH, Homebrew, and common
   Windows installs), base work folder.
 
-Not yet ported from the ScriptUI version: the Google Drive upload step of
+Not yet ported from the ScriptUI version: the NAS copy step of
 Collect & Upload (the CEP collect copies to a folder you pick; the `.jsx`
-script still handles the Drive folder structure and upload).
+script still handles the NAS folder structure and copy).
 
 ## Install (team members)
 
@@ -67,9 +67,14 @@ Downloads Adobe's ZXPSignCmd on first run, creates a self-signed cert
 (`build/cert.p12`, gitignored — password via `BH_CERT_PASS`, default
 `bighappy`), and signs `cep/` (minus dev files) into
 `dist/BigHappyLauncher_v<version>.zxp`. Bump the version in
-`CSXS/manifest.xml` **and** `BH_VERSION` in `js/main.js` first, and add a
-`CHANGELOG` entry in main.js — the panel shows it after users update, and the
-update pill compares the manifest version on GitHub `main` once a day.
+`CSXS/manifest.xml` **and** `BH_VERSION` in `js/core.js` first, and add a
+`CHANGELOG` entry in `js/update-ui.js` — the panel shows it after users update,
+and the update pill compares the manifest version on GitHub `main` hourly while
+the panel is open (plus once at startup). CI's `release-consistency` job fails
+if the manifest, `BH_VERSION`, `CHANGELOG`, and the packaged zxp in `dist/`
+disagree, or if the zxp's CONTENTS no longer match `cep/` — rebuild after every
+source change, not just every version bump. Files kept out of the package are
+listed once in `.zxpignore`, which both the build and that check read.
 
 ## Architecture
 
@@ -79,12 +84,28 @@ cep/
 ├── index.html          Panel markup (4 tabs: Launcher, Render, DOOH, Settings)
 ├── css/style.css       Dark theme
 ├── js/CSInterface.js   Slim __adobe_cep__ wrapper
+├── js/calc.js          Pure bitrate/resolution math (unit-tested)
 ├── js/ffmpeg.js        Node ffmpeg engine: detect / probe / two-pass optimize / cancel
-├── js/main.js          Panel logic + BH.* host bridge
+├── js/postrender.js    PNG sequence -> WebM / MOV / HTML / ZIP
+├── js/templates.js     Naming, parsing, project folder structure
+├── js/updater.js       Download / verify / stage / swap / rollback (unit-tested)
+├── js/dialog.js        In-panel alert + confirm (focus-trapped)
+├── js/core.js          Host bridge, settings cache, shared state, toasts, tabs
+├── js/tab-launcher.js  Project status, recents, new project, templates
+├── js/tab-render.js    Render queue, Sunrise post-render, collect
+├── js/tab-optimizer.js MP4 size-capping + the AE file-lock dance
+├── js/tab-settings.js  Preferences and diagnostics
+├── js/update-ui.js     Self-update prompts, CHANGELOG, What's New
+├── js/main.js          Boot: wires the modules together
 ├── jsx/host.jsx        ExtendScript host API (JSON in/out): project info,
-│                       open/save, file-lock release + relink
+│                       open/save, file-lock release + relink + recovery
+├── .zxpignore          What stays out of the packaged .zxp
 └── .debug              Remote debugging (http://localhost:8092 while AE runs)
 ```
+
+Each tab is its own module exposing `init(core)`. Shared mutable state — the
+open project and the template list — lives in `core.js` behind
+subscribe/notify, because more than one tab renders from each.
 
 Division of labor: **anything that needs the AE DOM** (project, comps, footage,
 render queue) lives in `jsx/host.jsx` and is called with

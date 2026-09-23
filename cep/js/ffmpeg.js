@@ -45,7 +45,9 @@
     function runOnce(exe, args) {
         return new Promise(function (resolve) {
             try {
-                cp.execFile(exe, args, { timeout: 10000 }, function (err, stdout, stderr) {
+                // 32 MB maxBuffer: ffprobe -show_streams JSON on long clips can
+                // exceed execFile's default and kill the child mid-output
+                cp.execFile(exe, args, { timeout: 10000, maxBuffer: 32 * 1024 * 1024 }, function (err, stdout, stderr) {
                     resolve(err ? null : String(stdout || stderr));
                 });
             } catch (e) { resolve(null); }

@@ -42,10 +42,9 @@ fi
 # 3. Stage without dev-only files
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-rsync -a "$CEP/" "$STAGE/" \
-    --exclude ".debug" --exclude "install-mac.sh" --exclude "install-win.bat" \
-    --exclude "build-zxp.sh" --exclude "*.md" \
-    --exclude "test" --exclude "package.json" --exclude "node_modules"
+# Exclusions live in cep/.zxpignore so that CI's package-drift check can
+# stage the tree exactly the same way before comparing it to the zxp.
+rsync -a "$CEP/" "$STAGE/" --exclude-from="$CEP/.zxpignore"
 
 # 4. Sign (timestamped when the TSA is reachable, unsigned-timestamp fallback)
 rm -f "$OUT"

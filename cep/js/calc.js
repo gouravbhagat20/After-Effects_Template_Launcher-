@@ -50,9 +50,22 @@
         return 2.0;                               // 4K (3840x2160+)
     }
 
+    /**
+     * Per-unit delivery size cap, shared by the optimizer and post-render:
+     * Expandable units (750×1334) must come in under 4 MB — cap the target at
+     * 3.8 (same 0.2 safety margin the 6.8 default keeps under DOOH's 7 MB
+     * wall). Every other unit keeps the caller's base target. A manually
+     * lowered base still wins.
+     */
+    function unitTargetMB(width, height, baseTargetMB) {
+        if (width === 750 && height === 1334) return Math.min(baseTargetMB, 3.8);
+        return baseTargetMB;
+    }
+
     global.BHCalc = {
         computeTargetKbps: computeTargetKbps,
         retryKbps: retryKbps,
-        getResolutionScale: getResolutionScale
+        getResolutionScale: getResolutionScale,
+        unitTargetMB: unitTargetMB
     };
 })(window);

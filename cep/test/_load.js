@@ -11,10 +11,12 @@ require("../js/calc.js");
 require("../js/templates.js");
 require("../js/ffmpeg.js");
 require("../js/postrender.js");
+require("../js/updater.js");
 
 module.exports = {
     Calc: globalThis.window.BHCalc,
     T: globalThis.window.BHTemplates,
     FF: globalThis.window.BHFFmpeg,
-    Post: globalThis.window.BHPost
+    Post: globalThis.window.BHPost,
+    U: globalThis.window.BHUpdater
 };
