@@ -24,7 +24,7 @@
     var T = global.BHTemplates;
     var ui = global.BHDialog;
 
-    var BH_VERSION = "0.4.5";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.6";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
 
     // ---------------- host bridge ----------------

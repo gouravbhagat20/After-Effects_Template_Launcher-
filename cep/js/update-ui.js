@@ -10,6 +10,10 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.6": [
+            "Update checks retry once automatically, so a brief network or GitHub hiccup no longer shows an error",
+            "If an update check still fails, the message now says why (e.g. HTTP status or timeout)"
+        ],
         "0.4.5": [
             "New NAS folder setting (Settings → Projects), shared with the ScriptUI launcher — Google Drive sync has been replaced by NAS",
             "Interrupted optimizes now repair themselves: if the panel or AE closes mid-encode, footage left as a BH_RELINK placeholder is relinked automatically at the next launch instead of stranding you",
@@ -228,10 +232,6 @@
         function checkForUpdate(force) {
             U.fetchRemoteVersion()
                 .then(function (remote) {
-                    if (!remote) {
-                        if (force) ui.alert("Could not reach GitHub to check for updates.\n\nCheck your internet connection and try again.");
-                        return;
-                    }
                     if (U.versionNewer(remote, BH_VERSION)) {
                         var pill = $("update-pill");
                         pill.textContent = "v" + remote + " available";
@@ -253,8 +253,10 @@
                                  "\nLatest on GitHub: v" + remote, "No Update Available");
                     }
                 })
-                .catch(function () {
-                    if (force) ui.alert("Could not reach GitHub to check for updates.\n\nCheck your internet connection and try again.");
+                .catch(function (err) {
+                    if (force) ui.alert("Could not reach GitHub to check for updates.\n\n" +
+                                        "Reason: " + ((err && err.message) || "unknown") +
+                                        "\n\nCheck your internet connection and try again.");
                 });
         }
 

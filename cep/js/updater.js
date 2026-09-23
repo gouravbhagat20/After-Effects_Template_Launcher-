@@ -246,14 +246,28 @@
 
     /**
      * Latest published version from the repo manifest (cache-busted — raw
-     * branch URLs sit behind a ~5-min CDN cache). Resolves the version string,
-     * or null when it could not be fetched/parsed. Network errors reject.
+     * branch URLs sit behind a ~5-min CDN cache). Resolves the version string;
+     * rejects with a readable reason (HTTP status, network error, unparsable
+     * manifest). One retry absorbs transient network / CDN blips.
      */
-    function fetchRemoteVersion(fetchImpl) {
-        return fetchWithTimeout(RAW_BASE + "cep/CSXS/manifest.xml?t=" + Date.now(),
-            META_TIMEOUT_MS, fetchImpl)
-            .then(function (r) { return r.ok ? r.text() : null; })
-            .then(function (xml) { return xml ? parseBundleVersion(xml) : null; });
+    function fetchRemoteVersion(fetchImpl, retryDelayMs) {
+        function attempt() {
+            return fetchWithTimeout(RAW_BASE + "cep/CSXS/manifest.xml?t=" + Date.now(),
+                META_TIMEOUT_MS, fetchImpl)
+                .then(function (r) {
+                    if (!r.ok) throw new Error("GitHub returned HTTP " + r.status);
+                    return r.text();
+                })
+                .then(function (xml) {
+                    var v = parseBundleVersion(xml);
+                    if (!v) throw new Error("the published manifest has no version");
+                    return v;
+                });
+        }
+        var delay = retryDelayMs == null ? 2000 : retryDelayMs;
+        return attempt().catch(function () {
+            return new Promise(function (resolve) { setTimeout(resolve, delay); }).then(attempt);
+        });
     }
 
     // ---------------- full update pipeline ----------------

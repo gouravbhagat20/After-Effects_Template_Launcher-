@@ -327,6 +327,33 @@ test("fetchWithTimeout: aborts a hung request with a clear timeout error", async
     }
 });
 
+// ---------------- fetchRemoteVersion ----------------
+
+const MANIFEST_OK = '<ExtensionManifest ExtensionBundleVersion="9.9.9"></ExtensionManifest>';
+const okResponse = (body) => ({ ok: true, status: 200, text: () => Promise.resolve(body) });
+
+test("fetchRemoteVersion: one transient failure is retried", async () => {
+    let calls = 0;
+    const flaky = () => (++calls === 1
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : Promise.resolve(okResponse(MANIFEST_OK)));
+    assert.equal(await U.fetchRemoteVersion(flaky, 0), "9.9.9");
+    assert.equal(calls, 2);
+});
+
+test("fetchRemoteVersion: a persistent HTTP error rejects with the status", async () => {
+    let calls = 0;
+    const down = () => { calls++; return Promise.resolve({ ok: false, status: 503 }); };
+    await assert.rejects(U.fetchRemoteVersion(down, 0), /HTTP 503/);
+    assert.equal(calls, 2);
+});
+
+test("fetchRemoteVersion: a manifest without a version rejects with a reason", async () => {
+    await assert.rejects(
+        U.fetchRemoteVersion(() => Promise.resolve(okResponse("<html>oops</html>")), 0),
+        /no version/);
+});
+
 test("fetchWithTimeout: passes a fast response straight through", async () => {
     const fake = { ok: true, status: 200 };
     const r = await U.fetchWithTimeout("https://example.invalid/x", 1000,
