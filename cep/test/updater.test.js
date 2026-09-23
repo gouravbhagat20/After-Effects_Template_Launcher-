@@ -315,9 +315,16 @@ test("fetchWithTimeout: aborts a hung request with a clear timeout error", async
             // never resolves otherwise
         });
     }
-    await assert.rejects(
-        U.fetchWithTimeout("https://example.invalid/x", 50, hangingFetch),
-        /Network timeout after \d+s/);
+    // The abort timer is unref'd, and a never-settling promise holds nothing
+    // open — without this, Node 20/22 end the event loop before it fires.
+    const keepAlive = setInterval(() => { }, 1000);
+    try {
+        await assert.rejects(
+            U.fetchWithTimeout("https://example.invalid/x", 50, hangingFetch),
+            /Network timeout after \d+s/);
+    } finally {
+        clearInterval(keepAlive);
+    }
 });
 
 test("fetchWithTimeout: passes a fast response straight through", async () => {
