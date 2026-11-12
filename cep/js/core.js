@@ -24,7 +24,7 @@
     var T = global.BHTemplates;
     var ui = global.BHDialog;
 
-    var BH_VERSION = "0.4.10";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.11";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
 
     // ---------------- host bridge ----------------
@@ -44,6 +44,10 @@
     var HOST_TIMEOUT_DEFAULT = 30 * 1000;
     var HOST_TIMEOUTS = {
         collectProject:     30 * 60 * 1000,   // hundreds of assets over a network share
+        collectBegin:        5 * 60 * 1000,   // two saves of a large project
+        collectStep:        30 * 60 * 1000,   // one item can be a whole image sequence
+        collectFinish:       5 * 60 * 1000,
+        collectAbort:        5 * 60 * 1000,
         createFromTemplate:  5 * 60 * 1000,   // opens a template + imports global assets
         generateTemplate:    5 * 60 * 1000,
         preFlightCheck:      5 * 60 * 1000,

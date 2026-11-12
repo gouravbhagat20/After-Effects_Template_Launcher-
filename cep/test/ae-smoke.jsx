@@ -18,6 +18,8 @@
            checks the output format AE ends up with
         3. collect               — collects the project and checks AE is back
            on the original afterwards, with same-named files kept apart
+        4. stepped collect       — the begin/step/finish calls the panel uses,
+           and that cancelling one reopens the original
 
     It refuses to start while the open project has unsaved changes, closes
     that project (reopening it at the end), and never touches your files:
@@ -220,6 +222,35 @@
               samePath(a.file.fsName, work.fsName + "/src/a/logo.png") &&
               samePath(b.file.fsName, work.fsName + "/src/b/logo.png"),
               "A: " + (a.file ? a.file.fsName : "(none)") + " / B: " + (b.file ? b.file.fsName : "(none)"));
+    });
+
+    // ---------------------------------------------- 4. stepped collect + cancel
+
+    section("Stepped collect and cancel (what the panel uses)", function () {
+        var orig = new File(work.fsName + "/orig.aep");
+        var destFolder = new Folder(work.fsName + "/collected_stepped");
+        destFolder.create();
+        var destAep = destFolder.fsName + "/orig.aep";
+        var footage = destFolder.fsName + "/(Footage)";
+
+        var begin = unwrap(BH.collectBegin(destAep, footage));
+        check("begin queues the four stills", begin.total === 4, "total: " + begin.total);
+        var guard = 0, p;
+        do { p = unwrap(BH.collectStep(1)); guard++; } while (!p.finished && guard < 50);
+        check("steps run to completion", p.finished === true && p.done === 4,
+              "done " + p.done + " / " + p.total + " in " + guard + " step(s)");
+        var res = unwrap(BH.collectFinish());
+        check("finish returns to the original",
+              res.reopened === true && !!app.project.file && samePath(app.project.file.fsName, orig.fsName));
+
+        var cancelFolder = new Folder(work.fsName + "/collected_cancelled");
+        cancelFolder.create();
+        unwrap(BH.collectBegin(cancelFolder.fsName + "/orig.aep", cancelFolder.fsName + "/(Footage)"));
+        unwrap(BH.collectStep(1));
+        var aborted = unwrap(BH.collectAbort());
+        check("cancel reopens the original without a save prompt",
+              aborted.reopened === true && !!app.project.file && samePath(app.project.file.fsName, orig.fsName),
+              "open project: " + (app.project.file ? app.project.file.fsName : "(unsaved)"));
     });
 
     // ----------------------------------------------------------------- report

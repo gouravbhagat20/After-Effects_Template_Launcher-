@@ -108,24 +108,42 @@ test("the generated index.html escapes the project name", () => {
     } finally { rmrf(dir); }
 });
 
-/** A stand-in ffmpeg: fails unless its arguments name an allowed codec. */
-function fakeFFmpeg(dir, allowedCodecs) {
-    const exe = path.join(dir, "fake-ffmpeg.sh");
-    fs.writeFileSync(exe, "#!/bin/sh\nfor last; do :; done\ncase \"$*\" in\n" +
-        allowedCodecs.map((c) => "  *" + c + "*) echo x > \"$last\"; exit 0;;\n").join("") +
-        "esac\nexit 1\n");
-    fs.chmodSync(exe, 0o755);
-    return exe;
+const cp = require("node:child_process");
+const { EventEmitter } = require("node:events");
+
+/**
+ * Run `body` with child_process.spawn replaced by a stand-in ffmpeg that
+ * succeeds (writing its output file, the last argument) only when its
+ * arguments name one of `allowedCodecs`. postrender.js calls cp.spawn at
+ * call time, so this reaches it — and unlike a fake shell script it behaves
+ * the same on Windows.
+ */
+async function withFakeFFmpeg(allowedCodecs, body) {
+    const real = cp.spawn;
+    cp.spawn = (exe, args) => {
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter();
+        proc.stderr = new EventEmitter();
+        proc.kill = () => { };
+        setImmediate(() => {
+            const ok = allowedCodecs.some((c) => args.indexOf(c) !== -1);
+            const out = args[args.length - 1];
+            if (ok && !/^(NUL|\/dev\/null)$/.test(out)) fs.writeFileSync(out, "ENCODED");
+            proc.emit("close", ok ? 0 : 1);
+        });
+        return proc;
+    };
+    try { return await body("ffmpeg"); }
+    finally { cp.spawn = real; }
 }
 
-test("a MOV that fell back to H.264 is reported as having no alpha",
-    { skip: process.platform === "win32" }, async () => {
+test("a MOV that fell back to H.264 is reported as having no alpha", async () => {
     const dir = tmpdir();
     try {
         const log = [];
         const seq = { folder: dir, prefix: "f_", padding: 4, start: 1, count: 2 };
-        const res = await Post._internals.makeMOV(fakeFFmpeg(dir, ["libx264"]), seq, 24, 1,
-            path.join(dir, "output.mov"), () => { }, (msg, cls) => log.push({ msg, cls }));
+        const res = await withFakeFFmpeg(["libx264"], (exe) => Post._internals.makeMOV(exe, seq, 24, 1,
+            path.join(dir, "output.mov"), () => { }, (msg, cls) => log.push({ msg, cls })));
         assert.strictEqual(res.alpha, false);
         const last = log[log.length - 1];
         assert.match(last.msg, /NO alpha/);
@@ -134,14 +152,13 @@ test("a MOV that fell back to H.264 is reported as having no alpha",
     } finally { rmrf(dir); }
 });
 
-test("a MOV encoded with alpha is a plain success",
-    { skip: process.platform === "win32" }, async () => {
+test("a MOV encoded with alpha is a plain success", async () => {
     const dir = tmpdir();
     try {
         const log = [];
         const seq = { folder: dir, prefix: "f_", padding: 4, start: 1, count: 2 };
-        const res = await Post._internals.makeMOV(fakeFFmpeg(dir, ["libx265"]), seq, 24, 1,
-            path.join(dir, "output.mov"), () => { }, (msg, cls) => log.push({ msg, cls }));
+        const res = await withFakeFFmpeg(["libx265"], (exe) => Post._internals.makeMOV(exe, seq, 24, 1,
+            path.join(dir, "output.mov"), () => { }, (msg, cls) => log.push({ msg, cls })));
         assert.strictEqual(res.alpha, true);
         assert.match(log[0].msg, /SUCCESS via HEVC/);
     } finally { rmrf(dir); }
@@ -159,21 +176,19 @@ const convertWebM = (dir, exe) => Post.convert(
     { ffmpegPath: exe, seq: Post.detectPNGSequence(dir), fps: 24, width: 750, height: 300, webm: true },
     () => { }, () => { });
 
-test("a failed conversion leaves the previous output.webm intact",
-    { skip: process.platform === "win32" }, async () => {
+test("a failed conversion leaves the previous output.webm intact", async () => {
     const dir = seqDir();
     try {
-        await assert.rejects(convertWebM(dir, fakeFFmpeg(dir, [])));
+        await assert.rejects(withFakeFFmpeg([], (exe) => convertWebM(dir, exe)));
         assert.strictEqual(fs.readFileSync(path.join(dir, "output.webm"), "utf8"), "PREVIOUS GOOD");
         assert.ok(!fs.existsSync(path.join(dir, "output.partial.webm")), "no partial file left behind");
     } finally { rmrf(dir); }
 });
 
-test("a successful conversion replaces output.webm",
-    { skip: process.platform === "win32" }, async () => {
+test("a successful conversion replaces output.webm", async () => {
     const dir = seqDir();
     try {
-        const res = await convertWebM(dir, fakeFFmpeg(dir, ["libvpx-vp9"]));
+        const res = await withFakeFFmpeg(["libvpx-vp9"], (exe) => convertWebM(dir, exe));
         assert.deepStrictEqual(res.outputs.map((p) => path.basename(p)), ["output.webm"]);
         assert.notStrictEqual(fs.readFileSync(path.join(dir, "output.webm"), "utf8"), "PREVIOUS GOOD");
         assert.ok(!fs.existsSync(path.join(dir, "output.partial.webm")));

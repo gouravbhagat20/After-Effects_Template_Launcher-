@@ -512,44 +512,147 @@ var BH = (function () {
      * silently lands in the collect folder. `reopened` tells the panel
      * whether that worked; on a failure part-way through, the half-relinked
      * copy is closed unsaved and the original reopened too.
+     *
+     * Two ways in, one implementation:
+     *   collectProject(dest, footage)        — everything in one call
+     *   collectBegin → collectStep… → collectFinish   (or collectAbort)
+     * The stepped form is what the panel uses: one long call freezes AE with
+     * no progress and cannot be cancelled, so it does a slice of the work per
+     * call and the panel shows progress, and can stop, in between.
      */
-    api.collectProject = function (destAepPath, footageFolderPath) {
-        var originalFile = null;
-        var onCopy = false;
-        try {
-            if (!app.project || !app.project.file) return fail("No saved project open (BH-2003).");
+    var collectState = null;
 
-            app.project.save();                          // original, unmodified
-            originalFile = new File(app.project.file.fsName);
-            app.project.save(new File(destAepPath));     // now working on the copy
-            onCopy = true;
+    function collectBeginImpl(destAepPath, footageFolderPath) {
+        if (!app.project || !app.project.file) throw new Error("No saved project open (BH-2003).");
 
-            var footageFolder = new Folder(footageFolderPath);
-            if (!footageFolder.exists) footageFolder.create();
+        app.project.save();                          // original, unmodified
+        var st = {
+            originalFile: new File(app.project.file.fsName),
+            onCopy: false,
+            destAepPath: destAepPath,
+            footageFolder: new Folder(footageFolderPath),
+            missing: [],
+            queue: [],        // ids of the footage items to copy + relink
+            pos: 0,
+            count: 0,
+            claimed: {},      // dest path (lower-cased) -> source path, files written this run
+            singles: {},      // source path -> File it was copied to
+            sequences: {}     // sequence identity -> Folder its frames were copied to
+        };
+        collectState = st;
 
-            var missing = [];
-            var items = app.project.items;
-            for (var m = 1; m <= items.length; m++) {
-                var it = items[m];
-                if (it instanceof FootageItem && it.file && !it.file.exists) {
-                    missing.push(it.name + " → " + it.file.fsName);
-                }
+        app.project.save(new File(destAepPath));     // now working on the copy
+        st.onCopy = true;
+        st.copyFsName = app.project.file ? app.project.file.fsName : new File(destAepPath).fsName;
+
+        if (!st.footageFolder.exists) st.footageFolder.create();
+
+        // Queue by item.id, not index: relinking renames an item to its new
+        // file's name, and a rename can renumber the list being walked.
+        var items = app.project.items;
+        for (var m = 1; m <= items.length; m++) {
+            var it = items[m];
+            if (!it || !(it instanceof FootageItem) || !it.file) continue;
+            if (!it.file.exists) {
+                st.missing.push(it.name + " → " + it.file.fsName);
+                continue;
             }
-
-            var count = collectAssetsInto(footageFolder);
-            app.project.save();                          // persist relinks in the copy
-
-            generatePackReport(new File(destAepPath).parent, missing);
-
-            var reopened = reopenOriginal(originalFile, false);
-            return ok({ assets: count, missing: missing.length, reopened: reopened });
-        } catch (e) {
-            if (onCopy && !reopenOriginal(originalFile, true)) {
-                return fail(e + " — After Effects is still showing the collected COPY; " +
-                    "reopen your original project before continuing.");
-            }
-            return fail(e);
+            if (!it.mainSource || it.mainSource instanceof SolidSource) continue;
+            st.queue.push(it.id);
         }
+        return st;
+    }
+
+    /** Copy + relink queued items until the queue is empty or `budgetMs` is
+        spent (always at least one item). budgetMs <= 0 means no limit. */
+    function collectRun(st, budgetMs) {
+        var t0 = new Date().getTime();
+        while (st.pos < st.queue.length) {
+            var item = app.project.itemByID(st.queue[st.pos]);
+            st.pos++;
+            collectOne(item, st);
+            if (budgetMs > 0 && new Date().getTime() - t0 >= budgetMs) break;
+        }
+    }
+
+    function collectFinishImpl(st) {
+        app.project.save();                          // persist relinks in the copy
+        generatePackReport(new File(st.destAepPath).parent, st.missing);
+        var reopened = reopenOriginal(st.originalFile, false);
+        collectState = null;
+        return { assets: st.count, missing: st.missing.length, reopened: reopened };
+    }
+
+    /** Give up on a collect: leave the copy (unsaved) and go back to the
+        original. Returns whether the original is open again. */
+    function collectAbortImpl() {
+        var st = collectState;
+        collectState = null;
+        if (!st || !st.onCopy) return true;          // never left the original
+        return reopenOriginal(st.originalFile, true);
+    }
+
+    var STILL_ON_COPY = " — After Effects is still showing the collected COPY; " +
+                        "reopen your original project before continuing.";
+
+    api.collectProject = function (destAepPath, footageFolderPath) {
+        try {
+            var st = collectBeginImpl(destAepPath, footageFolderPath);
+            collectRun(st, 0);
+            return ok(collectFinishImpl(st));
+        } catch (e) {
+            return fail(collectAbortImpl() ? e : e + STILL_ON_COPY);
+        }
+    };
+
+    /** Start a stepped collect. Returns { total, missing } — total is the
+        number of footage items collectStep will work through. */
+    api.collectBegin = function (destAepPath, footageFolderPath) {
+        try {
+            if (collectState) collectAbortImpl();    // a previous run the panel walked away from
+            var st = collectBeginImpl(destAepPath, footageFolderPath);
+            return ok({ total: st.queue.length, missing: st.missing.length });
+        } catch (e) {
+            return fail(collectAbortImpl() ? e : e + STILL_ON_COPY);
+        }
+    };
+
+    /** Do up to budgetMs (default 250) of copying. Returns { done, total,
+        finished }. On failure the collect is abandoned and the original
+        reopened, exactly as in the one-call form. */
+    api.collectStep = function (budgetMs) {
+        try {
+            var st = collectState;
+            if (!st) return fail("No collect in progress.");
+            // AE is usable between steps. If the user has since opened or
+            // closed a project, relinking "the copy" would edit something else.
+            var open = app.project && app.project.file ? app.project.file.fsName : null;
+            if (open === null || open.toLowerCase() !== st.copyFsName.toLowerCase()) {
+                collectState = null;
+                return fail("The project was changed in After Effects while it was being collected — " +
+                            "collect stopped. Nothing was changed in the project that is open now.");
+            }
+            collectRun(st, budgetMs > 0 ? budgetMs : 250);
+            return ok({ done: st.pos, total: st.queue.length, finished: st.pos >= st.queue.length });
+        } catch (e) {
+            return fail(collectAbortImpl() ? e : e + STILL_ON_COPY);
+        }
+    };
+
+    api.collectFinish = function () {
+        try {
+            if (!collectState) return fail("No collect in progress.");
+            return ok(collectFinishImpl(collectState));
+        } catch (e) {
+            return fail(collectAbortImpl() ? e : e + STILL_ON_COPY);
+        }
+    };
+
+    /** Cancel a stepped collect. Returns { reopened }. Files already copied
+        stay in the collect folder; the copied .aep is left as Save As wrote it. */
+    api.collectAbort = function () {
+        try { return ok({ reopened: collectAbortImpl() }); }
+        catch (e) { return fail(e); }
     };
 
     /** Leave the collected copy and reopen the original project. The copy is
@@ -565,7 +668,7 @@ var BH = (function () {
     }
 
     /**
-     * Copy every linked footage file into footageFolder and relink the item.
+     * Copy one footage item's file(s) into the collect folder and relink it.
      * Port of collectAssets (no palette UI — the panel shows progress), with
      * the name-clash handling the port was missing:
      *
@@ -578,105 +681,95 @@ var BH = (function () {
      *  - A sequence is the files named <prefix><digits>.<ext>, nothing looser:
      *    the old prefix test swept in every file starting with those letters.
      */
-    function collectAssetsInto(footageFolder) {
-        var count = 0;
-        var items = app.project.items;
-        var claimed = {};     // dest path (lower-cased) -> source path, files written this run
-        var singles = {};     // source path -> File it was copied to
-        var sequences = {};   // sequence identity -> Folder its frames were copied to
+    function collectOne(item, st) {
+        var footageFolder = st.footageFolder;
+        var claimed = st.claimed;
 
         function claimKey(folder, name) {
             return (folder.fsName + "/" + name).toLowerCase();
         }
 
-        for (var i = 1; i <= items.length; i++) {
-            var item = items[i];
-            if (!item || !(item instanceof FootageItem) || !item.file) continue;
-            if (!item.mainSource || item.mainSource instanceof SolidSource) continue;
-            var sourceFile = item.file;
-            if (!sourceFile.exists) continue;
+        if (!item || !(item instanceof FootageItem) || !item.file) return;
+        if (!item.mainSource || item.mainSource instanceof SolidSource) return;
+        var sourceFile = item.file;
+        if (!sourceFile.exists) return;
 
-            var destName = decodeURI(sourceFile.name);
-            var lowerExt = sourceFile.name.split(".").pop().toLowerCase();
+        var destName = decodeURI(sourceFile.name);
+        var lowerExt = sourceFile.name.split(".").pop().toLowerCase();
 
-            var isSequence = !item.mainSource.isStill &&
-                /^(png|jpg|jpeg|tif|tiff|tga|exr|psd)$/.test(lowerExt);
+        var isSequence = !item.mainSource.isStill &&
+            /^(png|jpg|jpeg|tif|tiff|tga|exr|psd)$/.test(lowerExt);
 
-            var handled = false;
-            if (isSequence) {
-                var seqFolder = sourceFile.parent;
-                if (!seqFolder || !seqFolder.exists) continue;
-                var match = destName.replace(/\.[^\.]+$/, "").match(/^(.*?)(\d+)$/);
-                var seqFiles = match ? sequenceFiles(seqFolder, match[1].toLowerCase(), lowerExt) : null;
+        if (isSequence) {
+            var seqFolder = sourceFile.parent;
+            if (!seqFolder || !seqFolder.exists) return;
+            var match = destName.replace(/\.[^\.]+$/, "").match(/^(.*?)(\d+)$/);
+            var seqFiles = match ? sequenceFiles(seqFolder, match[1].toLowerCase(), lowerExt) : null;
 
-                if (seqFiles && seqFiles.length > 0) {
-                    handled = true;
-                    var seqKey = (seqFolder.fsName + "|" + match[1] + "|" + lowerExt).toLowerCase();
-                    var destDir = sequences[seqKey];
-                    if (!destDir) {
-                        destDir = footageFolder;
-                        // Would any frame land on a name another source already took?
-                        var clash = false;
-                        for (var c = 0; c < seqFiles.length && !clash; c++) {
-                            var taken = claimed[claimKey(destDir, decodeURI(seqFiles[c].name))];
-                            if (taken && taken !== seqFiles[c].fsName) clash = true;
-                        }
-                        if (clash) {
-                            var n = 2;
-                            do {
-                                destDir = new Folder(footageFolder.fsName + "/" +
-                                    decodeURI(seqFolder.name) + "_" + n);
-                                n++;
-                            } while (destDir.exists);
-                            destDir.create();
-                        }
-                        var allCopied = true;
-                        for (var s = 0; s < seqFiles.length; s++) {
-                            var frameName = decodeURI(seqFiles[s].name);
-                            if (seqFiles[s].copy(destDir.fsName + "/" + frameName)) {
-                                claimed[claimKey(destDir, frameName)] = seqFiles[s].fsName;
-                            } else {
-                                allCopied = false;
-                            }
-                        }
-                        if (!allCopied) continue;   // leave the item on its original files
-                        sequences[seqKey] = destDir;
+            if (seqFiles && seqFiles.length > 0) {
+                var seqKey = (seqFolder.fsName + "|" + match[1] + "|" + lowerExt).toLowerCase();
+                var destDir = st.sequences[seqKey];
+                if (!destDir) {
+                    destDir = footageFolder;
+                    // Would any frame land on a name another source already took?
+                    var clash = false;
+                    for (var c = 0; c < seqFiles.length && !clash; c++) {
+                        var taken = claimed[claimKey(destDir, decodeURI(seqFiles[c].name))];
+                        if (taken && taken !== seqFiles[c].fsName) clash = true;
                     }
-                    var seqDest = new File(destDir.fsName + "/" + destName);
-                    var replaced = false;
-                    try {
-                        if (typeof item.replaceWithSequence === "function") {
-                            item.replaceWithSequence(seqDest, false);
-                            replaced = true;
-                        }
-                    } catch (errSeq) { }
-                    if (!replaced) item.replace(seqDest);
-                    count++;
-                }
-            }
-
-            if (!handled) {
-                // single file (or a "sequence" with no numbered frames)
-                var destFile = singles[sourceFile.fsName];
-                if (!destFile) {
-                    destFile = new File(footageFolder.fsName + "/" + destName);
-                    var dupIdx = 1;
-                    var parts = destName.split(".");
-                    var fileExt = parts.pop();
-                    var base = parts.join(".");
-                    while (destFile.exists) {
-                        destFile = new File(footageFolder.fsName + "/" + base + "_" + dupIdx + "." + fileExt);
-                        dupIdx++;
+                    if (clash) {
+                        var n = 2;
+                        do {
+                            destDir = new Folder(footageFolder.fsName + "/" +
+                                decodeURI(seqFolder.name) + "_" + n);
+                            n++;
+                        } while (destDir.exists);
+                        destDir.create();
                     }
-                    sourceFile.copy(destFile.fsName);
-                    singles[sourceFile.fsName] = destFile;
-                    claimed[destFile.fsName.toLowerCase()] = sourceFile.fsName;
+                    var allCopied = true;
+                    for (var f = 0; f < seqFiles.length; f++) {
+                        var frameName = decodeURI(seqFiles[f].name);
+                        if (seqFiles[f].copy(destDir.fsName + "/" + frameName)) {
+                            claimed[claimKey(destDir, frameName)] = seqFiles[f].fsName;
+                        } else {
+                            allCopied = false;
+                        }
+                    }
+                    if (!allCopied) return;         // leave the item on its original files
+                    st.sequences[seqKey] = destDir;
                 }
-                item.replace(destFile);
-                count++;
+                var seqDest = new File(destDir.fsName + "/" + destName);
+                var replaced = false;
+                try {
+                    if (typeof item.replaceWithSequence === "function") {
+                        item.replaceWithSequence(seqDest, false);
+                        replaced = true;
+                    }
+                } catch (errSeq) { }
+                if (!replaced) item.replace(seqDest);
+                st.count++;
+                return;
             }
         }
-        return count;
+
+        // single file (or a "sequence" with no numbered frames)
+        var destFile = st.singles[sourceFile.fsName];
+        if (!destFile) {
+            destFile = new File(footageFolder.fsName + "/" + destName);
+            var dupIdx = 1;
+            var parts = destName.split(".");
+            var fileExt = parts.pop();
+            var base = parts.join(".");
+            while (destFile.exists) {
+                destFile = new File(footageFolder.fsName + "/" + base + "_" + dupIdx + "." + fileExt);
+                dupIdx++;
+            }
+            sourceFile.copy(destFile.fsName);
+            st.singles[sourceFile.fsName] = destFile;
+            claimed[destFile.fsName.toLowerCase()] = sourceFile.fsName;
+        }
+        item.replace(destFile);
+        st.count++;
     }
 
     /** The frames of one sequence: files in `folder` named exactly

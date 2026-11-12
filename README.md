@@ -153,6 +153,10 @@ then set the path in Settings (`C:\ffmpeg\bin\ffmpeg.exe` or
 ### Manual QA checklist (before a CEP release)
 CI covers the pure logic; these need a human in front of AE:
 
+- [ ] Run `cep/test/ae-smoke.jsx` (File → Scripts → Run Script File…) → all
+      checks pass. Covers the optimize relink, render formats and Collect
+- [ ] Collect a real project → progress counts up, AE ends on the original,
+      Cancel part-way reopens the original
 - [ ] Create project from each template → folder tree + naming correct
 - [ ] Render queue: Sunrise (PNG+Alpha → `PNG_Sequence/`), DOOH (H.264 → `MP4/`)
 - [ ] DOOH optimize: single + batch, output ≤ target, original recoverable on cancel

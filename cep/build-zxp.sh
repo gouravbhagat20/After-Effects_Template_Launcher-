@@ -47,9 +47,31 @@ mkdir -p "$STAGE"
 rsync -a "$CEP/" "$STAGE/" --exclude-from="$CEP/.zxpignore"
 
 # 4. Sign (timestamped when the TSA is reachable, unsigned-timestamp fallback)
-rm -f "$OUT"
-"$SIGN" -sign "$STAGE" "$OUT" "$CERT" "$PASS" -tsa http://timestamp.digicert.com \
-    || "$SIGN" -sign "$STAGE" "$OUT" "$CERT" "$PASS"
+# ZXPSignCmd exits 0 even when the timestamp authority's reply "could not be
+# verified", leaving a package other tools are "likely to reject" — so the
+# exit code is not enough. Read its output, and move on to the next authority
+# (then to an untimestamped signature) until one signs cleanly.
+sign_with() {   # $1 = TSA url, or empty for no timestamp
+    rm -f "$OUT"
+    local log
+    if [ -n "$1" ]; then
+        log="$("$SIGN" -sign "$STAGE" "$OUT" "$CERT" "$PASS" -tsa "$1" 2>&1)" || return 1
+    else
+        log="$("$SIGN" -sign "$STAGE" "$OUT" "$CERT" "$PASS" 2>&1)" || return 1
+    fi
+    if echo "$log" | grep -qi "could not be verified"; then return 1; fi
+    [ -f "$OUT" ]
+}
+SIGNED_WITH=""
+# DigiCert is listed more than once on purpose: with this ZXPSignCmd its reply
+# verifies on some attempts and not others, so a retry usually succeeds.
+for tsa in http://timestamp.digicert.com http://timestamp.digicert.com http://timestamp.digicert.com \
+           http://timestamp.sectigo.com http://timestamp.globalsign.com/tsa/r6advanced1 ""; do
+    if sign_with "$tsa"; then SIGNED_WITH="${tsa:-no timestamp}"; break; fi
+    echo "Signing with ${tsa:-no timestamp} failed — trying the next option…"
+done
+[ -n "$SIGNED_WITH" ] || { echo "Could not sign the package." >&2; exit 1; }
+echo "Signed (timestamp: $SIGNED_WITH)"
 
 "$SIGN" -verify "$OUT"
 

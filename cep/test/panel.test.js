@@ -339,6 +339,79 @@ test("optimizing a file with sound warns that the audio will be dropped", async 
     });
 });
 
+/* ------------------------------------------------------- collect ------- */
+
+const SAVED = { open: true, dirty: false, path: "/p/Nike_Q1_750x300_V1_R1.aep",
+                name: "Nike_Q1_750x300_V1_R1", folder: "/p",
+                mainComp: { name: "Main", width: 750, height: 300, duration: 15, fps: 24 } };
+
+/** Boot with a saved project and a host that collects 3 items, one per step. */
+function collectPanel(overrides) {
+    const os = require("node:os"), fs = require("node:fs"), path = require("node:path");
+    const dest = fs.mkdtempSync(path.join(os.tmpdir(), "bh-collect-"));
+    let done = 0;
+    const hostImpl = Object.assign({
+        preFlightCheck: () => [],
+        collectBegin: () => ({ total: 3, missing: 0 }),
+        collectStep: () => { done++; return { done, total: 3, finished: done >= 3 }; },
+        collectFinish: () => ({ assets: 3, missing: 0, reopened: true }),
+        collectAbort: () => ({ reopened: true })
+    }, overrides || {});
+    return { dest, opts: { projectInfo: SAVED, hostImpl }, cleanup: () => fs.rmSync(dest, { recursive: true, force: true }) };
+}
+
+async function startCollect(p, dest) {
+    p.window.cep.fs.showOpenDialogEx = () => ({ err: 0, data: [dest] });
+    p.window.BHCore.revealFile = () => { };
+    p.$("btn-collect").click();
+    await p.settle(120);
+}
+
+test("collect runs in steps and reports the result", async () => {
+    const c = collectPanel();
+    try {
+        await withPanel(c.opts, async (p) => {
+            await startCollect(p, c.dest);
+            assert.equal(p.callsTo("collectStep").length, 3, "one host call per slice of work");
+            assert.equal(p.callsTo("collectFinish").length, 1);
+            assert.equal(p.callsTo("collectProject").length, 0, "the one-shot call would freeze AE");
+            assert.match(p.$("collect-status").textContent, /Collected 3 asset/);
+            assert.ok(p.$("btn-collect-cancel").classList.contains("hidden"), "Cancel goes away when done");
+            assert.equal(p.$("btn-collect").disabled, false);
+        });
+    } finally { c.cleanup(); }
+});
+
+test("Cancel during a collect aborts it instead of finishing", async () => {
+    let panel;
+    const c = collectPanel({
+        collectStep: () => {
+            panel.$("btn-collect-cancel").click();      // pressed while a slice is running
+            return { done: 1, total: 3, finished: false };
+        }
+    });
+    try {
+        await withPanel(c.opts, async (p) => {
+            panel = p;
+            await startCollect(p, c.dest);
+            assert.equal(p.callsTo("collectStep").length, 1, "no further slices after Cancel");
+            assert.equal(p.callsTo("collectAbort").length, 1);
+            assert.equal(p.callsTo("collectFinish").length, 0);
+            assert.match(p.$("collect-status").textContent, /cancelled/i);
+        });
+    } finally { c.cleanup(); }
+});
+
+test("a collect that could not return to the original says so", async () => {
+    const c = collectPanel({ collectFinish: () => ({ assets: 3, missing: 0, reopened: false }) });
+    try {
+        await withPanel(c.opts, async (p) => {
+            await startCollect(p, c.dest);
+            assert.match(p.$("bh-modal-msg").textContent, /collected COPY/);
+        });
+    } finally { c.cleanup(); }
+});
+
 /* ------------------------------------------- interrupted-run recovery --- */
 
 const ORPHAN = [{ index: 1, name: "BH_RELINK_1" }];

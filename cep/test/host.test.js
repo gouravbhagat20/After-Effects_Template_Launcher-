@@ -510,6 +510,94 @@ test("different files with the same name still get separate copies", () => {
     assert.equal(ae.items[1].file.fsName, "/dest/(Footage)/logo_1.png");
 });
 
+/* ------------------------------------------------ stepped collect ------ */
+
+function steppedAE(extra) {
+    return buildAE(Object.assign({
+        projectFile: "/p/orig.aep",
+        files: ["/p/orig.aep"],
+        items: [
+            { kind: "footage", name: "a", path: "/src/a.png", mainSource: STILL },
+            { kind: "footage", name: "b", path: "/src/b.png", mainSource: STILL },
+            { kind: "footage", name: "gone", path: "/src/gone.png", mainSource: STILL, onDisk: false },
+            { kind: "footage", name: "c", path: "/src/c.png", mainSource: STILL }
+        ]
+    }, extra || {}));
+}
+
+test("a stepped collect reports progress and ends like the one-call form", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    const begin = unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    assert.deepEqual(begin, { total: 3, missing: 1 }, "missing footage is counted, not queued");
+
+    const seen = [];
+    let p;
+    do {
+        p = unwrap(BH.collectStep(-1));     // no time budget in a test: one call may do it all
+        seen.push(p.done);
+    } while (!p.finished);
+    assert.equal(seen[seen.length - 1], 3);
+
+    const res = unwrap(BH.collectFinish());
+    assert.deepEqual(res, { assets: 3, missing: 1, reopened: true });
+    assert.equal(ae.project.file.fsName, "/p/orig.aep");
+    assert.ok(ae.vfs.hasFile("/dest/(Footage)/c.png"));
+    assert.equal(JSON.parse(BH.collectStep(250)).ok, false, "nothing is left in progress afterwards");
+});
+
+test("a step stops after its time budget so the panel can show progress", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    // Make every copy take a few real milliseconds, then allow 1 ms per step.
+    ae.vfs.copyFails = () => {
+        const until = Date.now() + 3;
+        while (Date.now() < until) { /* spin */ }
+        return false;
+    };
+    const p = unwrap(BH.collectStep(1));
+    assert.equal(p.done, 1, "one item, then control goes back to the panel");
+    assert.equal(p.total, 3);
+    assert.equal(p.finished, false);
+});
+
+test("cancelling a stepped collect discards the copy and reopens the original", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    assert.equal(ae.project.file.fsName, "/dest/orig.aep", "Save As put AE on the copy");
+
+    const res = unwrap(BH.collectAbort());
+    assert.equal(res.reopened, true);
+    assert.equal(ae.project.file.fsName, "/p/orig.aep");
+    assert.ok(ae.log.some((l) => l.op === "close"), "the copy is closed without saving");
+    assert.equal(JSON.parse(BH.collectStep(250)).ok, false);
+});
+
+test("a step refuses to touch a different project opened mid-collect", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.vfs.addFile("/elsewhere/other.aep");
+    ae.app.open(new ae.globals.File("/elsewhere/other.aep"));   // the user switched projects
+
+    const before = ae.log.length;
+    const parsed = JSON.parse(BH.collectStep(250));
+    assert.equal(parsed.ok, false);
+    assert.match(parsed.error, /changed in After Effects/);
+    assert.equal(ae.log.length, before, "nothing was copied, relinked, closed or opened");
+    assert.equal(ae.project.file.fsName, "/elsewhere/other.aep");
+});
+
+test("a failure inside a step abandons the collect and returns to the original", () => {
+    const ae = steppedAE({ replaceThrowsFor: () => true });
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    assert.equal(JSON.parse(BH.collectStep(250)).ok, false);
+    assert.equal(ae.project.file.fsName, "/p/orig.aep");
+});
+
 /* ------------------------------------------------- comp / folder match --- */
 
 test("the Main fallback needs 'Main' as a whole word", () => {

@@ -22,15 +22,15 @@ same commit as any feature change.
 | **DOOH optimization** |
 | Size-capped MP4 optimization | ✅ | ✅ | ScriptUI: CRF-18 + strict ABR fallback. CEP: two-pass ABR + verify + retry. Per-unit caps (Expandable <4 MB, DOOH <7 MB) in both since CEP v0.4.3 / ScriptUI v1.3 |
 | Batch mode | ✅ | ✅ | |
-| Async (AE stays responsive) + instant cancel | ❌ | ✅ | ScriptUI blocks AE during encodes (synchronous callSystem) |
+| Async (AE stays responsive) + instant cancel | ❌ | ✅ | ScriptUI blocks AE during encodes (synchronous callSystem). CEP never overwrites an existing `_Optimized.mp4` and warns when a source has audio (encodes are video-only) |
 | Backup-swap replacement (original never lost) | 🟡 | ✅ | CEP path is unit-tested (`cep/test/backupswap.test.js`) |
 | AE file-lock release + relink on replace | ✅ | ✅ | |
 | **Post-render (Sunrise)** |
 | PNG sequence → WebM (VP9+alpha, two-pass) | ✅ | ✅ | CEP card enabled v0.4.4 — needs one real conversion verified in AE |
-| MOV fallback chain (HEVC-alpha → ProRes 4444 → H.264) | ✅ | 🟡 | Same code path as above |
+| MOV fallback chain (HEVC-alpha → ProRes 4444 → H.264) | ✅ | 🟡 | Same code path as above. CEP flags the H.264 rung as "no alpha" (v0.4.10) and replaces outputs only once complete |
 | HTML preview (Mediabunny) + ZIP bundle | ✅ | 🟡 | Same code path as above |
 | **Collect & upload** |
-| Collect linked assets (remove unused, pack report) | ✅ | ✅ | CEP collects to a chosen local folder |
+| Collect linked assets (remove unused, pack report) | ✅ | ✅ | CEP collects to a chosen local folder, in steps with progress and Cancel (v0.4.11), returns to the original project, and keeps same-named sources apart |
 | NAS mirror (copy into the NAS share) | ✅ | ❌ | Filesystem copy to the `nas_root` path (mounted share or UNC `\\NAS\share`). Port planned |
 | Shared `_Common_Assets` dedup on NAS | ✅ | ❌ | Part of the same routine |
 | **Interface** |
@@ -40,7 +40,7 @@ same commit as any feature change.
 | Auto-update | ✅ | ✅ | Both SHA-256-verified, fail closed. ScriptUI: commit-SHA check + raw download verified against the published `.jsx.sha256`. CEP: verified download, staged extract + validation, atomic swap, rollback backup kept until the new version boots; network calls time out |
 | What's New changelog popup after update | ❌ | ✅ | |
 | Settings sync between the two tools | ✅ | ✅ | Same AE prefs section `BigHappyLauncher` |
-| Headless test suite + CI | ❌ | ✅ | `cep/test/` (86 tests incl. the updater module), GitHub Actions macOS+Windows; CI also parse-checks both `.jsx` files and enforces release version sync + published checksums |
+| Headless test suite + CI | ❌ | ✅ | `cep/test/` (190+ tests: updater, host.jsx against an AE mock, the panel on a DOM stub, and ScriptUI↔CEP parity), GitHub Actions macOS+Windows; `cep/test/ae-smoke.jsx` runs the host calls inside After Effects; CI also parse-checks both `.jsx` files and enforces release version sync + published checksums |
 
 ## Retirement blockers for the ScriptUI panel
 

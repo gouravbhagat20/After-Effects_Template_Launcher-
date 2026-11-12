@@ -10,6 +10,10 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.11": [
+            "Collect Project now shows progress and can be cancelled — After Effects no longer freezes for the whole collect",
+            "Cancelling a collect reopens your original project"
+        ],
         "0.4.10": [
             "Collect: two image sequences with the same frame names are no longer merged — the second gets its own folder — and a file used by several items is copied once",
             "Post-render: a MOV that had to fall back to H.264 is now flagged as having NO transparency instead of being logged as a success",

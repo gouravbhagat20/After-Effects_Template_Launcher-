@@ -88,7 +88,10 @@ Open the **Launcher** tab.
 7. Click **Create project**.
 
 The launcher protects an open project with unsaved changes. Follow the prompt
-to save it or explicitly continue without saving.
+to save it or explicitly continue without saving. If you choose to save and the
+save fails, the launcher stops and tells you why; it does not open or create
+the other project. In any prompt, **Enter** activates the highlighted button
+and **Esc** cancels.
 
 ### Example project
 
@@ -143,7 +146,8 @@ frame size, frame rate, duration, and whether it has unsaved changes.
   CEP panel or the legacy ScriptUI launcher.
 
 For the automated render workflow, the project must be saved and contain a
-composition named exactly `Main`.
+composition named exactly `Main`. If there is none, the launcher falls back to
+a comp with `Main` as a whole word in its name, such as `Main_v2`.
 
 ## Add the Main comp to the Render Queue
 
@@ -184,7 +188,20 @@ After rendering the Sunrise PNG sequence:
 6. Click **Show Files** when the conversion completes.
 
 The converted files are written beside the selected PNG sequence. Existing
-outputs are not overwritten without confirmation.
+outputs, including the ZIP, are not overwritten without confirmation, and they
+are only replaced once the new file is complete: a cancelled or failed
+conversion leaves the previous files as they were.
+
+Things to know:
+
+- The sequence is the largest set of numbered PNGs sharing one name in the
+  folder. Other PNGs there, such as a poster frame, are ignored.
+- **MOV without transparency.** If your FFmpeg can encode neither HEVC nor
+  ProRes 4444 with alpha, the MOV is written as H.264, which has **no
+  transparency**. The log and summary show a warning when this happens. Do not
+  deliver that file where alpha is required.
+- WebM is encoded to a size target only for DOOH units. Sunrise WebMs are
+  encoded at constant quality.
 
 ## Collect a project for handoff
 
@@ -194,6 +211,7 @@ With a saved project open:
 2. Click **Collect project…**.
 3. Review any missing-footage warning.
 4. Choose the parent folder for the collected package.
+5. Watch the item count while it runs. **Cancel** stops it.
 
 The launcher creates a standardized copy containing:
 
@@ -201,8 +219,21 @@ The launcher creates a standardized copy containing:
 - Linked footage in a `(Footage)` folder.
 - `_Pack_Report.txt` with fonts, effects, and missing-file information.
 
-The original project on disk is not modified. The CEP panel collects locally;
-it does not copy or mirror the package to the NAS.
+The original project on disk is not modified, and when the collect finishes
+After Effects is back on your original project, not on the collected copy.
+Leave the project alone in After Effects while a collect is running; if you
+open or close a project part-way through, the collect stops.
+
+- If two different files share a name, both are kept: the second single file
+  gets a `_1` suffix, and a second image sequence goes into its own subfolder
+  inside `(Footage)`.
+- If you cancel, the original project is reopened. Files already copied stay
+  in the collect folder; delete that folder if you do not need it.
+- If the launcher ever reports that After Effects is still on the collected
+  copy, reopen your original project before you continue working.
+
+The CEP panel collects locally; it does not copy or mirror the package to the
+NAS.
 
 ## Optimize MP4 files for DOOH delivery
 
@@ -214,7 +245,8 @@ Open the **DOOH** tab.
    below a 7 MB delivery limit.
 4. Click **Optimize**.
 5. Watch the current-file and overall progress bars.
-6. Use **Cancel** to stop the active encode and skip the remaining queue.
+6. Use **Cancel** to stop the batch. It takes effect immediately, including
+   while a file is still being prepared.
 7. Click **Show in Finder** or **Show in Explorer** when finished.
 
 Important behavior:
@@ -227,7 +259,11 @@ Important behavior:
 - The original is protected by a backup-swap and is never deleted before the
   replacement is verified.
 - If the target cannot be met, the original stays in place and the best result
-  is saved separately with `_Optimized.mp4` in its name.
+  is saved separately with `_Optimized.mp4` in its name. An existing file with
+  that name is never overwritten; the new one is saved as `_Optimized_2.mp4`,
+  and so on.
+- Optimized files are video-only. If a source has an audio track, the log
+  warns that the result will have no sound.
 - If the MP4 is linked in After Effects, the launcher temporarily releases the
   file lock and then relinks it.
 
@@ -276,6 +312,9 @@ For support:
 | Auto-Detect cannot find a PNG sequence | Select the actual PNG folder with **Choose render folder…**. |
 | MP4 could not be replaced | Close any app using the file and run it again; check the log for a separately saved `_Optimized.mp4`. |
 | Collect reports missing footage | Relink the files in After Effects, then collect again. |
+| "Now Editing the Copy" after a collect | After Effects could not reopen your original. Open it yourself before you keep working, or your edits go into the collect folder. |
+| MOV log says "NO alpha channel" | Your FFmpeg build lacks an alpha-capable MOV encoder. Install a full FFmpeg build (Settings → FFmpeg) and convert again. |
+| "No PNG sequence found" | The folder has no PNGs ending in a frame number. Pick the folder that holds the rendered frames. |
 
 ## Legacy ScriptUI panel
 

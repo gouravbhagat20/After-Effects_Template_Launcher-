@@ -260,7 +260,93 @@
 
         // ---------------- collect ----------------
 
+        var collectRunning = false;
+        var collectCancelled = false;
+
+        $("btn-collect-cancel").addEventListener("click", function () {
+            if (!collectRunning) return;
+            collectCancelled = true;
+            this.disabled = true;
+            $("collect-status").textContent = "Cancelling…";
+        });
+
+        /**
+         * Collect in slices: the host copies for a moment, reports how far it
+         * got, and is asked again. One long call froze After Effects with no
+         * progress, and the only way out was to wait for it. Between slices
+         * the status line moves and Cancel is honoured — the host then closes
+         * the half-relinked copy and reopens the original.
+         */
+        function runCollect(project, destAep, footageFolder, status) {
+            collectRunning = true;
+            collectCancelled = false;
+            core.busy(true);
+            $("btn-collect").disabled = true;
+            var cancelBtn = $("btn-collect-cancel");
+            cancelBtn.disabled = false;
+            cancelBtn.classList.remove("hidden");
+            status.textContent = "Saving a copy to collect…";
+
+            function step(total) {
+                if (collectCancelled) {
+                    return host("collectAbort").then(function (res) {
+                        var e = new Error("CANCELLED");
+                        e.reopened = !res || res.reopened !== false;
+                        throw e;
+                    });
+                }
+                return host("collectStep", 250).then(function (p) {
+                    status.textContent = "Collecting… " + p.done + " / " + p.total + " item(s)";
+                    core.announce("Collecting " + p.done + " of " + p.total);
+                    return p.finished ? host("collectFinish") : step(total);
+                });
+            }
+
+            return host("collectBegin", destAep, footageFolder).then(function (info) {
+                status.textContent = "Collecting… 0 / " + info.total + " item(s)";
+                return step(info.total);
+            }).then(function (res) {
+                status.textContent = "✓ Collected " + res.assets + " asset(s)" +
+                    (res.missing ? " — " + res.missing + " missing (see _Pack_Report.txt)" : "") + ".";
+                toast("✓ Project collected");
+                core.revealFile(destAep);
+                // The host reopens the original afterwards. If it could
+                // not, AE is still on the collected copy — say so, or
+                // the next edits and renders go into the collect folder.
+                if (res.reopened === false) {
+                    status.textContent += " After Effects is still on the collected copy.";
+                    return stillOnCopy("The project was collected, but your original project could not be reopened.",
+                                       destAep, project.path);
+                }
+            }, function (e) {
+                if (e.message === "CANCELLED") {
+                    status.textContent = "Collect cancelled. Files already copied are still in the collect folder.";
+                    toast("Collect cancelled", true);
+                    if (e.reopened === false) {
+                        return stillOnCopy("Collect was cancelled, but your original project could not be reopened.",
+                                           destAep, project.path);
+                    }
+                    return;
+                }
+                status.textContent = "";
+                return ui.alert("Collect failed:\n" + e.message);
+            }).then(function () {
+                collectRunning = false;
+                core.busy(false);
+                $("btn-collect").disabled = false;
+                cancelBtn.classList.add("hidden");
+                core.refreshProject();
+            });
+        }
+
+        function stillOnCopy(lead, destAep, originalPath) {
+            return ui.alert(lead + "\n\nAfter Effects is now showing the collected COPY:\n" + destAep +
+                "\n\nReopen the original before you keep working:\n" + originalPath,
+                "Now Editing the Copy");
+        }
+
         $("btn-collect").addEventListener("click", function () {
+            if (collectRunning) return;
             var project = core.project();
             if (!project || !project.path) { ui.alert("No saved project open. (BH-2003)"); return; }
             var status = $("collect-status");
@@ -298,30 +384,7 @@
                     }
                     var destAep = pathMod.join(destFolder, project.name + ".aep");
 
-                    status.textContent = "Collecting… (AE may be busy for a moment)";
-                    core.busy(true);
-                    return host("collectProject", destAep, footageFolder).then(function (res) {
-                        core.busy(false);
-                        status.textContent = "✓ Collected " + res.assets + " asset(s)" +
-                            (res.missing ? " — " + res.missing + " missing (see _Pack_Report.txt)" : "") + ".";
-                        toast("✓ Project collected");
-                        core.revealFile(destAep);
-                        core.refreshProject();
-                        // The host reopens the original afterwards. If it could
-                        // not, AE is still on the collected copy — say so, or
-                        // the next edits and renders go into the collect folder.
-                        if (res.reopened === false) {
-                            status.textContent += " After Effects is still on the collected copy.";
-                            return ui.alert("The project was collected, but your original project could not be " +
-                                "reopened.\n\nAfter Effects is now showing the collected COPY:\n" + destAep +
-                                "\n\nReopen the original before you keep working:\n" + project.path,
-                                "Now Editing the Copy");
-                        }
-                    }, function (e) {
-                        core.busy(false);
-                        status.textContent = "";
-                        ui.alert("Collect failed:\n" + e.message);
-                    });
+                    return runCollect(project, destAep, footageFolder, status);
                 });
             }).catch(function (e) {
                 status.textContent = "";
