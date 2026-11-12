@@ -21,8 +21,10 @@ const vm = require("node:vm");
 const { T } = require("./_load.js");
 const { buildAE, loadHost, unwrap } = require("./_aemock.js");
 
+// Normalised to LF: a Windows checkout hands this file over with CRLF line
+// endings, and the lookups below anchor on "\n" + indentation.
 const SCRIPT = fs.readFileSync(
-    path.join(__dirname, "..", "..", "BigHappyLauncher_Templates.jsx"), "utf8");
+    path.join(__dirname, "..", "..", "BigHappyLauncher_Templates.jsx"), "utf8").replace(/\r\n/g, "\n");
 
 /** Source of a 4-space-indented `function name(...) { … }` in the script. */
 function scriptFunction(name) {
