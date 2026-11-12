@@ -10,6 +10,9 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.9": [
+            "Post-render now says in its log when a WebM is encoded at constant quality rather than to a size target (only DOOH units are size-targeted)"
+        ],
         "0.4.8": [
             "Safer updates on Windows: if an update has to be extracted over the running install and fails part-way, the previous version is now restored instead of being left half-updated"
         ],
@@ -38,7 +41,7 @@
             "Reliability: the auto-updater moved into its own tested module (35 new tests) with network timeouts — a stalled download can no longer freeze the panel",
             "Windows fix: footage whose path differs only in upper/lower case is now correctly released before optimizing (no more locked-file rename failures)",
             "If a footage item can't be released or relinked, or a Global Asset fails to import, the panel now tells you instead of failing silently",
-            "Post-render conversions now pick the right size target for the unit type (Expandable vs DOOH) instead of always using the 6.8 MB DOOH target"
+            "Post-render conversions only apply the DOOH size target to DOOH units; other units are encoded at constant quality"
         ],
         "0.4.4": [
             "Sunrise post-render is now available in the Render tab: convert a rendered PNG sequence to WebM / MOV / HTML / ZIP with progress and cancel"

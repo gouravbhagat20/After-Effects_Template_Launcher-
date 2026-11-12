@@ -101,7 +101,8 @@
 
     // ---------------- steps ----------------
 
-    /** WebM: two-pass VP9 with alpha. DOOH gets a bitrate target, else CRF 20. */
+    /** WebM: two-pass VP9 with alpha. DOOH gets a bitrate target, else CRF 20
+        (targetMB is read for DOOH only). */
     function makeWebM(exe, seq, fps, durationSec, isDOOH, targetMB, outWebM, onProgress, onLog) {
         var passLog = path.join(os.tmpdir(), "bh_vp9_" + Date.now());
         var rate;
@@ -114,6 +115,7 @@
             onLog("WebM: enforcing " + targetMB + " MB DOOH target (" + kbps + " kbps)");
         } else {
             rate = ["-b:v", "0", "-crf", "20"];
+            onLog("WebM: constant quality (CRF 20) — no size target for this unit");
         }
         var common = inputArgs(seq, fps).concat(
             ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p"], rate,

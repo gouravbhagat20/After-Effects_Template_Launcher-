@@ -180,16 +180,14 @@
             var main = project && project.mainComp;
             var parsed = T.parseProjectName((project && project.name) || "");
 
-            // Size target parity with the ScriptUI tool and the optimizer's
-            // per-unit caps: DOOH renders get dooh_target_mb (default 6.8),
-            // everything else target_size_mb (default 2.5), and Expandable units
-            // (750x1334) are additionally capped at 3.8 (BHCalc.unitTargetMB).
+            // Only DOOH WebMs are encoded to a size: dooh_target_mb (default
+            // 6.8). Everything else is constant quality (CRF 20), same as the
+            // ScriptUI tool, so no size target applies to it. This used to
+            // compute a target_size_mb / Expandable-capped figure for the
+            // non-DOOH case as well, which BHPost never read.
             var prType = main ? T.getTemplateType(main.width, main.height) : "default";
             var prIsDOOH = !!(parsed && parsed.isDOOH) || prType.indexOf("dooh") !== -1;
-            var prBaseTarget = prIsDOOH
-                ? (parseFloat(core.S.dooh_target_mb) || 6.8)
-                : (parseFloat(core.S.target_size_mb) || 2.5);
-            var prTargetMB = global.BHCalc.unitTargetMB(main ? main.width : 0, main ? main.height : 0, prBaseTarget);
+            var prTargetMB = prIsDOOH ? (parseFloat(core.S.dooh_target_mb) || 6.8) : null;
 
             var clobber = global.BHPost.existingOutputs(prSeq.folder);
             Promise.resolve(
