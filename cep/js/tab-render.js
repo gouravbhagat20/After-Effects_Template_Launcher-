@@ -23,13 +23,15 @@
             var box = $("rq-info");
             if (!box) return;
             if (!project || !project.path) {
-                box.innerHTML = '<div class="empty-state">Open a saved project to set up a render.</div>';
+                box.innerHTML = '<h1 class="card-heading">Render</h1>' +
+                    '<span class="sub">Open a saved project to set up a render.</span>';
                 $("btn-rq-add").disabled = true;
                 return;
             }
             var main = project.mainComp;
             if (!main) {
-                box.innerHTML = '<div class="empty-state">No "Main" comp found in this project.</div>';
+                box.innerHTML = '<h1 class="card-heading">Render</h1>' +
+                    '<span class="sub">No "Main" comp found in this project.</span>';
                 $("btn-rq-add").disabled = true;
                 return;
             }
@@ -37,13 +39,13 @@
             var r = T.buildRenderName(project.name, main.width, main.height);
             var revision = (r.parsed && r.parsed.revision) ? r.parsed.revision : "R1";
             var isPng = r.type === "sunrise" || r.type === "default";
+            var folder = "Render_" + revision + "/" + (isPng ? "PNG_Sequence" : "MP4");
             box.innerHTML =
-                '<div class="spec-list">' +
-                    '<div class="spec-row"><span>Comp</span><b>' + core.escapeHtml(main.name) + " · " + main.width + "×" + main.height + " · " + main.duration.toFixed(1) + 's</b></div>' +
-                    '<div class="spec-row"><span>Format</span><b>' + (isPng ? "PNG Sequence + Alpha" : "H.264 (MP4)") + '</b></div>' +
-                    '<div class="spec-row"><span>Folder</span><b>Render_' + core.escapeHtml(revision) + '/' + (isPng ? 'PNG_Sequence' : 'MP4') + '</b></div>' +
-                    '<div class="spec-row"><span>Output</span><b class="mono">' + core.escapeHtml(r.name) + '</b></div>' +
-                '</div>';
+                '<h1 class="card-heading">' + core.escapeHtml(main.name) + " · " + main.width + " × " + main.height + "</h1>" +
+                '<span class="sub">' + (isPng ? "PNG sequence with alpha" : "H.264 MP4") + " · " +
+                    main.duration.toFixed(1) + "s</span>" +
+                '<span class="mono" title="' + core.escapeHtml(folder + "/" + r.name) + '">' +
+                    core.escapeHtml(folder + "/" + r.name) + "</span>";
         }
 
         /** Keep project-specific tools relevant without blocking standalone use. */
@@ -156,7 +158,6 @@
             var all = $("pr-webm").checked && $("pr-mov").checked && $("pr-html").checked && $("pr-zip").checked;
             var videos = $("pr-webm").checked && $("pr-mov").checked && !$("pr-html").checked && !$("pr-zip").checked;
             $("pr-preset").value = all ? "package" : videos ? "video" : "custom";
-            $("pr-formats").classList.toggle("hidden", $("pr-preset").value !== "custom");
         }
 
         $("pr-preset").addEventListener("change", function () {
@@ -166,11 +167,17 @@
                 $("pr-webm").checked = $("pr-mov").checked = true;
                 $("pr-html").checked = $("pr-zip").checked = false;
             }
-            $("pr-formats").classList.toggle("hidden", this.value !== "custom");
             PR_TOGGLES.forEach(function (pair) {
                 core.setSetting(pair[1], $(pair[0]).checked ? "true" : "false");
             });
         });
+
+        /** Fill the conversion ring to pct (0-100). r=40, so 2πr ≈ 251.3. */
+        function setRing(pct) {
+            var value = Math.max(0, Math.min(100, Number(pct) || 0));
+            var ring = $("pr-ring");
+            if (ring && ring.style) ring.style.strokeDasharray = (value / 100 * 251.3).toFixed(1) + " 251.3";
+        }
 
         function prLog(msg, cls) {
             var log = $("pr-log");
@@ -222,6 +229,15 @@
                     $("pr-log").innerHTML = "";
                     $("btn-pr-show").classList.add("hidden");
                     $("pr-summary").classList.add("hidden");
+                    // the encodes that report progress, in the order they run
+                    var prSteps = [];
+                    if (options.webm) prSteps.push("WebM");
+                    if (options.mov) prSteps.push("MOV");
+                    if (options.zip) prSteps.push("ZIP");
+                    setRing(0);
+                    $("pr-pct").textContent = "0%";
+                    $("pr-step").textContent = prSteps[0] || "HTML";
+                    $("pr-count").textContent = prSteps.length ? "0 of " + prSteps.length + " done" : "";
 
                     return global.BHPost.convert({
                         ffmpegPath: exe,
@@ -237,9 +253,19 @@
                         $("pr-step").textContent = step;
                         $("pr-pct").textContent = Math.round(pct) + "%";
                         core.setProgress("pr-bar", pct);
+                        setRing(pct);
+                        var at = prSteps.indexOf(step);
+                        if (at !== -1) {
+                            $("pr-count").textContent = at + " of " + prSteps.length + " done";
+                        }
                         core.announce(step);   // step changes only — announce() drops repeats
                     }, prLog).then(function (res) {
                         var warns = res.warnings || [];
+                        setRing(100);
+                        $("pr-pct").textContent = "100%";
+                        $("pr-step").textContent = "Done";
+                        $("pr-count").textContent = "";
+                        $("pr-summary").classList.toggle("warn", warns.length > 0);
                         prLog("Conversion complete.", "ok");
                         if (!warns.length) toast("✓ Conversion complete");
                         $("pr-summary").textContent = res.outputs.length + " delivery file" +
@@ -255,6 +281,8 @@
                         }
                     }, function (err) {
                         var c = err.message === "CANCELLED";
+                        $("pr-step").textContent = c ? "Cancelled" : "Failed";
+                        $("pr-count").textContent = "";
                         prLog(c ? "Cancelled." : err.message, "err");
                         toast(c ? "Conversion cancelled" : "Conversion failed", true);
                     }).then(function () {

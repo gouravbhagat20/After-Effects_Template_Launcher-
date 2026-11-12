@@ -24,7 +24,7 @@
     var T = global.BHTemplates;
     var ui = global.BHDialog;
 
-    var BH_VERSION = "0.4.12";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.13";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
 
     // ---------------- host bridge ----------------
@@ -129,6 +129,9 @@
     function setPill(state, text) {
         var pill = $("ae-status");
         pill.textContent = text;
+        // Drawn as a bare dot — the wording is its tooltip and accessible name.
+        pill.title = text;
+        pill.setAttribute("aria-label", "After Effects: " + text);
         pill.className = "pill " + (state === "ok" ? "pill-ok" : state === "err" ? "pill-err" : "pill-dim");
     }
 
@@ -273,7 +276,7 @@
      * file starting, a step changing, a batch ending.
      */
     var liveEl = document.createElement("div");
-    liveEl.className = "sr-only";
+    liveEl.className = "sr-only bh-live";
     liveEl.setAttribute("role", "status");
     liveEl.setAttribute("aria-live", "polite");
     liveEl.setAttribute("aria-atomic", "true");
@@ -572,7 +575,7 @@
     // ---------------- collapsible cards ----------------
 
     function initCollapsibles() {
-        Array.prototype.forEach.call(document.querySelectorAll(".card.collapsible"), function (card) {
+        Array.prototype.forEach.call(document.querySelectorAll(".collapsible"), function (card) {
             var section = card.dataset.section;
             var title = card.querySelector(".card-title");
             var saved = localStorage.getItem("bh.collapse." + section);

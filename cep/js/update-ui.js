@@ -10,6 +10,13 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.13": [
+            "New look: a dark dashboard design across all four tabs",
+            "Projects: pick a template from tiles drawn in each format's shape; date and version sit in one expandable row",
+            "Render: output formats are toggle pills, and conversion shows a progress ring with how many files are done",
+            "Optimize: − / + buttons for the target size, and each file in the queue shows its own status and progress",
+            "Settings: folders and tools are one-row entries with their status visible at a glance, and an available update shows as a banner"
+        ],
         "0.4.12": [
             "Updates are now only installed if they carry a valid signature from the BigHappy release key, in addition to the existing checksum check"
         ],
@@ -226,6 +233,7 @@
                 .then(function () {
                     core.busy(false);
                     $("update-pill").classList.add("hidden");
+                    $("update-banner").classList.add("hidden");
                     return ui.alert("Updated to v" + remoteVersion + "!\n\n" +
                         (sideInstall
                             ? "Installed to your user extensions folder (the original install location needs admin rights). CEP loads the newest version automatically.\n\n"
@@ -269,8 +277,13 @@
                 .then(function (remote) {
                     if (U.versionNewer(remote, BH_VERSION)) {
                         var pill = $("update-pill");
-                        pill.textContent = "v" + remote + " available";
+                        pill.textContent = "v" + remote;
+                        pill.title = "Version " + remote + " is available — click to update";
                         pill.classList.remove("hidden");
+                        // The same offer, spelled out, at the top of Settings.
+                        $("update-banner-text").textContent = "Version " + remote + " is ready";
+                        $("update-banner").classList.remove("hidden");
+                        $("btn-update-now").onclick = function () { pill.onclick(); };
                         pill.onclick = function () {
                             ui.confirm("Version " + remote + " is available (you have " + BH_VERSION + ").\n\n" +
                                        "Download and install it now?\nAfter Effects must be restarted afterwards.",

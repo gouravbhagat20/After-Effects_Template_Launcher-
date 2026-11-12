@@ -440,6 +440,11 @@ function installDOM(opts) {
             return true;
         },
         getComputedStyle: () => ({ getPropertyValue: () => "" }),
+        // `new Event("change", { bubbles: true })` — all the panel constructs.
+        Event: function Event(type, init) {
+            this.type = type;
+            this.bubbles = !!(init && init.bubbles);
+        },
         require,
         cep_node: { require },
         cep: {

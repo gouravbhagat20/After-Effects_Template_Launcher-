@@ -42,15 +42,36 @@
         bindBrowse("btn-browse-tpl", "set-tplfolder", "templates_folder", "Select templates folder");
         bindBrowse("btn-browse-nas", "set-nasroot", "nas_root", "Select NAS folder");
 
+        /** The status shown on the collapsed FFmpeg row. */
+        function setFFmpegBadge(state, text) {
+            var badge = $("ffmpeg-badge");
+            if (!badge) return;
+            badge.textContent = text;
+            badge.className = "row-status" + (state ? " " + state : "");
+        }
+
+        /** No process is started for this: a saved path that exists is
+            "Ready", a saved path that is gone is "Not found", and no saved
+            path means it is looked up when first needed. */
+        function refreshFFmpegBadge() {
+            var saved = core.S.ffmpeg_path;
+            if (!saved) return setFFmpegBadge("", "Auto-detect");
+            if (fsMod.existsSync(saved)) setFFmpegBadge("ok", "Ready");
+            else setFFmpegBadge("bad", "Not found");
+        }
+        $("set-ffmpeg").addEventListener("change", refreshFFmpegBadge);
+
         $("btn-detect-ffmpeg").addEventListener("click", function () {
             $("ffmpeg-status").textContent = "Detecting…";
             global.BHFFmpeg.detect(core.S.ffmpeg_path || null).then(function (found) {
                 if (found) {
                     if (found !== "ffmpeg") { core.setSetting("ffmpeg_path", found); $("set-ffmpeg").value = found; }
                     $("ffmpeg-status").textContent = "✓ Found: " + (found === "ffmpeg" ? "ffmpeg (on PATH)" : found);
+                    setFFmpegBadge("ok", "Ready");
                     return;
                 }
                 $("ffmpeg-status").textContent = "✗ Not found.";
+                setFFmpegBadge("bad", "Not found");
                 return ui.confirm("FFmpeg was not found on this computer.\n\nInstall it automatically now?" +
                                   (global.BHFFmpeg.isWin ? "\n(Downloads ~90 MB)" : "\n(Uses Homebrew — takes a few minutes)"),
                                   "Install FFmpeg?")
@@ -173,7 +194,10 @@
             $("set-tplfolder").value = core.S.templates_folder || "";
             $("set-nasroot").value = core.S.nas_root || "";
             $("set-tplfolder").placeholder = core.T.defaultTemplatesFolder();
+            refreshFFmpegBadge();
         }
+
+        $("version-footer").textContent = "Version " + core.version;
 
         $("about-text").innerHTML = "BigHappy Launcher CEP v" + core.version +
             " — panel UI with async ffmpeg.<br>The classic ScriptUI version remains available as BigHappyLauncher_Templates.jsx.";

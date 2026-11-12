@@ -26,20 +26,23 @@
             $("btn-collect").disabled = !hasSavedProject;
             $("project-card").classList.toggle("is-success", hasSavedProject);
             if (!project || !project.path) {
-                box.innerHTML = '<div class="muted">No saved project open.</div>';
+                box.innerHTML = '<div class="name muted">No saved project open</div>' +
+                    '<span class="status none">Open or create one to render and collect</span>';
+                box.title = "";
                 return;
             }
             var main = project.mainComp;
+            var comp = main ? core.escapeHtml(main.name) + " " + main.width + "×" + main.height
+                            : "No Main comp";
             box.innerHTML =
-                '<div class="name">' + core.escapeHtml(project.name) +
-                    (project.dirty ? '<span class="badge dirty">UNSAVED</span>' : "") + '</div>' +
-                '<div class="meta">' +
-                    (main ? core.escapeHtml(main.name) + " — " + main.width + "×" + main.height +
-                            " @ " + main.fps.toFixed(2) + "fps, " + main.duration.toFixed(1) + "s"
-                          : "No Main comp found") +
-                '</div>' +
-                '<div class="meta">' + project.numComps + ' comps, ' +
-                    project.numFootage + ' footage items</div>';
+                '<div class="name">' + core.escapeHtml(project.name) + '</div>' +
+                '<span class="status' + (project.dirty ? " dirty" : "") + '">' +
+                    (project.dirty ? "Unsaved" : "Saved") + " · " + comp + '</span>';
+            // the fuller detail the card used to print, one hover away
+            box.title = project.name +
+                (main ? "\n" + main.name + " — " + main.width + "×" + main.height + " @ " +
+                        main.fps.toFixed(2) + "fps, " + main.duration.toFixed(1) + "s" : "\nNo Main comp found") +
+                "\n" + project.numComps + " comps, " + project.numFootage + " footage items";
         }
 
         core.onProject(renderProject);
@@ -69,7 +72,6 @@
         function renderRecents() {
             var ul = $("recent-list");
             var list = loadRecents();
-            $("recents-card").classList.toggle("hidden", !list.length);
             if (!list.length) {
                 ul.innerHTML = '<li class="muted">Nothing yet — projects you open appear here.</li>';
                 return;
@@ -125,6 +127,7 @@
 
         function renderTemplateSelect() {
             var sel = $("np-template");
+            var keep = sel.value;
             sel.innerHTML = "";
             core.templates().forEach(function (t, i) {
                 var opt = document.createElement("option");
@@ -132,7 +135,67 @@
                 opt.textContent = t.name + (T.fileExists(t.path) ? "" : "  [file missing]");
                 sel.appendChild(opt);
             });
+            // keep the current choice across a re-render; otherwise the first
+            if (core.templates().length) {
+                sel.value = (keep !== "" && core.templates()[parseInt(keep, 10)]) ? keep : "0";
+            }
+            renderTemplateTiles();
         }
+
+        /** Short tile captions for the stock templates; anything else is
+            shown as named (and ellipsised by CSS if it does not fit). */
+        var TILE_NAMES = {
+            "interscroller": "Scroller", "expandable": "Expand",
+            "dooh horizontal": "DOOH H", "dooh vertical": "DOOH V"
+        };
+
+        /**
+         * The template picker people use: one tile per template, drawn as its
+         * aspect ratio. The <select> stays the single source of truth — a
+         * tile only sets its value and fires the same change event.
+         */
+        function renderTemplateTiles() {
+            var box = $("np-template-tiles");
+            if (!box) return;
+            var sel = $("np-template");
+            var templates = core.templates();
+            box.innerHTML = "";
+            if (!templates.length) {
+                box.innerHTML = '<div class="tpl-empty">No templates yet — add one in Settings.</div>';
+                return;
+            }
+            templates.forEach(function (t, i) {
+                var missing = !T.fileExists(t.path);
+                var scale = Math.min(32 / t.width, 30 / t.height);
+                var w = Math.max(8, Math.round(t.width * scale));
+                var h = Math.max(8, Math.round(t.height * scale));
+                var btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "tpl-tile" + (missing ? " missing" : "");
+                btn.dataset.i = String(i);
+                btn.setAttribute("aria-pressed", String(sel.value) === String(i) ? "true" : "false");
+                btn.title = T.getTemplateLabel(t) + (missing ? " — template file missing" : "");
+                btn.innerHTML =
+                    '<span class="shape" aria-hidden="true" style="width:' + w + "px;height:" + h + 'px"></span>' +
+                    '<span class="name">' +
+                        core.escapeHtml(TILE_NAMES[String(t.name).toLowerCase()] || t.name) + "</span>";
+                box.appendChild(btn);
+            });
+        }
+
+        $("np-template-tiles").addEventListener("click", function (ev) {
+            var tile = ev.target.closest(".tpl-tile");
+            if (!tile) return;
+            var sel = $("np-template");
+            sel.value = tile.dataset.i;
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        $("np-template").addEventListener("change", function () {
+            var value = String(this.value);
+            Array.prototype.forEach.call($("np-template-tiles").querySelectorAll(".tpl-tile"), function (tile) {
+                tile.setAttribute("aria-pressed", String(tile.dataset.i) === value ? "true" : "false");
+            });
+        });
 
         function npValues() {
             var t = selectedTemplate();
@@ -152,14 +215,10 @@
             var box = $("np-preview");
             var summary = $("template-summary");
             summary.classList.toggle("hidden", !v.t);
-            $("project-options-summary").textContent = v.year + " · " + v.quarter + " · " + v.version + " / " + v.revision;
+            $("project-options-summary").textContent = v.year + " · " + v.quarter + " · " + v.version + " · " + v.revision;
             if (!v.t) { box.textContent = "—"; return; }
             $("template-summary-spec").textContent = v.t.width + " × " + v.t.height +
                 "  ·  " + v.t.fps + " fps  ·  " + v.t.duration + " s";
-            var ratio = Math.max(0.08, Number(v.t.width) / Number(v.t.height) || 1);
-            var shapeW = Math.max(4, Math.min(28, 18 * ratio));
-            var shapeH = Math.max(4, Math.min(19, 28 / ratio));
-            $("template-shape").style.transform = "scale(" + (shapeW / 20) + "," + (shapeH / 20) + ")";
             var err = T.validate(v.brand || "Brand", v.campaign);
             var name = T.buildFilename(v.brand || "Brand", v.campaign, v.quarter,
                 v.t.width + "x" + v.t.height, v.version, v.revision, T.isDOOHTemplate(v.t.name));
@@ -179,13 +238,6 @@
         });
         ["np-template", "np-year", "np-quarter"].forEach(function (id) {
             $(id).addEventListener("change", updatePreview);
-        });
-        $("np-template").addEventListener("pointerdown", function () {
-            if (core.reduceMotion && core.reduceMotion.matches) return;
-            $("template-summary").classList.add("pointer-change");
-        });
-        $("np-template").addEventListener("change", function () {
-            setTimeout(function () { $("template-summary").classList.remove("pointer-change"); }, 230);
         });
 
         // Animate this occasional disclosure only for pointer input. Keyboard
@@ -295,6 +347,12 @@
                     "</span>";
                 ul.appendChild(li);
             });
+            var missingCount = templates.filter(function (t) { return !T.fileExists(t.path); }).length;
+            var badge = $("tpl-badge");
+            if (badge) {
+                badge.textContent = missingCount ? missingCount + " missing" : String(templates.length);
+                badge.className = "row-status" + (missingCount ? " bad" : "");
+            }
             renderTemplateSelect();
             updatePreview();
         }

@@ -20,20 +20,21 @@
     <symbol id="i-x" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
     <symbol id="i-search" viewBox="0 0 16 16"><circle cx="6.8" cy="6.8" r="4.3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
     <symbol id="i-sparkle" viewBox="0 0 16 16"><path d="M8 1.5 9.4 6 14 7.5 9.4 9 8 13.5 6.6 9 2 7.5 6.6 6z" fill="currentColor"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 16 16"><path d="M8 11V3M5 6l3-3 3 3M3 12.5h10" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-circle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.6" fill="none"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
 <header class="app-header">
     <div class="brand">
         <span class="brand-mark" aria-hidden="true">BH</span>
-        <span class="brand-copy">
-            <span class="brand-name">BigHappy</span>
-        </span>
+        <span class="brand-name">BigHappy</span>
     </div>
     <div class="header-right">
         <span id="activity" class="activity hidden" title="Working…"></span>
         <button id="update-pill" class="pill pill-update hidden" title="A newer version is on GitHub">Update available</button>
-        <span id="ae-status" class="pill pill-dim">connecting…</span>
+        <span id="ae-status" class="pill pill-dim" role="img">connecting…</span>
     </div>
 </header>
 
@@ -44,148 +45,150 @@
     <button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-settings" data-tab="settings">Settings</button>
 </nav>
 
-<!-- ============================= LAUNCHER ============================= -->
+<!-- ============================= PROJECTS ============================= -->
 <section id="tab-launcher" class="tab-page active" role="tabpanel">
 
-    <div class="card card-primary" id="create-card">
-        <div class="card-title"><span>New project</span></div>
-        <label class="field">
-            <span>Template</span>
-            <select id="np-template"></select>
-        </label>
-        <div id="template-summary" class="template-summary hidden">
-            <span class="template-mini" aria-hidden="true"><span id="template-shape"></span></span>
-            <span id="template-summary-spec"></span>
-        </div>
-        <div class="row gap">
-            <label class="field grow">
+    <div class="card" id="create-card">
+        <h1 class="card-heading">New project</h1>
+
+        <!-- The tiles are the picker people use; the select stays as the
+             single source of truth the rest of the code reads. -->
+        <div id="np-template-tiles" class="tpl-tiles" role="group" aria-label="Template"></div>
+        <label class="sr-only">Template <select id="np-template" tabindex="-1" aria-hidden="true"></select></label>
+        <div id="template-summary" class="template-summary hidden"><span id="template-summary-spec"></span></div>
+
+        <div class="field-grid">
+            <label class="field">
                 <span>Brand <b class="required" aria-label="required">*</b></span>
                 <input type="text" id="np-brand" placeholder="Nike">
             </label>
-            <label class="field grow">
+            <label class="field">
                 <span>Campaign <small class="optional">optional</small></span>
                 <input type="text" id="np-campaign" placeholder="SummerSale">
             </label>
         </div>
+
         <details class="project-options">
-            <summary><span>Date &amp; version</span><span id="project-options-summary" class="options-value"></span></summary>
-        <div class="row gap project-version-row">
-            <label class="field grow">
-                <span>Year</span>
-                <select id="np-year"></select>
-            </label>
-            <label class="field grow">
-                <span>Quarter</span>
-                <select id="np-quarter">
-                    <option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option>
-                </select>
-            </label>
-            <label class="field">
-                <span data-tip="Version — a new creative direction. Folder V1, V2… in the project structure.">Version</span>
-                <input type="number" id="np-version" value="1" min="1" style="width:56px">
-            </label>
-            <label class="field">
-                <span data-tip="Revision — a change round within a version. Names the Render_R# folder.">Revision</span>
-                <input type="number" id="np-revision" value="1" min="1" style="width:56px">
-            </label>
-        </div>
+            <summary><span class="sr-only">Date and version: </span><span id="project-options-summary"></span></summary>
+            <div class="project-version-row">
+                <label class="field">
+                    <span>Year</span>
+                    <select id="np-year"></select>
+                </label>
+                <label class="field">
+                    <span>Quarter</span>
+                    <select id="np-quarter">
+                        <option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span data-tip="Version — a new creative direction. Folder V1, V2… in the project structure.">Version</span>
+                    <input type="number" id="np-version" value="1" min="1">
+                </label>
+                <label class="field">
+                    <span data-tip="Revision — a change round within a version. Names the Render_R# folder.">Revision</span>
+                    <input type="number" id="np-revision" value="1" min="1">
+                </label>
+            </div>
         </details>
+
         <div class="preview-block">
             <span class="preview-label">Save as</span>
             <div id="np-preview" class="preview-line">—</div>
             <div id="np-destination" class="destination-line">Choose a base work folder in Settings.</div>
         </div>
-        <div class="row gap action-row">
-            <button id="btn-create" class="btn btn-primary btn-wide"><svg class="ic"><use href="#i-plus"/></svg>Create project</button>
-        </div>
+
+        <button id="btn-create" class="btn btn-primary btn-xl">Create project</button>
     </div>
 
-    <div class="card" id="project-card">
-        <div class="card-title"><span>Current project</span></div>
+    <div class="card card-row" id="project-card">
+        <h2 class="sr-only">Current project</h2>
         <div id="project-info" class="project-info">
-            <div class="muted">No project open.</div>
+            <div class="name muted">No project open.</div>
         </div>
-        <div class="row gap action-row secondary-actions">
-            <button id="btn-open" class="btn"><svg class="ic"><use href="#i-folder"/></svg>Open project…</button>
-            <button id="btn-save" class="btn btn-ghost"><svg class="ic"><use href="#i-save"/></svg>Save</button>
-            <button id="btn-reveal" class="btn btn-ghost"><svg class="ic"><use href="#i-pin"/></svg>Reveal</button>
-        </div>
+        <button id="btn-reveal" class="btn-round" aria-label="Reveal project folder" title="Reveal project folder"><svg class="ic"><use href="#i-folder"/></svg></button>
+        <button id="btn-save" class="btn btn-light">Save</button>
     </div>
 
-    <div class="card" id="recents-card">
-        <div class="card-title">Recent projects</div>
+    <section class="list-section" id="recents-card">
+        <div class="list-head">
+            <h2>Recent</h2>
+            <button id="btn-open" class="btn-text">Open file</button>
+        </div>
         <ul id="recent-list" class="recent-list">
             <li class="muted">Nothing yet — projects you open appear here.</li>
         </ul>
-    </div>
+    </section>
 
 </section>
 
 <!-- ============================== RENDER ============================== -->
 <section id="tab-render" class="tab-page" role="tabpanel">
 
-    <div class="page-intro">
-        <div>
-            <h1>Render &amp; deliver</h1>
-        </div>
-    </div>
-
     <div class="card">
-        <div class="card-title"><span data-tip="Adds the Main comp to the Render Queue with the right output module for the template — PNG+Alpha for Sunrise, H.264 for InterScroller/DOOH — and a standardized name in Render_R#.">Render queue</span></div>
-        <div id="rq-info"></div>
-        <div class="row gap action-row">
-            <button id="btn-rq-add" class="btn btn-primary btn-wide"><svg class="ic"><use href="#i-plus"/></svg>Add to render queue</button>
-        </div>
-        <div class="row check-row">
-            <label class="check-label"><input type="checkbox" id="rq-ame"> Send to Media Encoder and start render</label>
-        </div>
+        <div id="rq-info" class="rq-head"></div>
+        <label class="switch-row">
+            <span data-tip="Sends the queued item to Adobe Media Encoder and starts the render. Off: it stays in the After Effects Render Queue.">Start in Media Encoder</span>
+            <input type="checkbox" id="rq-ame" class="switch" role="switch">
+        </label>
+        <button id="btn-rq-add" class="btn btn-primary btn-xl">Add to render queue</button>
     </div>
 
     <div class="card" id="pr-card">
-        <div class="card-title">Convert PNG sequence</div>
-        <p class="hint">Converts a rendered PNG sequence to delivery files.</p>
-        <div class="row gap">
-            <button id="btn-pr-folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg>Choose PNG folder…</button>
-            <button id="btn-pr-auto" class="btn btn-ghost">Use current render</button>
+        <div class="card-head">
+            <h2 class="card-heading"><span data-tip="Converts a rendered Sunrise PNG sequence into the delivery files: WebM and MOV with transparency, an HTML preview, and a ZIP of them.">Convert</span></h2>
+            <button id="btn-pr-cancel" class="btn-text danger" disabled>Cancel</button>
         </div>
-        <div id="pr-seq" class="hint" style="margin-top:8px">No sequence selected.</div>
-        <label class="field delivery-preset">
-            <span>Delivery preset</span>
+
+        <div class="row gap wrap">
+            <button id="btn-pr-auto" class="btn">Use current render</button>
+            <button id="btn-pr-folder" class="btn btn-ghost">Choose folder…</button>
+        </div>
+        <div id="pr-seq" class="hint">No sequence selected.</div>
+
+        <label class="hidden">Delivery preset
             <select id="pr-preset">
                 <option value="package">Complete web package</option>
                 <option value="video">Video files only</option>
                 <option value="custom">Custom formats</option>
             </select>
         </label>
-        <div id="pr-formats" class="row gap check-row hidden">
-            <label class="check-label"><input type="checkbox" id="pr-webm" checked> WebM</label>
-            <label class="check-label"><input type="checkbox" id="pr-mov" checked> MOV</label>
-            <label class="check-label"><input type="checkbox" id="pr-html" checked> HTML</label>
-            <label class="check-label"><input type="checkbox" id="pr-zip" checked> ZIP</label>
+        <div id="pr-formats" class="chips" role="group" aria-label="Output formats">
+            <label class="chip"><input type="checkbox" id="pr-webm" checked><span>WebM</span></label>
+            <label class="chip"><input type="checkbox" id="pr-mov" checked><span>MOV</span></label>
+            <label class="chip"><input type="checkbox" id="pr-html" checked><span>HTML</span></label>
+            <label class="chip"><input type="checkbox" id="pr-zip" checked><span>ZIP</span></label>
         </div>
-        <div class="row gap">
-            <button id="btn-pr-convert" class="btn btn-primary" disabled><svg class="ic"><use href="#i-bolt"/></svg>Convert</button>
-            <button id="btn-pr-cancel" class="btn btn-danger" disabled><svg class="ic"><use href="#i-x"/></svg>Cancel</button>
-        </div>
+
         <div id="pr-progress" class="progress-area hidden">
-            <div class="progress-label"><span id="pr-step">—</span><span id="pr-pct">0%</span></div>
-            <div class="bar"><div id="pr-bar" class="bar-fill"></div></div>
-            <div id="pr-log" class="mini-log"></div>
-            <div class="row gap" style="margin-top:10px">
-                <button id="btn-pr-show" class="btn hidden"><svg class="ic"><use href="#i-pin"/></svg>Show Files</button>
+            <div class="ring-row">
+                <div class="ring">
+                    <svg viewBox="0 0 96 96" aria-hidden="true">
+                        <circle class="track" cx="48" cy="48" r="40"/>
+                        <circle id="pr-ring" class="value" cx="48" cy="48" r="40"/>
+                    </svg>
+                    <span id="pr-pct" class="pct">0%</span>
+                </div>
+                <div class="ring-text">
+                    <span id="pr-step" class="step">—</span>
+                    <span id="pr-count" class="sub"></span>
+                </div>
             </div>
+            <div class="bar hidden"><div id="pr-bar" class="bar-fill"></div></div>
             <div id="pr-summary" class="result-summary hidden"></div>
+            <div id="pr-log" class="mini-log"></div>
+            <button id="btn-pr-show" class="btn hidden">Show files</button>
         </div>
+
+        <button id="btn-pr-convert" class="btn btn-primary btn-xl" disabled>Convert</button>
     </div>
 
-    <div class="card">
-        <div class="card-title"><span data-tip="Saves a standardized copy with all linked assets and a pack report (fonts, effects, missing files). The original project on disk is never modified.">Collect project</span></div>
-        <p class="hint">Package the project and its linked assets.</p>
-        <div class="row gap action-row">
-            <button id="btn-collect" class="btn btn-wide"><svg class="ic"><use href="#i-save"/></svg>Collect project…</button>
-            <button id="btn-collect-cancel" class="btn btn-danger hidden"><svg class="ic"><use href="#i-x"/></svg>Cancel</button>
+    <div class="collect-block">
+        <button id="btn-collect" class="row-card"><span data-tip="Saves a standardized copy with all linked assets and a pack report (fonts, effects, missing files). The original project on disk is never modified.">Collect project</span></button>
+        <div class="collect-foot">
+            <div id="collect-status" class="hint"></div>
+            <button id="btn-collect-cancel" class="btn btn-danger hidden">Cancel</button>
         </div>
-        <div id="collect-status" class="hint" style="margin-top:8px;margin-bottom:0"></div>
     </div>
 
 </section>
@@ -193,45 +196,42 @@
 <!-- ============================ OPTIMIZER ============================= -->
 <section id="tab-optimizer" class="tab-page" role="tabpanel">
 
-    <div class="page-intro">
+    <div class="card card-row target-card">
         <div>
-            <h1>DOOH optimizer</h1>
+            <h1 class="label"><label for="opt-target" data-tip="Hard cap. If the best encode still exceeds this, the original is kept and the result is saved as _Optimized.mp4 instead.">Target size</label></h1>
+            <div class="target-value">
+                <input type="number" id="opt-target" value="6.8" min="1" step="0.1">
+                <span class="unit">MB</span>
+            </div>
+        </div>
+        <div class="stepper">
+            <button id="btn-target-down" class="btn-round" type="button" aria-label="Lower target size">−</button>
+            <button id="btn-target-up" class="btn-round" type="button" aria-label="Raise target size">+</button>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-title"><span data-tip="Two-pass H.264 size targeting. Originals are replaced only after a verified backup-swap; if the cap can't be met, the original is kept and the result is saved as _Optimized.mp4.">Queue</span></div>
+    <div id="btn-pick-files" class="dropzone" role="button" tabindex="0" aria-label="Add MP4 files">
+        <svg class="ic"><use href="#i-upload"/></svg>
+        <span id="opt-drop-label">Drop MP4s here — or click to browse</span>
+    </div>
 
-        <div id="btn-pick-files" class="dropzone" role="button" tabindex="0" aria-label="Add MP4 files">
-            <svg class="ic"><use href="#i-film"/></svg>
-            <span id="opt-drop-label">Drop MP4s here — or click to browse</span>
-        </div>
+    <ul id="opt-file-list" class="file-list" aria-label="Queue"></ul>
 
-        <ul id="opt-file-list" class="file-list"></ul>
+    <div class="opt-foot">
+        <span id="opt-overall-txt" class="sub"></span>
+        <button id="btn-optimize" class="btn btn-primary" disabled>Optimize</button>
+        <button id="btn-cancel" class="btn btn-danger" disabled>Cancel</button>
+    </div>
 
-        <div class="row gap">
-            <label class="field" style="max-width:130px">
-                <span data-tip="Hard cap. If the best encode still exceeds this, the original is kept and the result is saved as _Optimized.mp4 instead.">Target size (MB)</span>
-                <input type="number" id="opt-target" value="6.8" min="1" step="0.1">
-            </label>
-        </div>
-
-        <div class="row gap action-row">
-            <button id="btn-optimize" class="btn btn-primary btn-wide" disabled><svg class="ic"><use href="#i-bolt"/></svg>Optimize</button>
-            <button id="btn-cancel" class="btn btn-danger" disabled><svg class="ic"><use href="#i-x"/></svg>Cancel</button>
-        </div>
-
-        <div id="opt-progress" class="progress-area hidden">
-            <div class="progress-label"><span id="opt-current-file">—</span><span id="opt-pct">0%</span></div>
-            <div class="bar"><div id="opt-bar-file" class="bar-fill"></div></div>
-            <div class="progress-label small"><span>Overall</span><span id="opt-overall-txt">0 / 0</span></div>
-            <div class="bar"><div id="opt-bar-all" class="bar-fill alt"></div></div>
-            <div id="opt-summary" class="result-summary hidden"></div>
-            <div id="opt-log" class="mini-log"></div>
-            <div class="row gap" style="margin-top:10px">
-                <button id="btn-show-output" class="btn hidden"><svg class="ic"><use href="#i-pin"/></svg>Show File</button>
-            </div>
-        </div>
+    <div id="opt-progress" class="opt-extra hidden">
+        <!-- written by the optimizer for screen readers and tests; the queue
+             rows above are what is shown -->
+        <div class="sr-only"><span id="opt-current-file">—</span> <span id="opt-pct">0%</span></div>
+        <div class="bar hidden"><div id="opt-bar-file" class="bar-fill"></div></div>
+        <div class="bar hidden"><div id="opt-bar-all" class="bar-fill alt"></div></div>
+        <div id="opt-summary" class="result-summary hidden"></div>
+        <div id="opt-log" class="mini-log"></div>
+        <button id="btn-show-output" class="btn hidden">Show file</button>
     </div>
 
 </section>
@@ -239,112 +239,106 @@
 <!-- ============================= SETTINGS ============================= -->
 <section id="tab-settings" class="tab-page" role="tabpanel">
 
-    <div class="page-intro">
-        <div>
-            <h1>Settings</h1>
+    <section id="update-banner" class="banner hidden">
+        <span id="update-banner-text">An update is ready</span>
+        <button id="btn-update-now" class="btn btn-dark">Update</button>
+    </section>
+
+    <div class="card list-card">
+        <h1 class="label"><span data-tip="Stored in After Effects preferences — shared with the ScriptUI launcher.">Folders</span></h1>
+        <div class="setting-row">
+            <label for="set-basefolder">Work</label>
+            <input type="text" id="set-basefolder" placeholder="Choose">
+            <button id="btn-browse-base" class="chev-btn" aria-label="Choose base work folder" title="Choose base work folder"></button>
+        </div>
+        <div class="setting-row">
+            <label for="set-tplfolder">Templates</label>
+            <input type="text" id="set-tplfolder" placeholder="Choose">
+            <button id="btn-browse-tpl" class="chev-btn" aria-label="Choose templates folder" title="Choose templates folder"></button>
+        </div>
+        <div class="setting-row">
+            <label for="set-nasroot">NAS</label>
+            <input type="text" id="set-nasroot" placeholder="Choose">
+            <button id="btn-browse-nas" class="chev-btn" aria-label="Choose NAS folder" title="Choose NAS folder"></button>
         </div>
     </div>
 
-    <div class="card collapsible" data-section="ffmpeg">
-        <div class="card-title">FFmpeg<svg class="ic chev"><use href="#i-chevron"/></svg></div>
-        <div class="card-body"><div class="card-body-inner">
-            <div class="row gap">
-                <label class="field grow">
-                    <span>FFmpeg path</span>
-                    <input type="text" id="set-ffmpeg" placeholder="auto-detect">
-                </label>
-                <button id="btn-detect-ffmpeg" class="btn"><svg class="ic"><use href="#i-search"/></svg>Detect</button>
-            </div>
-            <div id="ffmpeg-status" class="hint"></div>
-        </div></div>
-    </div>
+    <div class="card list-card">
+        <h2 class="label">Tools</h2>
 
-    <div class="card collapsible" data-section="projects">
-        <div class="card-title">Projects<svg class="ic chev"><use href="#i-chevron"/></svg></div>
-        <div class="card-body"><div class="card-body-inner">
-            <p class="hint">Stored in After Effects preferences — shared with the ScriptUI launcher.</p>
-            <label class="field">
-                <span>Base work folder</span>
+        <div class="collapsible collapsed" data-section="ffmpeg">
+            <div class="card-title"><span class="title">FFmpeg</span><span id="ffmpeg-badge" class="row-status"></span><svg class="ic chev"><use href="#i-chevron"/></svg></div>
+            <div class="card-body"><div class="card-body-inner">
                 <div class="row gap">
-                    <input type="text" id="set-basefolder" class="grow" placeholder="e.g. /Users/you/Work">
-                    <button id="btn-browse-base" aria-label="Choose base work folder" title="Choose base work folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
+                    <label class="field grow">
+                        <span>FFmpeg path</span>
+                        <input type="text" id="set-ffmpeg" placeholder="auto-detect">
+                    </label>
+                    <button id="btn-detect-ffmpeg" class="btn">Detect</button>
                 </div>
-            </label>
-            <label class="field">
-                <span>Templates folder</span>
-                <div class="row gap">
-                    <input type="text" id="set-tplfolder" class="grow" placeholder="Documents/BH_Templates">
-                    <button id="btn-browse-tpl" aria-label="Choose templates folder" title="Choose templates folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
-                </div>
-            </label>
-            <label class="field">
-                <span>NAS folder</span>
-                <div class="row gap">
-                    <input type="text" id="set-nasroot" class="grow" placeholder="e.g. /Volumes/Projects or \\NAS\Projects">
-                    <button id="btn-browse-nas" aria-label="Choose NAS folder" title="Choose NAS folder" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
-                </div>
-            </label>
-        </div></div>
-    </div>
+                <div id="ffmpeg-status" class="hint"></div>
+            </div></div>
+        </div>
 
-    <div class="card collapsible" data-section="templates">
-        <div class="card-title">Templates<svg class="ic chev"><use href="#i-chevron"/></svg></div>
-        <div class="card-body"><div class="card-body-inner">
-            <ul id="tpl-list" class="tpl-list"></ul>
-            <div class="row gap">
-                <button id="btn-tpl-add" class="btn"><svg class="ic"><use href="#i-plus"/></svg>Add</button>
-                <button id="btn-tpl-generate" class="btn"><svg class="ic"><use href="#i-sparkle"/></svg>Generate missing files</button>
-            </div>
-        </div></div>
+        <div class="collapsible collapsed" data-section="templates">
+            <div class="card-title"><span class="title">Templates</span><span id="tpl-badge" class="row-status"></span><svg class="ic chev"><use href="#i-chevron"/></svg></div>
+            <div class="card-body"><div class="card-body-inner">
+                <ul id="tpl-list" class="tpl-list"></ul>
+                <div class="row gap wrap">
+                    <button id="btn-tpl-add" class="btn">Add</button>
+                    <button id="btn-tpl-generate" class="btn btn-ghost">Generate missing files</button>
+                </div>
+            </div></div>
+        </div>
+
+        <div class="collapsible collapsed" data-section="diag">
+            <div class="card-title"><span class="title">Diagnostics</span><svg class="ic chev"><use href="#i-chevron"/></svg></div>
+            <div class="card-body"><div class="card-body-inner">
+                <div id="diag-body" class="mini-log diag-body">Open this section and click Refresh.</div>
+                <div class="row gap wrap">
+                    <button id="btn-diag-copy" class="btn">Copy report</button>
+                    <button id="btn-diag-refresh" class="btn btn-ghost">Refresh</button>
+                    <button id="btn-diag-save" class="btn btn-ghost">Save…</button>
+                </div>
+            </div></div>
+        </div>
+
+        <div class="collapsible collapsed" data-section="about">
+            <div class="card-title"><span class="title">About</span><svg class="ic chev"><use href="#i-chevron"/></svg></div>
+            <div class="card-body"><div class="card-body-inner">
+                <div class="hint" id="about-text">BigHappy Launcher CEP — panel UI with async ffmpeg.<br>
+                    The classic ScriptUI version remains available as BigHappyLauncher_Templates.jsx.</div>
+                <div class="row"><button id="btn-check-update" class="btn">Check for updates</button></div>
+            </div></div>
+        </div>
     </div>
 
     <div class="card hidden" id="tpl-form-card">
-        <div class="card-title" id="tpl-form-title">Add template</div>
+        <h2 class="card-heading" id="tpl-form-title">Add template</h2>
         <label class="field">
-            <span>Name *</span>
+            <span>Name <b class="required" aria-label="required">*</b></span>
             <input type="text" id="tpl-name" placeholder="Sunrise">
         </label>
-        <div class="row gap">
-            <label class="field grow"><span>Width</span><input type="number" id="tpl-width" value="1920" min="1" max="8192"></label>
-            <label class="field grow"><span>Height</span><input type="number" id="tpl-height" value="1080" min="1" max="8192"></label>
-        </div>
-        <div class="row gap">
-            <label class="field grow"><span>FPS</span><input type="number" id="tpl-fps" value="24" min="1" max="120" step="0.01"></label>
-            <label class="field grow"><span>Duration (s)</span><input type="number" id="tpl-duration" value="15" min="0.1" max="3600" step="0.1"></label>
+        <div class="field-grid">
+            <label class="field"><span>Width</span><input type="number" id="tpl-width" value="1920" min="1" max="8192"></label>
+            <label class="field"><span>Height</span><input type="number" id="tpl-height" value="1080" min="1" max="8192"></label>
+            <label class="field"><span>FPS</span><input type="number" id="tpl-fps" value="24" min="1" max="120" step="0.01"></label>
+            <label class="field"><span>Duration (s)</span><input type="number" id="tpl-duration" value="15" min="0.1" max="3600" step="0.1"></label>
         </div>
         <label class="field">
-            <span>Template .aep (optional — leave empty to generate a placeholder)</span>
-            <div class="row gap">
+            <span>Template .aep — leave empty to generate a placeholder</span>
+            <div class="row">
                 <input type="text" id="tpl-path" class="grow" placeholder="auto-generate">
-                <button id="btn-tpl-browse" aria-label="Choose template project file" title="Choose template project file" class="btn"><svg class="ic"><use href="#i-folder"/></svg></button>
+                <button id="btn-tpl-browse" type="button" aria-label="Choose template project file" title="Choose template project file" class="btn-icon"><svg class="ic"><use href="#i-folder"/></svg></button>
             </div>
         </label>
         <div class="row gap">
-            <button id="btn-tpl-save" class="btn btn-primary"><svg class="ic"><use href="#i-save"/></svg>Save template</button>
+            <button id="btn-tpl-save" class="btn btn-primary">Save template</button>
             <button id="btn-tpl-cancel" class="btn btn-ghost">Cancel</button>
         </div>
     </div>
 
-    <div class="card collapsible collapsed" data-section="diag">
-        <div class="card-title">Diagnostics<svg class="ic chev"><use href="#i-chevron"/></svg></div>
-        <div class="card-body"><div class="card-body-inner">
-            <div id="diag-body" class="mini-log diag-body">Open this section and click Refresh.</div>
-            <div class="row gap" style="margin-top:10px">
-                <button id="btn-diag-refresh" class="btn"><svg class="ic"><use href="#i-search"/></svg>Refresh</button>
-                <button id="btn-diag-copy" class="btn">Copy report</button>
-                <button id="btn-diag-save" class="btn btn-ghost">Save…</button>
-            </div>
-        </div></div>
-    </div>
-
-    <div class="card collapsible collapsed" data-section="about">
-        <div class="card-title">About<svg class="ic chev"><use href="#i-chevron"/></svg></div>
-        <div class="card-body"><div class="card-body-inner">
-            <div class="hint" id="about-text">BigHappy Launcher CEP — panel UI with async ffmpeg.<br>
-                The classic ScriptUI version remains available as BigHappyLauncher_Templates.jsx.</div>
-            <button id="btn-check-update" class="btn" style="margin-top:8px"><svg class="ic"><use href="#i-bolt"/></svg>Check for updates</button>
-        </div></div>
-    </div>
+    <div id="version-footer" class="version-footer"></div>
 
 </section>
 

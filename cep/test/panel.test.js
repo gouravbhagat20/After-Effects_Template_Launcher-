@@ -132,7 +132,7 @@ test("toasts are announced to screen readers", async () => {
 
 test("an off-screen live region exists for progress milestones", async () => {
     await withPanel({}, (p) => {
-        const live = p.document.querySelector(".sr-only");
+        const live = p.document.querySelector(".bh-live");
         assert.ok(live, "live region exists");
         assert.equal(live.getAttribute("aria-live"), "polite");
     });
@@ -247,6 +247,52 @@ test("a clean project needs no prompt", async () => {
 test("when the project state cannot be read the user decides, not the panel", async () => {
     await withPanel({ hostImpl: { getProjectInfo: () => new Error("host busy") } }, async (p) => {
         assert.equal(await runGuard(p, ["Escape"]), false);
+    });
+});
+
+/* ------------------------------------------------ dashboard layout ------ */
+
+test("the template picker draws one tile per template and drives the select", async () => {
+    await withPanel({}, async (p) => {
+        const tiles = p.document.querySelectorAll(".tpl-tile");
+        const options = p.$("np-template").children.length;
+        assert.ok(options > 1);
+        assert.equal(tiles.length, options, "one tile per template");
+        assert.equal(tiles[0].getAttribute("aria-pressed"), "true", "the first template starts selected");
+
+        tiles[2].click();
+        await p.settle(10);
+        assert.equal(String(p.$("np-template").value), "2", "a tile sets the select the rest of the code reads");
+        assert.equal(tiles[2].getAttribute("aria-pressed"), "true");
+        assert.equal(tiles[0].getAttribute("aria-pressed"), "false");
+    });
+});
+
+test("the target-size stepper moves in 0.1 MB steps and saves the setting", async () => {
+    await withPanel({ settings: { dooh_target_mb: "6.8" } }, async (p) => {
+        p.$("btn-target-up").click();
+        await p.settle(10);
+        assert.equal(p.$("opt-target").value, "6.9");
+        assert.equal(p.settings.dooh_target_mb, "6.9");
+        p.$("btn-target-down").click();
+        p.$("btn-target-down").click();
+        await p.settle(10);
+        assert.equal(p.$("opt-target").value, "6.7");
+    });
+});
+
+test("Open file stays reachable when there are no recent projects", async () => {
+    await withPanel({}, async (p) => {
+        assert.ok(!p.$("recents-card").classList.contains("hidden"),
+            "the Recent section holds the Open file action, so it is never hidden");
+        assert.ok(p.$("btn-open"));
+    });
+});
+
+test("the connection dot carries its wording as a tooltip and label", async () => {
+    await withPanel({}, async (p) => {
+        assert.match(p.$("ae-status").title, /AE 24\.0/);
+        assert.match(p.$("ae-status").getAttribute("aria-label"), /After Effects: AE/);
     });
 });
 

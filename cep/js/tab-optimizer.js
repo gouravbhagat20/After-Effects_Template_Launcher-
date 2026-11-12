@@ -22,19 +22,52 @@
         var optCancelled = false;   // batch-level: survives between files (BHFFmpeg
                                     // resets its own flag on every optimize() call)
 
-        function renderOptFiles(statusByPath) {
+        /**
+         * The queue, one row per file: waiting (ring), done (tick), failed,
+         * or — for `activePath` — the file being encoded, with its own
+         * progress bar in the row. setActiveProgress() moves that bar without
+         * rebuilding the list on every tick.
+         */
+        var activeRow = null;
+
+        function renderOptFiles(statusByPath, activePath) {
             var ul = $("opt-file-list");
             ul.innerHTML = "";
+            activeRow = null;
             // (empty queue needs no placeholder — the dropzone above is the empty state)
             optFiles.forEach(function (f) {
                 var li = document.createElement("li");
                 var status = (statusByPath && statusByPath[f.path]) || "";
-                li.innerHTML = "<span>" + core.escapeHtml(f.path.split(/[\\/]/).pop()) + "</span>" +
-                    '<span class="size ' + (status.indexOf("✓") === 0 ? "done" : status.indexOf("✗") === 0 ? "fail" : "") + '">' +
-                    core.escapeHtml(status || f.sizeMB.toFixed(1) + " MB") + "</span>";
+                var done = status.indexOf("✓") === 0;
+                var fail = status.indexOf("✗") === 0;
+                var active = !done && !fail && activePath === f.path;
+                var name = f.path.split(/[\\/]/).pop().replace(/\.mp4$/i, "");
+                var right = active ? "0%" : (status ? status.replace(/^[✓✗]\s*/, "") : f.sizeMB.toFixed(1) + " MB");
+                li.className = done ? "done" : fail ? "fail" : active ? "active" : "";
+                li.title = f.path;
+                li.innerHTML =
+                    '<div class="line">' +
+                        '<svg class="state ic" role="img" aria-label="' + (done ? "Done" : fail ? "Failed" : "Waiting") +
+                            '" style="color:var(' + (done ? "--green" : fail ? "--red" : "--muted") + ')">' +
+                            '<use href="#' + (done ? "i-check" : fail ? "i-x" : "i-circle") + '"/></svg>' +
+                        '<span class="name">' + core.escapeHtml(name) + "</span>" +
+                        '<span class="size ' + (done ? "done" : fail ? "fail" : "") + '">' + core.escapeHtml(right) + "</span>" +
+                    "</div>" +
+                    '<div class="bar" role="progressbar" aria-label="Current file progress" aria-valuemin="0" aria-valuemax="100">' +
+                        '<div class="bar-fill"></div></div>';
                 ul.appendChild(li);
+                if (active) activeRow = li;
             });
             $("btn-optimize").disabled = optRunning || optFiles.length === 0;
+        }
+
+        function setActiveProgress(pct) {
+            if (!activeRow) return;
+            var value = Math.max(0, Math.min(100, Number(pct) || 0));
+            var fill = activeRow.querySelector(".bar-fill");
+            var size = activeRow.querySelector(".size");
+            if (fill && fill.style) fill.style.transform = "scaleX(" + (value / 100) + ")";
+            if (size) size.textContent = Math.round(value) + "%";
         }
 
         function optLog(msg, cls) {
@@ -54,7 +87,7 @@
             core.setProgress("opt-bar-all", 0);
             $("opt-pct").textContent = "0%";
             $("opt-current-file").textContent = "—";
-            $("opt-overall-txt").textContent = "0 / 0";
+            $("opt-overall-txt").textContent = "";
             $("btn-show-output").classList.add("hidden");
             $("opt-summary").classList.add("hidden");
         }
@@ -143,6 +176,8 @@
             core.getFFmpegOrExplain().then(function (exe) {
                 optRunning = true;
                 optCancelled = false;
+                $("tab-optimizer").classList.add("running");
+                $("opt-overall-txt").textContent = "0 of " + optFiles.length;
                 core.busy(true);
                 $("btn-optimize").classList.add("loading");
                 $("btn-optimize").disabled = true;
@@ -186,6 +221,7 @@
                     return chain.then(function () {
                         if (optCancelled) throw new Error("CANCELLED");
                         $("opt-current-file").textContent = f.path.split(/[\\/]/).pop();
+                        renderOptFiles(statuses, f.path);     // this row becomes the active one
                         core.setProgress("opt-bar-file", 0);
                         $("opt-pct").textContent = "0%";
                         core.announce("Optimizing file " + (done + 1) + " of " + optFiles.length +
@@ -229,6 +265,7 @@
                                 return global.BHFFmpeg.optimize(f.path,
                                     { ffmpegPath: exe, targetMB: fileTarget, replaceOriginal: true },
                                     function (pct) {
+                                        setActiveProgress(pct);
                                         core.setProgress("opt-bar-file", pct);
                                         $("opt-pct").textContent = Math.round(pct) + "%";
                                     }
@@ -274,7 +311,9 @@
                                 // File finished (encoded, skipped, or failed) — complete its bar
                                 core.setProgress("opt-bar-file", 100);
                                 $("opt-pct").textContent = "100%";
-                                $("opt-overall-txt").textContent = done + " / " + optFiles.length;
+                                var savedSoFar = Math.max(0, totalBefore - totalAfter);
+                                $("opt-overall-txt").textContent = done + " of " + optFiles.length +
+                                    (savedSoFar > 0.05 ? " · " + savedSoFar.toFixed(1) + " MB saved" : "");
                                 core.setProgress("opt-bar-all", done / optFiles.length * 100);
                                 renderOptFiles(statuses);
                             });
@@ -303,6 +342,9 @@
                         btn.onclick = function () { core.revealFile(outputs[0]); };
                     }
                     optRunning = false;
+                    $("tab-optimizer").classList.remove("running");
+                    $("opt-overall-txt").textContent = $("opt-summary").classList.contains("hidden")
+                        ? "" : $("opt-summary").textContent;
                     // Clear the queue — results stay in the log; next run starts fresh
                     optFiles = [];
                     renderOptFiles();
@@ -319,6 +361,25 @@
             global.BHFFmpeg.cancel();     // kills the currently running encode immediately
         });
 
+        /** − / + beside the target: 0.1 MB a press, never below the 1 MB floor. */
+        function stepTarget(delta) {
+            var input = $("opt-target");
+            var next = Math.max(1, Math.round(((parseFloat(input.value) || 6.8) + delta) * 10) / 10);
+            input.value = next.toFixed(1);
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        $("btn-target-down").addEventListener("click", function () { stepTarget(-0.1); });
+        $("btn-target-up").addEventListener("click", function () { stepTarget(0.1); });
+
+        /** Keep the big number exactly as wide as its digits, so "MB" sits
+            right beside it whether the target is 6.8 or 12.5. */
+        function fitTarget() {
+            var input = $("opt-target");
+            if (input.style) input.style.width = (Math.max(1, String(input.value).length) * 0.5 + 0.2).toFixed(2) + "em";
+        }
+        $("opt-target").addEventListener("input", fitTarget);
+        $("opt-target").addEventListener("change", fitTarget);
+
         $("opt-target").addEventListener("change", function () {
             var v = parseFloat(this.value);
             if (v > 0) core.setSetting("dooh_target_mb", String(v));
@@ -327,6 +388,7 @@
         function applySettings() {
             // DOOH target is shared with the ScriptUI version (dooh_target_mb)
             $("opt-target").value = parseFloat(core.S.dooh_target_mb) || 6.8;
+            fitTarget();
         }
 
         return { applySettings: applySettings };
