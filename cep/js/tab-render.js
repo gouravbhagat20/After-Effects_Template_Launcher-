@@ -290,7 +290,11 @@
 
                     var destFolder = pathMod.join(destRoot, collectName);
                     var footageFolder = pathMod.join(destFolder, "(Footage)");
-                    fsMod.mkdirSync(footageFolder, { recursive: true });
+                    try { fsMod.mkdirSync(footageFolder, { recursive: true }); }
+                    catch (mkErr) {
+                        status.textContent = "";
+                        return ui.alert("Could not create the collect folder:\n" + mkErr.message);
+                    }
                     var destAep = pathMod.join(destFolder, project.name + ".aep");
 
                     status.textContent = "Collecting… (AE may be busy for a moment)";
@@ -302,6 +306,16 @@
                         toast("✓ Project collected");
                         core.revealFile(destAep);
                         core.refreshProject();
+                        // The host reopens the original afterwards. If it could
+                        // not, AE is still on the collected copy — say so, or
+                        // the next edits and renders go into the collect folder.
+                        if (res.reopened === false) {
+                            status.textContent += " After Effects is still on the collected copy.";
+                            return ui.alert("The project was collected, but your original project could not be " +
+                                "reopened.\n\nAfter Effects is now showing the collected COPY:\n" + destAep +
+                                "\n\nReopen the original before you keep working:\n" + project.path,
+                                "Now Editing the Copy");
+                        }
                     }, function (e) {
                         core.busy(false);
                         status.textContent = "";

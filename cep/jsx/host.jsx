@@ -175,9 +175,15 @@ var BH = (function () {
     /**
      * Release AE's lock on a file (point footage + render-queue output
      * modules at a temp placeholder) so ffmpeg/Node can replace it.
-     * Returns tokens: { items: [projItemIndex], oms: [{rq, om}] } —
+     * Returns tokens: { items: [{id, index, name}], oms: [{rq, om}] } —
      * pass them back to restoreFileLock() afterwards so BOTH footage and
      * render-queue output modules get restored.
+     *
+     * Items are identified by their persistent item.id, never by index alone:
+     * parking renames the item, and AE's item indices follow Project-panel
+     * order, so an index recorded before the rename can point at a different
+     * item afterwards. The placeholder name carries the id too, which is what
+     * lets recoverPlaceholders() match an orphan to its saved original name.
      */
     api.releaseFileLock = function (path) {
         try {
@@ -208,30 +214,42 @@ var BH = (function () {
                     }
                 }
             }
+            // Find every match BEFORE parking any of them — parking renames
+            // items, and a rename mid-scan can reorder the very list being
+            // walked (skipping one item, visiting another twice).
+            var matches = [];
             for (var k = 1; k <= proj.numItems; k++) {
+                try {
+                    var cand = proj.item(k);
+                    if (cand instanceof FootageItem && cand.file &&
+                        cand.file.fsName.toLowerCase() === targetNorm) {
+                        matches.push({ item: cand, index: k });
+                    }
+                } catch (eScan) { /* unreadable item cannot be a known match */ }
+            }
+            for (var m = 0; m < matches.length; m++) {
                 // Per-item try: one bad item must not leave the rest locked
                 var itName = null;
                 try {
-                    var it = proj.item(k);
-                    if (it instanceof FootageItem && it.file && it.file.fsName.toLowerCase() === targetNorm) {
-                        itName = it.name;
-                        // replace() throws when the target file doesn't exist on
-                        // disk — use AE's built-in placeholder instead, clamped
-                        // to its documented limits (fps 1-99, duration <= 10800,
-                        // dimensions 4-30000). Keep the item name: the
-                        // placeholder renames it and replace() won't rename back.
-                        var phW = it.width > 0 ? it.width : 1920;
-                        if (phW < 4) phW = 4; if (phW > 30000) phW = 30000;
-                        var phH = it.height > 0 ? it.height : 1080;
-                        if (phH < 4) phH = 4; if (phH > 30000) phH = 30000;
-                        var phFps = it.frameRate > 0 ? it.frameRate : 30;
-                        if (phFps < 1) phFps = 1; if (phFps > 99) phFps = 99;
-                        var phDur = it.duration > 0 ? it.duration : 1;
-                        if (phDur > 10800) phDur = 10800;
-                        var keepName = it.name;
-                        it.replaceWithPlaceholder(RELINK_PREFIX + k, phW, phH, phFps, phDur);
-                        tokens.items.push({ index: k, name: keepName });
-                    }
+                    var it = matches[m].item;
+                    itName = it.name;
+                    // replace() throws when the target file doesn't exist on
+                    // disk — use AE's built-in placeholder instead, clamped
+                    // to its documented limits (fps 1-99, duration <= 10800,
+                    // dimensions 4-30000). Keep the item name: the
+                    // placeholder renames it and replace() won't rename back.
+                    var phW = it.width > 0 ? it.width : 1920;
+                    if (phW < 4) phW = 4; if (phW > 30000) phW = 30000;
+                    var phH = it.height > 0 ? it.height : 1080;
+                    if (phH < 4) phH = 4; if (phH > 30000) phH = 30000;
+                    var phFps = it.frameRate > 0 ? it.frameRate : 30;
+                    if (phFps < 1) phFps = 1; if (phFps > 99) phFps = 99;
+                    var phDur = it.duration > 0 ? it.duration : 1;
+                    if (phDur > 10800) phDur = 10800;
+                    var keepName = it.name;
+                    var keepId = it.id;
+                    it.replaceWithPlaceholder(RELINK_PREFIX + keepId, phW, phH, phFps, phDur);
+                    tokens.items.push({ id: keepId, index: matches[m].index, name: keepName });
                 } catch (eItem) {
                     // only report items we KNOW reference the target file
                     if (itName !== null) tokens.failed.push(itName);
@@ -240,6 +258,30 @@ var BH = (function () {
             return ok(tokens);
         } catch (e) { return fail(e); }
     };
+
+    /**
+     * The footage item a release token refers to, or null.
+     *
+     * By id when the token has one. Tokens saved by an older panel carry only
+     * an index; that is trusted only while the item sitting there still has
+     * the placeholder name that index was stamped with — otherwise the index
+     * has drifted and relinking it would repoint somebody else's footage.
+     */
+    function itemForToken(rec) {
+        var isRec = rec && typeof rec === "object";
+        var it = null;
+        if (isRec && rec.id !== undefined && rec.id !== null) {
+            try { it = app.project.itemByID(rec.id); } catch (eId) { it = null; }
+            return (it instanceof FootageItem) ? it : null;
+        }
+        var idx = isRec ? rec.index : rec;
+        try { it = app.project.item(idx); } catch (eIdx) { it = null; }
+        if (!(it instanceof FootageItem)) return null;
+        // {index, name} came from a release: the placeholder name is checkable.
+        // A bare index (stale panel page) carries nothing to check against.
+        if (isRec && String(it.name) !== RELINK_PREFIX + idx) return null;
+        return it;
+    }
 
     /** Restore everything released by releaseFileLock to the given path.
         Items that fail to relink stay as BH_RELINK_* placeholders — their
@@ -252,15 +294,15 @@ var BH = (function () {
             var items = (tokens && tokens.items) || [];
             var oms = (tokens && tokens.oms) || [];
             for (var i = 0; i < items.length; i++) {
-                // tokens.items entries are {index, name}; tolerate the old
-                // bare-index shape from a stale panel page
+                // tokens.items entries are {id, index, name}; tolerate the
+                // older {index, name} and bare-index shapes (see itemForToken)
                 var rec = items[i];
                 var idx = (rec && typeof rec === "object") ? rec.index : rec;
                 var label = (rec && typeof rec === "object" && rec.name)
                     ? rec.name : ("footage item #" + idx);
                 try {
-                    var it = app.project.item(idx);
-                    if (it instanceof FootageItem) {
+                    var it = itemForToken(rec);
+                    if (it) {
                         it.replace(f);
                         if (rec && typeof rec === "object" && rec.name) it.name = rec.name;
                         done++;
@@ -329,7 +371,11 @@ var BH = (function () {
             var recorded = (tokens && tokens.items) || [];
             for (var t = 0; t < recorded.length; t++) {
                 var rec = recorded[t];
-                if (rec && typeof rec === "object" && rec.name) named[rec.index] = rec.name;
+                // Keyed by the suffix the placeholder name was stamped with:
+                // the item id, or the index for tokens from an older panel.
+                if (rec && typeof rec === "object" && rec.name) {
+                    named[(rec.id !== undefined && rec.id !== null) ? rec.id : rec.index] = rec.name;
+                }
             }
 
             var restored = 0;
@@ -343,8 +389,9 @@ var BH = (function () {
                     if (!(it instanceof FootageItem)) continue;
                     if (String(it.name).indexOf(RELINK_PREFIX) !== 0) continue;
                     label = it.name;
+                    var suffix = String(it.name).substring(RELINK_PREFIX.length);
                     it.replace(f);
-                    if (named[i]) it.name = named[i];
+                    if (named[suffix]) it.name = named[suffix];
                     restored++;
                 } catch (eItem) {
                     if (label !== null) failed.push(label);
@@ -368,7 +415,13 @@ var BH = (function () {
 
             var rqItem = app.project.renderQueue.items.add(comp);
             var om = rqItem.outputModule(1);
-            var isPng = !(templateType === "interscroller" || String(templateType).indexOf("dooh") !== -1);
+            // Must agree with the panel's own format/folder choice in
+            // tab-render.js (and the script's CONFIG.RENDER_FORMATS): only
+            // Sunrise and unrecognised sizes are PNG sequences. Expandable
+            // used to fall through to PNG here while the panel routed it to
+            // the MP4 folder.
+            var isPng = !(templateType === "interscroller" || templateType === "expandable" ||
+                          String(templateType).indexOf("dooh") !== -1);
 
             try {
                 om.applyTemplate(isPng ? "PNG Sequence with Alpha" : "H.264");
@@ -448,13 +501,23 @@ var BH = (function () {
      * all linked footage into footageFolderPath (relinking the COPY), save,
      * and write _Pack_Report.txt. Port of the script's local collect path —
      * the original project on disk is never modified.
+     *
+     * Save As leaves AE working in the COPY, so the last step reopens the
+     * original (as the script does). Without it every later edit and render
+     * silently lands in the collect folder. `reopened` tells the panel
+     * whether that worked; on a failure part-way through, the half-relinked
+     * copy is closed unsaved and the original reopened too.
      */
     api.collectProject = function (destAepPath, footageFolderPath) {
+        var originalFile = null;
+        var onCopy = false;
         try {
             if (!app.project || !app.project.file) return fail("No saved project open (BH-2003).");
 
             app.project.save();                          // original, unmodified
+            originalFile = new File(app.project.file.fsName);
             app.project.save(new File(destAepPath));     // now working on the copy
+            onCopy = true;
 
             var footageFolder = new Folder(footageFolderPath);
             if (!footageFolder.exists) footageFolder.create();
@@ -473,9 +536,28 @@ var BH = (function () {
 
             generatePackReport(new File(destAepPath).parent, missing);
 
-            return ok({ assets: count, missing: missing.length });
-        } catch (e) { return fail(e); }
+            var reopened = reopenOriginal(originalFile, false);
+            return ok({ assets: count, missing: missing.length, reopened: reopened });
+        } catch (e) {
+            if (onCopy && !reopenOriginal(originalFile, true)) {
+                return fail(e + " — After Effects is still showing the collected COPY; " +
+                    "reopen your original project before continuing.");
+            }
+            return fail(e);
+        }
     };
+
+    /** Leave the collected copy and reopen the original project. The copy is
+        already saved on the success path; `discard` closes it unsaved first
+        (failure path) so AE cannot stop on a "save changes?" prompt. */
+    function reopenOriginal(originalFile, discard) {
+        try {
+            if (!originalFile || !originalFile.exists) return false;
+            if (discard) app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
+            app.open(originalFile);
+            return true;
+        } catch (e) { return false; }
+    }
 
     /** Port of collectAssets (no palette UI — the panel shows progress). */
     function collectAssetsInto(footageFolder) {

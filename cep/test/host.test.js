@@ -56,7 +56,8 @@ test("releaseFileLock parks matching footage and records its original name", () 
     assert.equal(tokens.items.length, 1);
     assert.equal(tokens.items[0].index, 1);
     assert.equal(tokens.items[0].name, "Hero Clip", "original name must survive for restore");
-    assert.equal(ae.items[0].name, "BH_RELINK_1", "item is parked as a placeholder");
+    assert.equal(tokens.items[0].id, ae.items[0].id, "the token identifies the item by its persistent id");
+    assert.equal(ae.items[0].name, "BH_RELINK_" + ae.items[0].id, "item is parked as a placeholder");
     assert.equal(ae.items[1].name, "Other", "unrelated footage is untouched");
 });
 
@@ -101,7 +102,7 @@ test("releaseFileLock reports items it could not park, and keeps going", () => {
     const tokens = unwrap(BH.releaseFileLock("/w/clip.mp4"));
     assert.deepEqual(tokens.failed, ["Locked One"], "the failing item is named for the user");
     assert.equal(tokens.items.length, 1, "one bad item must not abort the rest");
-    assert.equal(ae.items[1].name, "BH_RELINK_2");
+    assert.equal(ae.items[1].name, "BH_RELINK_" + ae.items[1].id);
 });
 
 test("releaseFileLock never reports unrelated items as failed", () => {
@@ -164,7 +165,7 @@ test("restoreFileLock names every item it could not relink", () => {
     const ae = buildAE({
         items: [{ kind: "footage", name: "Hero Clip", path: "/w/clip.mp4" }],
         files: ["/w/clip.mp4"],
-        replaceThrowsFor: (it) => it.name === "BH_RELINK_1"
+        replaceThrowsFor: (it) => String(it.name).indexOf("BH_RELINK_") === 0
     });
     const BH = loadHost(ae);
     const tokens = unwrap(BH.releaseFileLock("/w/clip.mp4"));
@@ -213,7 +214,7 @@ test("findRelinkPlaceholders spots footage stranded by an interrupted run", () =
     const orphans = unwrap(BH.findRelinkPlaceholders());
     assert.equal(orphans.length, 1);
     assert.equal(orphans[0].index, 1);
-    assert.equal(orphans[0].name, "BH_RELINK_1");
+    assert.equal(orphans[0].name, "BH_RELINK_" + ae.items[0].id);
 });
 
 test("recoverPlaceholders relinks orphans and restores names from the saved tokens", () => {
@@ -281,7 +282,155 @@ test("recoverPlaceholders reports orphans it could not relink", () => {
     unwrap(BH.releaseFileLock("/w/clip.mp4"));
     const res = unwrap(BH.recoverPlaceholders("/w/clip.mp4", null));
     assert.equal(res.restored, 0);
-    assert.deepEqual(res.failed, ["BH_RELINK_1"]);
+    assert.deepEqual(res.failed, ["BH_RELINK_" + ae.items[0].id]);
+});
+
+/* ------------------------------------- indices that move on rename ------ */
+
+// AE indexes project items in Project-panel (name) order. Parking an item
+// renames it to BH_RELINK_*, which can move it — and everything it passes —
+// to a different index. `sortByName` makes the mock do the same.
+
+test("restore relinks the parked item, not whatever now sits at its old index", () => {
+    const ae = buildAE({
+        sortByName: true,
+        items: [
+            { kind: "footage", name: "Cherry", path: "/w/cherry.mp4" },
+            { kind: "footage", name: "Zebra", path: "/w/clip.mp4" }
+        ],
+        files: ["/w/clip.mp4"]
+    });
+    const BH = loadHost(ae);
+    const [cherry, zebra] = ae.items;
+
+    const tokens = unwrap(BH.releaseFileLock("/w/clip.mp4"));
+    assert.equal(tokens.items[0].index, 2, "Zebra was item 2 when it was released");
+    assert.equal(ae.project.item(2), cherry, "…and the rename has since moved Cherry into slot 2");
+
+    const res = unwrap(BH.restoreFileLock(tokens, "/w/clip.mp4"));
+    assert.equal(res.restored, 1);
+    assert.equal(zebra.name, "Zebra");
+    assert.equal(zebra.file.fsName, "/w/clip.mp4");
+    assert.equal(cherry.name, "Cherry", "unrelated footage must not be renamed");
+    assert.equal(cherry.file.fsName, "/w/cherry.mp4", "unrelated footage must not be repointed");
+});
+
+test("release parks every match even though each rename reshuffles the list", () => {
+    const ae = buildAE({
+        sortByName: true,
+        items: [
+            { kind: "footage", name: "Mango", path: "/w/clip.mp4" },
+            { kind: "footage", name: "Nectarine", path: "/w/clip.mp4" },
+            { kind: "footage", name: "Apple", path: "/w/other.mp4" }
+        ],
+        files: ["/w/clip.mp4"]
+    });
+    const BH = loadHost(ae);
+    const tokens = unwrap(BH.releaseFileLock("/w/clip.mp4"));
+    assert.equal(tokens.items.length, 2, "both items on the file are released");
+    unwrap(BH.restoreFileLock(tokens, "/w/clip.mp4"));
+    assert.deepEqual(ae.items.map((i) => i.name), ["Mango", "Nectarine", "Apple"]);
+});
+
+test("an index-only token from an older panel is not trusted once the index has drifted", () => {
+    const ae = buildAE({
+        items: [
+            { kind: "footage", name: "Cherry", path: "/w/cherry.mp4" },
+            { kind: "footage", name: "BH_RELINK_5", path: null }
+        ],
+        files: ["/w/clip.mp4"]
+    });
+    const BH = loadHost(ae);
+    // Saved as "item 1", but item 1 is not the placeholder that index named.
+    const res = unwrap(BH.restoreFileLock({ items: [{ index: 1, name: "Hero" }], oms: [] }, "/w/clip.mp4"));
+    assert.equal(res.restored, 0);
+    assert.deepEqual(res.failed, ["Hero"]);
+    assert.equal(ae.items[0].file.fsName, "/w/cherry.mp4", "the wrong item is reported, never relinked");
+});
+
+test("recovery restores original names by id after the indices have moved", () => {
+    const ae = buildAE({
+        sortByName: true,
+        items: [
+            { kind: "footage", name: "Cherry", path: "/w/cherry.mp4" },
+            { kind: "footage", name: "Zebra", path: "/w/clip.mp4" }
+        ],
+        files: ["/w/clip.mp4"]
+    });
+    const BH = loadHost(ae);
+    const tokens = unwrap(BH.releaseFileLock("/w/clip.mp4"));   // panel dies here
+    const res = unwrap(BH.recoverPlaceholders("/w/clip.mp4", tokens));
+    assert.equal(res.restored, 1);
+    assert.equal(ae.items[1].name, "Zebra");
+    assert.equal(ae.items[0].name, "Cherry");
+});
+
+/* ---------------------------------------------------- render queue ------ */
+
+function queuedFormat(type) {
+    const ae = buildAE({ items: [{ kind: "comp", name: "Main" }] });
+    const BH = loadHost(ae);
+    unwrap(BH.addMainToRenderQueue("/out/render", type));
+    return ae.log.filter((l) => l.op === "applyTemplate")[0].name;
+}
+
+test("Expandable is queued as H.264, matching the MP4 folder the panel routes it to", () => {
+    assert.equal(queuedFormat("expandable"), "H.264");
+});
+
+test("the other template types keep their formats", () => {
+    assert.equal(queuedFormat("sunrise"), "PNG Sequence with Alpha");
+    assert.equal(queuedFormat("default"), "PNG Sequence with Alpha");
+    assert.equal(queuedFormat("interscroller"), "H.264");
+    assert.equal(queuedFormat("dooh"), "H.264");
+    assert.equal(queuedFormat("dooh_vertical"), "H.264");
+});
+
+/* --------------------------------------------------------- collect ------ */
+
+test("collect ends back in the original project, not the collected copy", () => {
+    const ae = buildAE({
+        projectFile: "/p/orig.aep",
+        files: ["/p/orig.aep"],
+        items: [{ kind: "footage", name: "clip.mp4", path: "/src/clip.mp4" }]
+    });
+    const BH = loadHost(ae);
+    const res = unwrap(BH.collectProject("/dest/orig.aep", "/dest/(Footage)"));
+
+    assert.equal(res.assets, 1);
+    assert.equal(res.reopened, true);
+    assert.equal(ae.project.file.fsName, "/p/orig.aep",
+        "Save As moved AE onto the copy; later edits and renders must not land there");
+    const ops = ae.log.map((l) => l.op);
+    assert.ok(ops.lastIndexOf("open") > ops.lastIndexOf("save"),
+        "the original is reopened only after the copy's relinks are saved");
+});
+
+test("a collect that fails part-way still returns to the original", () => {
+    const ae = buildAE({
+        projectFile: "/p/orig.aep",
+        files: ["/p/orig.aep"],
+        items: [{ kind: "footage", name: "clip.mp4", path: "/src/clip.mp4" }],
+        replaceThrowsFor: () => true
+    });
+    const BH = loadHost(ae);
+    const parsed = JSON.parse(BH.collectProject("/dest/orig.aep", "/dest/(Footage)"));
+
+    assert.equal(parsed.ok, false);
+    assert.equal(ae.project.file.fsName, "/p/orig.aep");
+    assert.ok(ae.log.some((l) => l.op === "close"), "the half-relinked copy is closed without saving");
+});
+
+test("collect reports when the original could not be reopened", () => {
+    const ae = buildAE({
+        projectFile: "/p/orig.aep",
+        files: ["/p/orig.aep"],
+        items: []
+    });
+    ae.app.open = () => { throw new Error("AE refused"); };
+    const BH = loadHost(ae);
+    const res = unwrap(BH.collectProject("/dest/orig.aep", "/dest/(Footage)"));
+    assert.equal(res.reopened, false, "the panel needs to know AE is still on the copy");
 });
 
 /* ------------------------------------------------------ getSetting ------ */

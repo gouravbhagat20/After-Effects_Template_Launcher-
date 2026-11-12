@@ -27,6 +27,15 @@ for (const [input, expected] of VECTORS) {
     });
 }
 
+test("a brand that merely starts with 'Dooh' is not a DOOH project", () => {
+    const p = T.parseProjectName("Doohickey_Launch_Q2_750x300_V1_R1");
+    assert.ok(p);
+    assert.ok(!p.isDOOH);
+    assert.strictEqual(p.brand, "Doohickey");
+    assert.strictEqual(p.campaign, "Launch");
+    assert.strictEqual(p.quarter, "Q2");
+});
+
 test("V is optional and defaults to V1", () => {
     const p = T.parseProjectName("Brand_Camp_Q2_750x300_R4");
     assert.strictEqual(p.version, "V1");

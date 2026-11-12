@@ -44,6 +44,29 @@ test("detectPNGSequence parses prefix/padding/start", () => {
     } finally { rmrf(dir); }
 });
 
+test("detectPNGSequence ignores stray PNGs beside the frames", () => {
+    const dir = tmpdir();
+    try {
+        // poster.png has no frame number and sorts first; logo2.png is numbered
+        // but belongs to no sequence. Neither is a frame.
+        ["poster.png", "logo2.png", "frame_0001.png", "frame_0002.png", "frame_0003.png"]
+            .forEach((f) => fs.writeFileSync(path.join(dir, f), "x"));
+        const seq = Post.detectPNGSequence(dir);
+        assert.ok(seq, "a stray PNG must not hide the sequence");
+        assert.strictEqual(seq.prefix, "frame_");
+        assert.strictEqual(seq.start, 1);
+        assert.strictEqual(seq.count, 3, "strays must not inflate the frame count");
+    } finally { rmrf(dir); }
+});
+
+test("detectPNGSequence returns null when no PNG is numbered", () => {
+    const dir = tmpdir();
+    try {
+        fs.writeFileSync(path.join(dir, "poster.png"), "x");
+        assert.strictEqual(Post.detectPNGSequence(dir), null);
+    } finally { rmrf(dir); }
+});
+
 test("detectPNGSequence returns null for empty or missing folders", () => {
     const dir = tmpdir();
     try {

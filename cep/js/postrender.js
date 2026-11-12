@@ -21,13 +21,32 @@
 
     // ---------------- detection ----------------
 
-    /** Find a PNG sequence in a folder. Numeric-aware sort (fixes mixed padding). */
+    /**
+     * Find a PNG sequence in a folder. Numeric-aware sort (fixes mixed padding).
+     *
+     * Only numbered frames sharing one prefix count. Other PNGs in the folder
+     * (poster.png, a second sequence) used to be sorted in with the frames:
+     * an unnumbered one sorted first and made the whole folder read as "no
+     * sequence", and any stray inflated the frame count — and with it the
+     * duration every bitrate is computed from. The largest group wins.
+     */
     function detectPNGSequence(folder) {
-        var files;
+        var names;
         try {
-            files = fs.readdirSync(folder).filter(function (f) { return /\.png$/i.test(f); });
+            names = fs.readdirSync(folder);
         } catch (e) { return null; }
-        if (!files.length) return null;
+
+        var groups = {};
+        names.forEach(function (f) {
+            var m = f.match(/^(.*?)(\d+)\.png$/i);
+            if (!m) return;
+            (groups[m[1]] = groups[m[1]] || []).push(f);
+        });
+        var files = null;
+        Object.keys(groups).sort().forEach(function (prefix) {
+            if (!files || groups[prefix].length > files.length) files = groups[prefix];
+        });
+        if (!files) return null;
 
         files.sort(function (a, b) {
             var na = (a.match(/(\d+)\.png$/i) || [0, 0])[1];

@@ -50,3 +50,29 @@ test("rolls back when the optimized file cannot move in", () => {
         assert.strictEqual(fs.readFileSync(orig, "utf8"), "ORIGINAL");
     } finally { cleanup(dir); }
 });
+
+/* ------------------------------------------ encode output location ------ */
+
+const freshOutputPath = FF._internals.freshOutputPath;
+
+test("the encode is written to <name>_Optimized.mp4 when that name is free", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bh-out-"));
+    try {
+        assert.strictEqual(freshOutputPath(path.join(dir, "clip.mp4")), path.join(dir, "clip_Optimized.mp4"));
+        assert.strictEqual(freshOutputPath(path.join(dir, "CLIP.MP4")), path.join(dir, "CLIP_Optimized.mp4"));
+    } finally { cleanup(dir); }
+});
+
+test("an existing _Optimized.mp4 is never chosen as the encode output", () => {
+    // It is encoded over with -y and deleted on failure or cancel, so picking
+    // it destroys a result kept from an earlier run (or a queued file).
+    const { dir, orig, opt } = setup();
+    try {
+        const out = freshOutputPath(orig);
+        assert.notStrictEqual(out, opt);
+        assert.strictEqual(out, path.join(dir, "clip_Optimized_2.mp4"));
+        fs.writeFileSync(out, "x");
+        assert.strictEqual(freshOutputPath(orig), path.join(dir, "clip_Optimized_3.mp4"));
+        assert.strictEqual(fs.readFileSync(opt, "utf8"), "OPTIMIZED");
+    } finally { cleanup(dir); }
+});

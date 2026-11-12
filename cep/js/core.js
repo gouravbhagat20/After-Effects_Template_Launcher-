@@ -24,7 +24,7 @@
     var T = global.BHTemplates;
     var ui = global.BHDialog;
 
-    var BH_VERSION = "0.4.6";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.7";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
 
     // ---------------- host bridge ----------------
@@ -181,7 +181,15 @@
         return kept;
     }
 
-    /** Unsaved-changes guard: resolves true to proceed (saving first if asked). */
+    /**
+     * Unsaved-changes guard: resolves true to proceed (saving first if asked).
+     *
+     * Callers follow a true with a forced open/close, which discards whatever
+     * is unsaved. So true must only ever mean "saved, clean, or the user chose
+     * to discard" — a save that fails or times out resolves FALSE, and a
+     * project whose state could not be read is put to the user, not assumed
+     * clean.
+     */
     function guardUnsaved(actionLabel) {
         return host("getProjectInfo").then(function (info) {
             if (!info || !info.open || !info.dirty) return true;
@@ -189,7 +197,12 @@
                               "\n\nSave the current project first?", "Unsaved Changes")
                 .then(function (doSave) {
                     if (doSave && info.path) {
-                        return host("saveProject").then(function () { return true; });
+                        return host("saveProject").then(function () { return true; }, function (e) {
+                            return ui.alert("The project could not be saved, so nothing was changed.\n\n" +
+                                            ((e && e.message) || e) +
+                                            "\n\nSave it in After Effects, then try again.", "Save Failed")
+                                .then(function () { return false; });
+                        });
                     }
                     if (doSave && !info.path) {
                         return ui.alert("The current project has never been saved — save it manually in AE first, or discard.")
@@ -199,7 +212,11 @@
                     }
                     return ui.confirm("Continue WITHOUT saving?\n\nUnsaved changes will be LOST.", "Discard Changes?");
                 });
-        }).catch(function () { return true; });
+        }, function (e) {
+            return ui.confirm("Could not check the current project for unsaved changes:\n" +
+                              ((e && e.message) || e) + "\n\nAbout to: " + actionLabel +
+                              "\n\nContinue anyway? Any unsaved changes will be LOST.", "Unsaved Changes?");
+        });
     }
 
     // ---------------- theme (follows AE's appearance) ----------------

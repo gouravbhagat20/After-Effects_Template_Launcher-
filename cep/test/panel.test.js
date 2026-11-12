@@ -185,6 +185,71 @@ test("closing a dialog returns focus to where it was", async () => {
     });
 });
 
+test("Enter answers with the focused button, so Enter on Cancel cancels", async () => {
+    await withPanel({}, async (p) => {
+        const done = p.window.BHDialog.confirm("Continue WITHOUT saving?", "Discard Changes?");
+        await p.settle(20);
+        p.document.dispatchEvent({ type: "keydown", key: "Tab", shiftKey: false });
+        assert.equal(p.document.activeElement, p.document.querySelector(".bh-modal-no"));
+        p.document.dispatchEvent({ type: "keydown", key: "Enter" });
+        assert.equal(await done, false, "Enter on Cancel must not confirm");
+    });
+});
+
+test("Enter on the primary button still confirms", async () => {
+    await withPanel({}, async (p) => {
+        const done = p.window.BHDialog.confirm("sure?");
+        await p.settle(20);
+        p.document.dispatchEvent({ type: "keydown", key: "Enter" });
+        assert.equal(await done, true);
+    });
+});
+
+/* ---------------------------------------------- unsaved-changes guard --- */
+
+const DIRTY = { open: true, dirty: true, path: "/p/work.aep", name: "work", folder: "/p" };
+
+/** Start the guard, then press Enter on each dialog it raises, in order. */
+async function runGuard(p, answers) {
+    const done = p.window.BHCore.guardUnsaved("Open project: next.aep");
+    for (const key of answers) {
+        await p.settle(30);
+        p.document.dispatchEvent({ type: "keydown", key });
+    }
+    return done;
+}
+
+test("a failed save stops the action instead of discarding the changes", async () => {
+    await withPanel({
+        projectInfo: DIRTY,
+        hostImpl: { saveProject: () => new Error("disk full") }
+    }, async (p) => {
+        // Enter = "Save first"; Enter again dismisses the failure alert.
+        const go = await runGuard(p, ["Enter", "Enter"]);
+        assert.equal(go, false, "callers force-open on true, which would lose the unsaved work");
+        assert.equal(p.callsTo("saveProject").length, 1);
+    });
+});
+
+test("a successful save lets the action proceed", async () => {
+    await withPanel({ projectInfo: DIRTY, hostImpl: { saveProject: () => ({ saved: "/p/work.aep" }) } },
+        async (p) => {
+            assert.equal(await runGuard(p, ["Enter"]), true);
+        });
+});
+
+test("a clean project needs no prompt", async () => {
+    await withPanel({ projectInfo: Object.assign({}, DIRTY, { dirty: false }) }, async (p) => {
+        assert.equal(await p.window.BHCore.guardUnsaved("x"), true);
+    });
+});
+
+test("when the project state cannot be read the user decides, not the panel", async () => {
+    await withPanel({ hostImpl: { getProjectInfo: () => new Error("host busy") } }, async (p) => {
+        assert.equal(await runGuard(p, ["Escape"]), false);
+    });
+});
+
 /* ------------------------------------------------- optimizer queue ------ */
 
 /** Replace ffmpeg's real probe/detect so queueing does not shell out. */
@@ -227,6 +292,32 @@ test("non-MP4 drops are rejected with an explanation", async () => {
         await drop(p, ["/w/notes.txt"]);
         assert.equal(p.$("opt-file-list").children.length, 0);
         assert.match(p.document.querySelector(".bh-toast").textContent, /Only MP4/i);
+    });
+});
+
+test("Cancel pressed while AE releases a file stops before that file is encoded", async () => {
+    let panel;
+    await withPanel({
+        hostImpl: {
+            // The user hits Cancel while the host call is still in flight.
+            releaseFileLock: () => {
+                panel.$("btn-cancel").click();
+                return { items: [], oms: [], failed: [] };
+            }
+        }
+    }, async (p) => {
+        panel = p;
+        await drop(p, ["/w/a.mp4", "/w/b.mp4"]);
+        const encoded = [];
+        p.window.BHFFmpeg.optimize = (file) => {
+            encoded.push(file);
+            return Promise.resolve({ path: file, before: 10, after: 5, met: true, attempts: 1, replaced: true, output: file });
+        };
+        p.$("btn-optimize").click();
+        await p.settle(80);
+        assert.deepEqual(encoded, [], "no encode may start after Cancel");
+        assert.equal(p.callsTo("releaseFileLock").length, 1, "the rest of the batch is skipped");
+        assert.match(p.$("opt-log").textContent, /Cancelled/);
     });
 });
 

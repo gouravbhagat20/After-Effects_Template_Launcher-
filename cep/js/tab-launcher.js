@@ -312,6 +312,16 @@
                     .then(function (yes) {
                         if (!yes) return;
                         templates.splice(i, 1);
+                        // An open edit form addresses its template by index.
+                        // Deleting that one closes the form; deleting an
+                        // earlier one shifts it — left alone, Save would
+                        // overwrite a different template.
+                        if (tplEditIndex === i) {
+                            tplEditIndex = -1;
+                            $("tpl-form-card").classList.add("hidden");
+                        } else if (tplEditIndex > i) {
+                            tplEditIndex--;
+                        }
                         core.setTemplates(templates, true);
                     });
             } else {

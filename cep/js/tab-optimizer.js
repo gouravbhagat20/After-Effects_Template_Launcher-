@@ -211,6 +211,15 @@
                                            tokens.failed.length + " item(s): " + tokens.failed.join(", ") +
                                            " — replacing the file may fail on Windows.", "err");
                                 }
+                                // Cancel pressed while AE was releasing the file:
+                                // BHFFmpeg.optimize() clears its own cancel flag on
+                                // entry, so starting it now would encode this whole
+                                // file before the batch noticed. Relink and stop.
+                                if (optCancelled) {
+                                    return restore(tokens, f.path).then(function () {
+                                        throw new Error("CANCELLED");
+                                    });
+                                }
                                 return global.BHFFmpeg.optimize(f.path,
                                     { ffmpegPath: exe, targetMB: fileTarget, replaceOriginal: true },
                                     function (pct) {

@@ -109,7 +109,9 @@
         result.size = sizeMatch[1];
         remaining = remaining.replace(/_\d+x\d+$/i, "");
 
-        if (remaining.match(/^DOOH/i)) {
+        // DOOH as a whole leading token. A bare /^DOOH/ also claimed any brand
+        // that merely starts with those letters ("Doohickey_…").
+        if (remaining.match(/^DOOH(_|$)/i)) {
             result.isDOOH = true;
             result.brand = "DOOH";
             result.campaign = remaining.replace(/^DOOH_?/i, "") || "";

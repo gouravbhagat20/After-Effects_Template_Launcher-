@@ -101,7 +101,16 @@
             }
             function onKey(ev) {
                 if (ev.key === "Escape") done(isConfirm ? false : undefined, false);
-                if (ev.key === "Enter") done(isConfirm ? true : undefined, false);
+                if (ev.key === "Enter") {
+                    // Enter activates the FOCUSED button. Answering "yes" no
+                    // matter what had focus meant Tab-to-Cancel, Enter still
+                    // confirmed — on "Continue WITHOUT saving?" that discards
+                    // work. preventDefault stops the browser's own click on
+                    // the focused button from landing on a dialog queued
+                    // behind this one.
+                    if (ev.preventDefault) ev.preventDefault();
+                    done(isConfirm ? document.activeElement !== no : undefined, false);
+                }
             }
             yes.onclick = function () { done(isConfirm ? true : undefined, true); };
             no.onclick = function () { done(false, true); };

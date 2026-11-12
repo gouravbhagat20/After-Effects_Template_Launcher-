@@ -101,6 +101,10 @@
 
     function spawnFFmpeg(exe, args, durationSec, onProgress) {
         return new Promise(function (resolve, reject) {
+            // cancel() can only kill a process that exists. One that arrives
+            // between encodes (or before the first) has nothing to kill, so
+            // it has to be honoured here or the encode runs to the end.
+            if (cancelled) { reject(new Error("CANCELLED")); return; }
             var proc = cp.spawn(exe, args, { windowsHide: true });
             current = proc;
             var errTail = "";
@@ -201,6 +205,24 @@
     }
 
     /**
+     * Where an encode of `file` is written: <name>_Optimized.mp4 beside it,
+     * or _Optimized_2, _3… when that name is taken.
+     *
+     * Never an existing file. The encoder runs with -y and a failed or
+     * cancelled run deletes its output, so reusing the fixed name destroyed
+     * whatever was already there — the over-target result kept from an
+     * earlier run, or another file queued in the same batch.
+     */
+    function freshOutputPath(file) {
+        var base = path.join(path.dirname(file),
+            path.basename(file, path.extname(file)) + "_Optimized");
+        var out = base + ".mp4";
+        var n = 2;
+        while (fs.existsSync(out)) out = base + "_" + (n++) + ".mp4";
+        return out;
+    }
+
+    /**
      * Optimize one MP4 under a hard size cap.
      * opts: { ffmpegPath, targetMB, replaceOriginal }
      * onProgress(pct 0-100)
@@ -210,11 +232,11 @@
         cancelled = false;
         var exe = opts.ffmpegPath;
         var targetMB = opts.targetMB;
-        var tmpOut = path.join(path.dirname(file),
-            path.basename(file, ".mp4") + "_Optimized.mp4");
+        var tmpOut = freshOutputPath(file);   // did not exist — ours to delete on failure
         var passLog = path.join(os.tmpdir(), "bh_pass_" + Date.now());
 
         return probe(exe, file).then(function (info) {
+            if (cancelled) throw new Error("CANCELLED");   // cancelled during the probe
             if (info.sizeMB <= targetMB) {
                 return { path: file, before: info.sizeMB, after: info.sizeMB, met: true, attempts: 0, replaced: false, skipped: true };
             }
@@ -415,6 +437,6 @@
         install: install,
         isWin: IS_WIN,
         // pure/fs helpers exposed for the headless test suite only
-        _internals: { backupSwap: backupSwap, sha256File: sha256File }
+        _internals: { backupSwap: backupSwap, sha256File: sha256File, freshOutputPath: freshOutputPath }
     };
 })(window);

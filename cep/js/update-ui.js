@@ -10,6 +10,18 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.7": [
+            "If \"Save first\" fails, the panel now stops and tells you instead of opening the other project and losing your changes",
+            "Collect Project returns you to your original project when it finishes, instead of leaving After Effects on the collected copy",
+            "Optimizing no longer risks relinking the wrong footage item when items are reordered in the Project panel",
+            "Expandable units are queued as H.264 (MP4), matching the folder and format the panel shows",
+            "In dialogs, Enter now activates the focused button — Enter on Cancel cancels",
+            "The optimizer never overwrites or deletes an existing _Optimized.mp4; it picks a new name instead",
+            "Cancel now stops a batch straight away, even if pressed while a file is still being prepared",
+            "Post-render ignores stray PNGs in the render folder when finding the sequence and counting frames",
+            "Brands that merely start with \"Dooh\" are no longer treated as DOOH projects",
+            "Deleting a template while another is being edited no longer makes Save overwrite the wrong one"
+        ],
         "0.4.6": [
             "Update checks retry once automatically, so a brief network or GitHub hiccup no longer shows an error",
             "If an update check still fails, the message now says why (e.g. HTTP status or timeout)"

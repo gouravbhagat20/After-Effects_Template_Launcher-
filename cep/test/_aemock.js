@@ -173,6 +173,11 @@ class MSolidSource { }
  *   settings         - preloaded AE settings map
  *   outputModules    - [{ rq, om, file }] render-queue output modules
  *   replaceThrowsFor - fn(item) -> true to simulate a locked item
+ *   sortByName       - true to index items in name order, re-sorted after
+ *                      every rename, the way the Project panel orders them.
+ *                      Off by default so tests can address ae.items[n]
+ *                      directly; turn it on to catch code that trusts an
+ *                      index across a rename.
  */
 function buildAE(spec) {
     spec = spec || {};
@@ -194,6 +199,15 @@ function buildAE(spec) {
         }
         return f;
     });
+
+    // Persistent ids, like AE's item.id: unrelated to position, never reused.
+    items.forEach((it, i) => { if (it.id == null) it.id = 100 + i * 7; });
+
+    /** Items in the order AE would index them right now. */
+    function ordered() {
+        if (!spec.sortByName) return items;
+        return items.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }
 
     // AE collections are 1-based; `items` also exposes .length.
     const itemsCollection = { length: items.length };
@@ -222,22 +236,40 @@ function buildAE(spec) {
                 }
             };
         },
-        items: { add: () => ({ outputModule: () => ({ applyTemplate() { } }) }) }
+        items: {
+            add: () => {
+                const om = {
+                    applyTemplate(name) { log.push({ op: "applyTemplate", name }); },
+                    setSettings(s) { log.push({ op: "setSettings", format: s && s.Format }); }
+                };
+                return { outputModule: () => om };
+            }
+        }
     };
 
     const settings = Object.assign({}, spec.settings || {});
     const project = {
         get numItems() { return items.length; },
         item(i) {
-            const it = items[i - 1];
+            const it = ordered()[i - 1];
             if (!it) throw new Error("no item at index " + i);
+            return it;
+        },
+        itemByID(id) {
+            const it = items.filter((x) => x.id === id)[0];
+            if (!it) throw new Error("no item with id " + id);
             return it;
         },
         items: itemsCollection,
         file: spec.projectFile ? new MFile(spec.projectFile) : null,
         dirty: !!spec.dirty,
         renderQueue,
-        save() { log.push({ op: "save" }); },
+        /** save() in place, or save(file) = Save As: AE then works on that file. */
+        save(file) {
+            if (spec.saveThrows && spec.saveThrows(file)) throw new Error("save failed");
+            if (file) { vfs.addFile(file.fsName); project.file = file; }
+            log.push({ op: "save", to: file ? file.fsName : null });
+        },
         close() { log.push({ op: "close" }); }
     };
 
@@ -252,7 +284,11 @@ function buildAE(spec) {
         },
         beginUndoGroup() { },
         endUndoGroup() { },
-        open() { log.push({ op: "open" }); return project; },
+        open(file) {
+            if (file) project.file = file;
+            log.push({ op: "open", file: file ? file.fsName : null });
+            return project;
+        },
         newProject() { log.push({ op: "newProject" }); return project; },
         executeCommand() { },
         findMenuCommandId: () => 1
@@ -267,6 +303,7 @@ function buildAE(spec) {
             CompItem: MCompItem,
             FootageItem: MFootageItem,
             SolidSource: MSolidSource,
+            CloseOptions: { DO_NOT_SAVE_CHANGES: "DO_NOT_SAVE_CHANGES" },
             ImportOptions: function (f) { this.file = f; },
             ImportAsType: { FOOTAGE: "footage" }
         }
