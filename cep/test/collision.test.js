@@ -146,3 +146,36 @@ test("a MOV encoded with alpha is a plain success",
         assert.match(log[0].msg, /SUCCESS via HEVC/);
     } finally { rmrf(dir); }
 });
+
+/* ------------------------------------ outputs are replaced atomically --- */
+
+function seqDir() {
+    const dir = tmpdir();
+    ["f_0001.png", "f_0002.png"].forEach((f) => fs.writeFileSync(path.join(dir, f), "x"));
+    fs.writeFileSync(path.join(dir, "output.webm"), "PREVIOUS GOOD");
+    return dir;
+}
+const convertWebM = (dir, exe) => Post.convert(
+    { ffmpegPath: exe, seq: Post.detectPNGSequence(dir), fps: 24, width: 750, height: 300, webm: true },
+    () => { }, () => { });
+
+test("a failed conversion leaves the previous output.webm intact",
+    { skip: process.platform === "win32" }, async () => {
+    const dir = seqDir();
+    try {
+        await assert.rejects(convertWebM(dir, fakeFFmpeg(dir, [])));
+        assert.strictEqual(fs.readFileSync(path.join(dir, "output.webm"), "utf8"), "PREVIOUS GOOD");
+        assert.ok(!fs.existsSync(path.join(dir, "output.partial.webm")), "no partial file left behind");
+    } finally { rmrf(dir); }
+});
+
+test("a successful conversion replaces output.webm",
+    { skip: process.platform === "win32" }, async () => {
+    const dir = seqDir();
+    try {
+        const res = await convertWebM(dir, fakeFFmpeg(dir, ["libvpx-vp9"]));
+        assert.deepStrictEqual(res.outputs.map((p) => path.basename(p)), ["output.webm"]);
+        assert.notStrictEqual(fs.readFileSync(path.join(dir, "output.webm"), "utf8"), "PREVIOUS GOOD");
+        assert.ok(!fs.existsSync(path.join(dir, "output.partial.webm")));
+    } finally { rmrf(dir); }
+});

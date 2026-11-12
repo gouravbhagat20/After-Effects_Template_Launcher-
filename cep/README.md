@@ -130,6 +130,13 @@ the manual QA checklist in the root README.
 functions (lifted from `BigHappyLauncher_Templates.jsx`) against the panel's
 ports on shared inputs, so the two tools cannot drift apart unnoticed.
 
+### Releasing
+
+Add the new version's entry to `CHANGELOG` in `js/update-ui.js`, then run
+`./cep/release.sh <version>`. It sets the version in the manifest and
+`js/core.js`, runs the tests and builds the signed zxp into `dist/`. It does
+not commit or push — it prints the commands.
+
 ### Inside After Effects
 
 The headless suite runs `jsx/host.jsx` against a mock of the AE DOM. To check

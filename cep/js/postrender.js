@@ -99,6 +99,32 @@
         try { return fs.statSync(p).size > 0; } catch (e) { return false; }
     }
 
+    /** output.webm -> output.partial.webm (extension kept: ffmpeg, zip and
+        Compress-Archive all pick the format from it). */
+    function partialPath(finalPath) {
+        var ext = path.extname(finalPath);
+        return finalPath.slice(0, finalPath.length - ext.length) + ".partial" + ext;
+    }
+
+    /**
+     * Build a delivery file beside its final name and move it into place only
+     * once it is complete. Writing straight to the final name meant a
+     * cancelled or failed run left a half-written file where the previous
+     * good one had been. `make(tmpPath)` returns a promise; its value is
+     * passed through.
+     */
+    function intoPlace(finalPath, make) {
+        var tmp = partialPath(finalPath);
+        try { fs.unlinkSync(tmp); } catch (e) { }       // leftover from a killed run
+        return make(tmp).then(function (value) {
+            fs.renameSync(tmp, finalPath);
+            return value;
+        }, function (err) {
+            try { fs.unlinkSync(tmp); } catch (e) { }
+            throw err;
+        });
+    }
+
     // ---------------- steps ----------------
 
     /** WebM: two-pass VP9 with alpha. DOOH gets a bitrate target, else CRF 20
@@ -228,7 +254,7 @@
             proc.on("error", reject);
             proc.on("close", function (code) {
                 if (code === 0 && okFile(zipPath)) {
-                    onLog("ZIP: SUCCESS (" + path.basename(zipPath) + ")");
+                    onLog("ZIP: SUCCESS (" + path.basename(zipPath).replace(".partial.", ".") + ")");
                     resolve();
                 } else reject(new Error("zip failed: " + errTail.slice(-300)));
             });
@@ -268,18 +294,20 @@
         if (opts.webm) {
             chain = chain.then(function () {
                 if (cancelled) throw new Error("CANCELLED");
-                return makeWebM(opts.ffmpegPath, opts.seq, opts.fps, durationSec,
-                    !!opts.isDOOH, opts.targetMB || 6.8, outWebM,
-                    function (p) { onProgress("WebM", p); }, onLog)
-                    .then(function () { outputs.push(outWebM); });
+                return intoPlace(outWebM, function (tmp) {
+                    return makeWebM(opts.ffmpegPath, opts.seq, opts.fps, durationSec,
+                        !!opts.isDOOH, opts.targetMB || 6.8, tmp,
+                        function (p) { onProgress("WebM", p); }, onLog);
+                }).then(function () { outputs.push(outWebM); });
             });
         }
         if (opts.mov) {
             chain = chain.then(function () {
                 if (cancelled) throw new Error("CANCELLED");
-                return makeMOV(opts.ffmpegPath, opts.seq, opts.fps, durationSec, outMov,
-                    function (p) { onProgress("MOV", p); }, onLog)
-                    .then(function (res) {
+                return intoPlace(outMov, function (tmp) {
+                    return makeMOV(opts.ffmpegPath, opts.seq, opts.fps, durationSec, tmp,
+                        function (p) { onProgress("MOV", p); }, onLog);
+                }).then(function (res) {
                         outputs.push(outMov);
                         if (res && res.alpha === false) warnings.push("output.mov has no transparency");
                     });
@@ -289,8 +317,9 @@
             chain = chain.then(function () {
                 if (cancelled) throw new Error("CANCELLED");
                 onProgress("ZIP", 50);
-                return makeZIP(outputs.slice(), zipPath, onLog)
-                    .then(function () { outputs.push(zipPath); onProgress("ZIP", 100); });
+                return intoPlace(zipPath, function (tmp) {
+                    return makeZIP(outputs.slice(), tmp, onLog);
+                }).then(function () { outputs.push(zipPath); onProgress("ZIP", 100); });
             });
         }
 
