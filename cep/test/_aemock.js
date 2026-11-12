@@ -248,7 +248,7 @@ function buildAE(spec) {
                     applyTemplate(name) {
                         if (missing === "all" || missing.indexOf(name) !== -1) throw new Error("no such template: " + name);
                         log.push({ op: "applyTemplate", name });
-                        fmt = /PNG/.test(name) ? "png" : "mp4";
+                        fmt = /PNG|X-Factor/.test(name) ? "png" : "mp4";
                     },
                     setSettings(s) {
                         if (spec.setSettingsThrows) throw new Error("setSettings refused");

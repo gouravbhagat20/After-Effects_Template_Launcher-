@@ -63,10 +63,11 @@ sign_with() {   # $1 = TSA url, or empty for no timestamp
     [ -f "$OUT" ]
 }
 SIGNED_WITH=""
-# DigiCert is listed more than once on purpose: with this ZXPSignCmd its reply
-# verifies on some attempts and not others, so a retry usually succeeds.
-for tsa in http://timestamp.digicert.com http://timestamp.digicert.com http://timestamp.digicert.com \
-           http://timestamp.sectigo.com http://timestamp.globalsign.com/tsa/r6advanced1 ""; do
+# Several authorities, because this ZXPSignCmd (4.1.3) cannot verify the
+# replies of some of them — which ones varies over time. Certum and Apple
+# verified when DigiCert, Sectigo and GlobalSign did not (2026-11).
+for tsa in http://timestamp.digicert.com http://time.certum.pl http://timestamp.apple.com/ts01 \
+           http://timestamp.sectigo.com ""; do
     if sign_with "$tsa"; then SIGNED_WITH="${tsa:-no timestamp}"; break; fi
     echo "Signing with ${tsa:-no timestamp} failed — trying the next option…"
 done

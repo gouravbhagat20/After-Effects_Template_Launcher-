@@ -396,6 +396,24 @@ test("a unit that ends up in the wrong format is reported, not silently queued",
     assert.equal(res.formatOk, false);
 });
 
+test("with no custom PNG template, Sunrise falls back to After Effects' built-in one", () => {
+    // A clean AE install: neither studio-made PNG template exists, and
+    // setSettings cannot change the format.
+    const ae = buildAE({
+        items: [{ kind: "comp", name: "Main" }],
+        missingOMTemplates: ["PNG Sequence with Alpha", "PNG Sequence", "H.264"],
+        setSettingsThrows: true
+    });
+    const BH = loadHost(ae);
+    const sunrise = unwrap(BH.addMainToRenderQueue("/out/render", "sunrise"));
+    assert.equal(sunrise.actual, "png");
+    assert.equal(sunrise.formatOk, true);
+    const dooh = unwrap(BH.addMainToRenderQueue("/out/render", "dooh"));
+    assert.equal(dooh.formatOk, true, "H.264 falls back to the stock 15 Mbps template");
+    assert.deepEqual(ae.log.filter((l) => l.op === "applyTemplate").map((l) => l.name),
+        ["_HIDDEN X-Factor 8", "H.264 - Match Render Settings - 15 Mbps"]);
+});
+
 test("a correctly formatted queue item reports formatOk", () => {
     const ae = buildAE({ items: [{ kind: "comp", name: "Main" }] });
     const BH = loadHost(ae);

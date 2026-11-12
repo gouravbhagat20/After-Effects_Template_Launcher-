@@ -428,12 +428,19 @@ var BH = (function () {
             var isPng = !(templateType === "interscroller" || templateType === "expandable" ||
                           String(templateType).indexOf("dooh") !== -1);
 
-            try {
-                om.applyTemplate(isPng ? "PNG Sequence with Alpha" : "H.264");
-            } catch (templateErr) {
-                try {
-                    om.applyTemplate(isPng ? "PNG Sequence" : "H.264 - Match Render Settings - 15 Mbps");
-                } catch (fallbackErr) { }
+            // First template that exists wins. The first names are ones a
+            // studio machine may have saved; the last of each list ships with
+            // After Effects, so a clean install still gets the right format:
+            // "_HIDDEN X-Factor 8" is AE's own built-in 8-bit PNG sequence
+            // with straight alpha (hidden from the menu, present in every
+            // install's output-module preferences). The format cannot be set
+            // any other way — setSettings does not change "Format".
+            var omTemplates = isPng
+                ? ["PNG Sequence with Alpha", "PNG Sequence", "_HIDDEN X-Factor 8"]
+                : ["H.264", "H.264 - Match Render Settings - 15 Mbps"];
+            for (var t = 0; t < omTemplates.length; t++) {
+                try { om.applyTemplate(omTemplates[t]); break; }
+                catch (templateErr) { /* not installed — try the next */ }
             }
 
             if (templateType === "sunrise") {
@@ -619,7 +626,7 @@ var BH = (function () {
             collectRun(st, 0);
             return ok(collectFinishImpl(st));
         } catch (e) {
-            return fail(collectAbortImpl() ? e : e + STILL_ON_COPY);
+            return fail(collectAbortImpl() ? e : String(e) + STILL_ON_COPY);
         }
     };
 
@@ -631,7 +638,7 @@ var BH = (function () {
             var st = collectBeginImpl(destAepPath, footageFolderPath);
             return ok({ total: st.queue.length, missing: st.missing.length });
         } catch (e) {
-            return fail(collectAbortImpl() ? e : e + STILL_ON_COPY);
+            return fail(collectAbortImpl() ? e : String(e) + STILL_ON_COPY);
         }
     };
 
@@ -653,7 +660,7 @@ var BH = (function () {
             collectRun(st, budgetMs > 0 ? budgetMs : 250);
             return ok({ done: st.pos, total: st.queue.length, finished: st.pos >= st.queue.length });
         } catch (e) {
-            return fail(collectAbortImpl() ? e : e + STILL_ON_COPY);
+            return fail(collectAbortImpl() ? e : String(e) + STILL_ON_COPY);
         }
     };
 
@@ -662,7 +669,7 @@ var BH = (function () {
             if (!collectState) return fail("No collect in progress.");
             return ok(collectFinishImpl(collectState));
         } catch (e) {
-            return fail(collectAbortImpl() ? e : e + STILL_ON_COPY);
+            return fail(collectAbortImpl() ? e : String(e) + STILL_ON_COPY);
         }
     };
 

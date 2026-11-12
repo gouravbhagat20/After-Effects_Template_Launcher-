@@ -84,9 +84,9 @@
                         return ui.alert("The Main comp was added to the Render Queue, but After Effects set its " +
                             "output to ." + res.actual + " instead of " +
                             (res.expected === "png" ? "a PNG sequence with alpha" : "H.264 MP4") + ".\n\n" +
-                            "After Effects has no output module template named \"" + want + "\" on this " +
-                            "machine. Create it once (Edit → Templates → Output Module…), remove the queued " +
-                            "item, and add it again — or set the format by hand in the Render Queue.",
+                            "After Effects has no usable output module template for it on this machine. " +
+                            "Create one named \"" + want + "\" (Edit → Templates → Output Module…), remove " +
+                            "the queued item, and add it again — or set the format by hand in the Render Queue.",
                             "Wrong Render Format");
                     }
                     if ($("rq-ame").checked) {

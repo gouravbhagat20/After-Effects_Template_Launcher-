@@ -13,7 +13,8 @@
         "0.4.11": [
             "Collect Project now shows progress and can be cancelled — After Effects no longer freezes for the whole collect",
             "Cancelling a collect reopens your original project",
-            "Render queue: if After Effects sets a different output format than the unit needs (for example Sunrise as MP4 because the PNG output template is missing), the panel now tells you instead of queuing it silently"
+            "Sunrise now renders as a PNG sequence with alpha even on machines that have no saved \"PNG Sequence with Alpha\" output template (it used to be queued as MP4 there)",
+            "Render queue: if After Effects still sets a different output format than the unit needs, the panel now tells you instead of queuing it silently"
         ],
         "0.4.10": [
             "Collect: two image sequences with the same frame names are no longer merged — the second gets its own folder — and a file used by several items is copied once",
