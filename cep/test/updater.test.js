@@ -447,3 +447,53 @@ test("downloadAndInstall: verified package swaps in, old version kept as .backup
         assert.ok(!fs.existsSync(path.join(dir, "bh_update_9.9.9.zip")), "tmp zip cleaned up");
     } finally { cleanup(dir); }
 });
+
+// ---------------- in-place fallback (swap refused, as on Windows) ----------------
+
+/** A package that passes verifyPackage, with fetch stubs serving it. */
+function fakePackage() {
+    const zip = Buffer.concat([Buffer.from("PK"), Buffer.alloc(11 * 1024, 3)]);
+    const sha = crypto.createHash("sha256").update(zip).digest("hex");
+    return (url) => Promise.resolve(/\.sha256/.test(url)
+        ? { ok: true, text: () => Promise.resolve(sha + "  pkg.zxp") }
+        : { ok: true, arrayBuffer: () => Promise.resolve(bufToArrayBuffer(zip)) });
+}
+const swapRefused = () => { throw new Error("EPERM: rename refused"); };
+
+test("downloadAndInstall: an in-place extract that dies half-way is rolled back", async () => {
+    const dir = tmpdir();
+    try {
+        const target = path.join(dir, "ext");
+        makeExtensionDir(target, "1.0.0", "OLD");
+        const extractImpl = (zip, dest) => {
+            if (dest !== target) { makeExtensionDir(dest, "9.9.9", "NEW"); return Promise.resolve(); }
+            // new manifest and page land, then the extract fails
+            makeExtensionDir(dest, "9.9.9", "HALF");
+            return Promise.reject(new Error("unzip died"));
+        };
+
+        await assert.rejects(
+            U.downloadAndInstall("9.9.9", target,
+                { fetchImpl: fakePackage(), tmpDir: dir, extractImpl, swapImpl: swapRefused }),
+            /unzip died/);
+        assert.strictEqual(fs.readFileSync(path.join(target, "index.html"), "utf8"), "OLD",
+            "the live install must be the old version again, not a mix of two");
+        assert.strictEqual(U.parseBundleVersion(
+            fs.readFileSync(path.join(target, "CSXS", "manifest.xml"), "utf8")), "1.0.0");
+    } finally { cleanup(dir); }
+});
+
+test("downloadAndInstall: a successful in-place extract installs the new version", async () => {
+    const dir = tmpdir();
+    try {
+        const target = path.join(dir, "ext");
+        makeExtensionDir(target, "1.0.0", "OLD");
+        const extractImpl = (zip, dest) => { makeExtensionDir(dest, "9.9.9", "NEW"); return Promise.resolve(); };
+
+        await U.downloadAndInstall("9.9.9", target,
+            { fetchImpl: fakePackage(), tmpDir: dir, extractImpl, swapImpl: swapRefused });
+        assert.strictEqual(fs.readFileSync(path.join(target, "index.html"), "utf8"), "NEW");
+        assert.strictEqual(fs.readFileSync(path.join(target + ".backup", "index.html"), "utf8"), "OLD",
+            "the copy taken before overwriting is kept, like the swap path's backup");
+    } finally { cleanup(dir); }
+});

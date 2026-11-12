@@ -10,6 +10,9 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.8": [
+            "Safer updates on Windows: if an update has to be extracted over the running install and fails part-way, the previous version is now restored instead of being left half-updated"
+        ],
         "0.4.7": [
             "If \"Save first\" fails, the panel now stops and tells you instead of opening the other project and losing your changes",
             "Collect Project returns you to your original project when it finishes, instead of leaving After Effects on the collected copy",

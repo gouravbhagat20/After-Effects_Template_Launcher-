@@ -1665,7 +1665,7 @@
         remaining = remaining.replace(/_\d+x\d+$/i, "");
 
         // Step 3: Check for DOOH prefix
-        if (remaining.match(/^DOOH/i)) {
+        if (remaining.match(/^DOOH(_|$)/i)) { // whole token: "Doohickey_…" is a brand, not DOOH
             result.isDOOH = true;
             result.brand = "DOOH"; // Fix 4: Ensure brand is set for DOOH
             // prefix = everything before suffix was removed

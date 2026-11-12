@@ -191,6 +191,33 @@
         return false;
     }
 
+    /** Copy a directory tree, overwriting files already at the destination.
+        Hand-rolled: CEP's Node predates fs.cpSync. */
+    function copyDirRecursive(src, dest) {
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest);
+        fs.readdirSync(src).forEach(function (name) {
+            var from = path.join(src, name);
+            var to = path.join(dest, name);
+            if (fs.statSync(from).isDirectory()) copyDirRecursive(from, to);
+            else fs.copyFileSync(from, to);
+        });
+    }
+
+    /**
+     * Undo a failed IN-PLACE extract by copying the backup's files back over
+     * the live folder. rollbackFromBackup cannot do this job: it renames the
+     * backup into place, and the in-place path is only taken because the live
+     * folder could not be renamed — and it only acts when the manifest is
+     * missing, which a half-finished extract does not guarantee.
+     */
+    function restoreInPlace(targetPath, backupPath) {
+        try {
+            if (!fs.existsSync(path.join(backupPath, "CSXS", "manifest.xml"))) return false;
+            copyDirRecursive(backupPath, targetPath);
+            return true;
+        } catch (e) { return false; }
+    }
+
     /**
      * This panel version booted successfully, so pre-update backups are no
      * longer needed. Never touches a backup NEWER than currentVersion — that
@@ -292,7 +319,7 @@
      * (previous version kept as <targetPath>.backup for rollback). On any
      * failure: best-effort rollback, cleanup, reject — the live install is
      * left working.
-     * opts (tests only): { fetchImpl, tmpDir }
+     * opts (tests only): { fetchImpl, tmpDir, extractImpl, swapImpl }
      */
     function downloadAndInstall(remoteVersion, targetPath, opts) {
         opts = opts || {};
@@ -300,6 +327,9 @@
         var tmpZip = path.join(opts.tmpDir || os.tmpdir(), "bh_update_" + remoteVersion + ".zip");
         var stagingPath = targetPath + ".staging";
         var backupPath = targetPath + ".backup";
+        var extract = opts.extractImpl || extractTo;
+        var swap = opts.swapImpl || swapInstall;
+        var inPlace = false;   // true once the live folder is being overwritten directly
 
         return Promise.all([
             fetchWithTimeout(baseUrl, DOWNLOAD_TIMEOUT_MS, opts.fetchImpl).then(function (r) {
@@ -322,17 +352,26 @@
                 // package is fully extracted AND validated
                 rmDirRecursive(stagingPath);
                 fs.mkdirSync(stagingPath, { recursive: true });
-                return extractTo(tmpZip, stagingPath);
+                return extract(tmpZip, stagingPath);
             })
             .then(function () {
                 validateExtracted(stagingPath, remoteVersion);
                 try {
-                    swapInstall(targetPath, stagingPath, backupPath);
+                    swap(targetPath, stagingPath, backupPath);
                 } catch (swapErr) {
                     // Windows can refuse directory renames while AE holds a file
                     // open. Staged files are already checksum-verified and
                     // validated, so an in-place extract is a safe last resort.
-                    return extractTo(tmpZip, targetPath);
+                    //
+                    // The failed swap leaves no backup behind (it clears the
+                    // old one first), so take one by COPY — reading works where
+                    // renaming did not — before the live files are overwritten.
+                    // No backup, no in-place extract: fail with the install intact.
+                    rmDirRecursive(backupPath);
+                    try { copyDirRecursive(targetPath, backupPath); }
+                    catch (copyErr) { rmDirRecursive(backupPath); throw copyErr; }
+                    inPlace = true;
+                    return extract(tmpZip, targetPath);
                 }
             })
             .then(function () {
@@ -341,7 +380,8 @@
                 rmDirRecursive(stagingPath);
             })
             .catch(function (err) {
-                rollbackFromBackup(targetPath, backupPath);
+                if (inPlace) restoreInPlace(targetPath, backupPath);
+                else rollbackFromBackup(targetPath, backupPath);
                 rmDirRecursive(stagingPath);
                 try { fs.unlinkSync(tmpZip); } catch (e) { }
                 if (err && err.name === "AbortError") {
