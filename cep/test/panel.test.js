@@ -339,6 +339,27 @@ test("optimizing a file with sound warns that the audio will be dropped", async 
     });
 });
 
+/* -------------------------------------------------- render queue ------- */
+
+test("a wrong render format is flagged and never sent to Media Encoder", async () => {
+    const os = require("node:os"), fs = require("node:fs"), path = require("node:path");
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "bh-rq-"));
+    try {
+        await withPanel({
+            settings: { ame_enabled: "true" },
+            projectInfo: { open: true, dirty: false, path: path.join(folder, "Nike_Q1_750x300_V1_R1.aep"),
+                           name: "Nike_Q1_750x300_V1_R1", folder,
+                           mainComp: { name: "Main", width: 750, height: 300, duration: 15, fps: 24 } },
+            hostImpl: { addMainToRenderQueue: () => ({ comp: "Main", canAME: true, expected: "png", actual: "mp4", formatOk: false }) }
+        }, async (p) => {
+            p.$("btn-rq-add").click();
+            await p.settle(60);
+            assert.match(p.$("bh-modal-msg").textContent, /\.mp4 instead of a PNG sequence/);
+            assert.equal(p.callsTo("queueToAME").length, 0);
+        });
+    } finally { fs.rmSync(folder, { recursive: true, force: true }); }
+});
+
 /* ------------------------------------------------------- collect ------- */
 
 const SAVED = { open: true, dirty: false, path: "/p/Nike_Q1_750x300_V1_R1.aep",

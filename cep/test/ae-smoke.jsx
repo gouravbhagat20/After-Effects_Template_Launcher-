@@ -92,7 +92,29 @@
 
     // ------------------------------------------------------------ preflight
 
-    if (app.project && app.project.numItems > 0) {
+    // Unattended mode: a wrapper sets $.global.BH_SMOKE = { headless: true,
+    // reportPath: "…" } and then evaluates this file. No dialogs are shown, the
+    // report is written to reportPath, and — because nobody is there to answer
+    // a prompt — it only runs when After Effects has NO project open at all.
+    var OPTS = (typeof $.global.BH_SMOKE === "object" && $.global.BH_SMOKE) || {};
+    var HEADLESS = OPTS.headless === true;
+
+    function writeText(path, text) {
+        try {
+            var out = new File(path);
+            out.encoding = "UTF-8";
+            out.open("w");
+            out.write(text);
+            out.close();
+        } catch (eWrite) { }
+    }
+
+    if (HEADLESS) {
+        if (app.project && (app.project.numItems > 0 || app.project.file)) {
+            writeText(OPTS.reportPath, "REFUSED: a project is open in After Effects. Close it and run again.");
+            return;
+        }
+    } else if (app.project && app.project.numItems > 0) {
         var dirty = false;
         try { dirty = app.project.dirty === true; } catch (eDirty) { dirty = true; }
         if (dirty) {
@@ -100,7 +122,7 @@
             return;
         }
     }
-    if (!confirm("BigHappy smoke test\n\nThis closes the current project (it is saved, and is reopened " +
+    if (!HEADLESS && !confirm("BigHappy smoke test\n\nThis closes the current project (it is saved, and is reopened " +
                  "afterwards) and runs the launcher's host functions on a throwaway project in the " +
                  "temp folder.\n\nContinue?")) {
         return;
@@ -109,9 +131,17 @@
     var previousProject = (app.project && app.project.file) ? new File(app.project.file.fsName) : null;
 
     var hostFile = new File(new File($.fileName).parent.parent.fsName + "/jsx/host.jsx");
-    if (!hostFile.exists) { alert("host.jsx not found at:\n" + hostFile.fsName); return; }
+    if (!hostFile.exists) {
+        if (HEADLESS) writeText(OPTS.reportPath, "REFUSED: host.jsx not found at " + hostFile.fsName);
+        else alert("host.jsx not found at:\n" + hostFile.fsName);
+        return;
+    }
     $.evalFile(hostFile);
-    if (typeof BH === "undefined") { alert("host.jsx loaded but did not define BH."); return; }
+    if (typeof BH === "undefined") {
+        if (HEADLESS) writeText(OPTS.reportPath, "REFUSED: host.jsx loaded but did not define BH.");
+        else alert("host.jsx loaded but did not define BH.");
+        return;
+    }
 
     var work = new Folder(Folder.temp.fsName + "/bh_smoke_" + new Date().getTime());
     work.create();
@@ -275,6 +305,11 @@
         reportFile.write(text);
         reportFile.close();
     } catch (eReport) { }
+
+    if (HEADLESS) {
+        if (OPTS.reportPath) writeText(OPTS.reportPath, text);
+        return;
+    }
 
     var win = new Window("dialog", "BigHappy smoke test — " + summary);
     win.alignChildren = "fill";

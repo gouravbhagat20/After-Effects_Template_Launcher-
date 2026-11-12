@@ -74,7 +74,21 @@
             catch (e) { ui.alert("Could not create render folder:\n" + e.message); return; }
 
             host("addMainToRenderQueue", pathMod.join(renderFolder, r.name), r.type)
-                .then(function () {
+                .then(function (res) {
+                    // AE kept a different format than this unit needs (usually
+                    // a missing output-module template). Never send that on to
+                    // Media Encoder as if it were right.
+                    if (res && res.formatOk === false) {
+                        var want = res.expected === "png" ? "PNG Sequence with Alpha" : "H.264";
+                        toast("Queued in the wrong format — check the Render Queue", true);
+                        return ui.alert("The Main comp was added to the Render Queue, but After Effects set its " +
+                            "output to ." + res.actual + " instead of " +
+                            (res.expected === "png" ? "a PNG sequence with alpha" : "H.264 MP4") + ".\n\n" +
+                            "After Effects has no output module template named \"" + want + "\" on this " +
+                            "machine. Create it once (Edit → Templates → Output Module…), remove the queued " +
+                            "item, and add it again — or set the format by hand in the Render Queue.",
+                            "Wrong Render Format");
+                    }
                     if ($("rq-ame").checked) {
                         return host("queueToAME").then(function () {
                             toast("✓ Sent to Media Encoder");

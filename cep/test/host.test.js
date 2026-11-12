@@ -386,6 +386,23 @@ test("the other template types keep their formats", () => {
     assert.equal(queuedFormat("dooh_vertical"), "H.264");
 });
 
+test("a unit that ends up in the wrong format is reported, not silently queued", () => {
+    // No PNG output-module template installed and setSettings refusing —
+    // what After Effects 26.5 does on a machine without the custom template.
+    const ae = buildAE({ items: [{ kind: "comp", name: "Main" }], missingOMTemplates: "all", setSettingsThrows: true });
+    const res = unwrap(loadHost(ae).addMainToRenderQueue("/out/render", "sunrise"));
+    assert.equal(res.expected, "png");
+    assert.equal(res.actual, "mp4");
+    assert.equal(res.formatOk, false);
+});
+
+test("a correctly formatted queue item reports formatOk", () => {
+    const ae = buildAE({ items: [{ kind: "comp", name: "Main" }] });
+    const BH = loadHost(ae);
+    assert.equal(unwrap(BH.addMainToRenderQueue("/out/render", "sunrise")).formatOk, true);
+    assert.equal(unwrap(BH.addMainToRenderQueue("/out/render", "expandable")).formatOk, true);
+});
+
 /* --------------------------------------------------------- collect ------ */
 
 test("collect ends back in the original project, not the collected copy", () => {

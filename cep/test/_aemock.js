@@ -238,9 +238,27 @@ function buildAE(spec) {
         },
         items: {
             add: () => {
+                // Like AE: the output file is named after the format the
+                // module will really write, and a template that is not
+                // installed (spec.missingOMTemplates) throws. The default
+                // format is H.264, as in current After Effects.
+                const missing = spec.missingOMTemplates || [];
+                let fmt = "mp4", outFile = null;
                 const om = {
-                    applyTemplate(name) { log.push({ op: "applyTemplate", name }); },
-                    setSettings(s) { log.push({ op: "setSettings", format: s && s.Format }); }
+                    applyTemplate(name) {
+                        if (missing === "all" || missing.indexOf(name) !== -1) throw new Error("no such template: " + name);
+                        log.push({ op: "applyTemplate", name });
+                        fmt = /PNG/.test(name) ? "png" : "mp4";
+                    },
+                    setSettings(s) {
+                        if (spec.setSettingsThrows) throw new Error("setSettings refused");
+                        log.push({ op: "setSettings", format: s && s.Format });
+                        if (s && s.Format) fmt = /PNG/.test(s.Format) ? "png" : "mp4";
+                    },
+                    get file() { return outFile; },
+                    set file(f) {
+                        outFile = new MFile(f.fsName + (fmt === "png" ? "_[#####].png" : ".mp4"));
+                    }
                 };
                 return { outputModule: () => om };
             }

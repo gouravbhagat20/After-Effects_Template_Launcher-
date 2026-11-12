@@ -466,7 +466,25 @@ var BH = (function () {
             }
 
             om.file = new File(outputPath);
-            return ok({ comp: comp.name, canAME: canQueueInAME() });
+
+            // Every step above can fail quietly — a missing output-module
+            // template, a format setSettings will not accept — and the item
+            // then keeps AE's default format. Seen in AE 26.5 with no "PNG
+            // Sequence with Alpha" template: Sunrise was queued as H.264 into
+            // the PNG_Sequence folder. AE names the file after the format it
+            // will really write, so read that back and report a mismatch.
+            var expected = isPng ? "png" : "mp4";
+            var actual = "unknown";
+            try {
+                var outName = decodeURI(om.file.name).toLowerCase();
+                var dot = outName.lastIndexOf(".");
+                if (dot > 0) actual = outName.substring(dot + 1);
+            } catch (eName) { }
+            return ok({
+                comp: comp.name, canAME: canQueueInAME(),
+                expected: expected, actual: actual,
+                formatOk: actual === "unknown" || actual === expected
+            });
         } catch (e) { return fail(e); }
     };
 
