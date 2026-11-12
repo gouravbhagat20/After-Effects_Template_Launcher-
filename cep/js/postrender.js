@@ -132,20 +132,31 @@
             });
     }
 
-    /** MOV fallback chain: HEVC alpha → ProRes 4444 alpha → H.264 (no alpha). */
+    /**
+     * MOV fallback chain: HEVC alpha → ProRes 4444 alpha → H.264 (no alpha).
+     * Resolves { alpha: bool }. The last rung produces a playable file with
+     * the transparency GONE, which for a Sunrise unit is the wrong
+     * deliverable — so it is reported as a warning, never as a plain success.
+     */
     function makeMOV(exe, seq, fps, durationSec, outMov, onProgress, onLog) {
         var base = inputArgs(seq, fps);
         var tail = ["-progress", "pipe:1", "-v", "error", "-y", outMov];
         var attempts = [
-            { label: "HEVC (alpha)", args: base.concat(["-c:v", "libx265", "-pix_fmt", "yuva444p10le", "-x265-params", "alpha=1", "-crf", "24", "-preset", "slow", "-tag:v", "hvc1"], tail) },
-            { label: "ProRes 4444 (alpha)", args: base.concat(["-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-vendor", "apl0"], tail) },
-            { label: "H.264 (no alpha)", args: base.concat(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "slow"], tail) }
+            { label: "HEVC (alpha)", alpha: true, args: base.concat(["-c:v", "libx265", "-pix_fmt", "yuva444p10le", "-x265-params", "alpha=1", "-crf", "24", "-preset", "slow", "-tag:v", "hvc1"], tail) },
+            { label: "ProRes 4444 (alpha)", alpha: true, args: base.concat(["-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-vendor", "apl0"], tail) },
+            { label: "H.264 (no alpha)", alpha: false, args: base.concat(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "slow"], tail) }
         ];
         function tryAt(i) {
             if (i >= attempts.length) throw new Error("All MOV codecs failed.");
             return spawnFF(exe, attempts[i].args, durationSec, onProgress).then(function () {
                 if (!okFile(outMov)) throw new Error("empty");
-                onLog("MOV: SUCCESS via " + attempts[i].label);
+                if (attempts[i].alpha) {
+                    onLog("MOV: SUCCESS via " + attempts[i].label);
+                } else {
+                    onLog("MOV: WARNING — written as " + attempts[i].label + ". This ffmpeg could not " +
+                          "encode a MOV with transparency, so output.mov has NO alpha channel.", "err");
+                }
+                return { alpha: attempts[i].alpha };
             }, function (err) {
                 if (err.message === "CANCELLED") throw err;
                 onLog("MOV: " + attempts[i].label + " failed, trying next…");
@@ -155,8 +166,16 @@
         return tryAt(0);
     }
 
+    function escapeHtml(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
     /** index.html — identical Mediabunny player the script generates. */
     function makeHTML(outHtml, title, width, height) {
+        title = escapeHtml(title);          // a project name is not markup
+        width = parseInt(width, 10) || 0;
+        height = parseInt(height, 10) || 0;
         var html = '<!DOCTYPE html>\n<html>\n  <head>\n    <meta charset="UTF-8" />\n' +
             '    <title>' + title + ' - Big Happy</title>\n' +
             '    <script src="https://cdn.bighappy.co/libs/mediabunny/v1.25.0/mediabunny.min.cjs"><\/script>\n' +
@@ -223,7 +242,8 @@
      * opts: { ffmpegPath, seq, fps, width, height, title, isDOOH, targetMB,
      *         webm, mov, html, zip }
      * onProgress(stepLabel, pct), onLog(line).
-     * Resolves { outputs: [paths] }.
+     * Resolves { outputs: [paths], warnings: [text] } — warnings are
+     * deliveries that were written but are not what was asked for.
      */
     function convert(opts, onProgress, onLog) {
         cancelled = false;
@@ -231,7 +251,8 @@
         var outWebM = path.join(outDir, "output.webm");
         var outMov = path.join(outDir, "output.mov");
         var outHtml = path.join(outDir, "index.html");
-        var zipPath = path.join(outDir, opts.seq.prefix.replace(/_+$/, "") + "_Optimized.zip");
+        var zipPath = zipPathFor(opts.seq);
+        var warnings = [];
         var durationSec = opts.seq.count / opts.fps;
         var outputs = [];
 
@@ -258,7 +279,10 @@
                 if (cancelled) throw new Error("CANCELLED");
                 return makeMOV(opts.ffmpegPath, opts.seq, opts.fps, durationSec, outMov,
                     function (p) { onProgress("MOV", p); }, onLog)
-                    .then(function () { outputs.push(outMov); });
+                    .then(function (res) {
+                        outputs.push(outMov);
+                        if (res && res.alpha === false) warnings.push("output.mov has no transparency");
+                    });
             });
         }
         if (opts.zip) {
@@ -270,7 +294,7 @@
             });
         }
 
-        return chain.then(function () { return { outputs: outputs }; });
+        return chain.then(function () { return { outputs: outputs, warnings: warnings }; });
     }
 
     function cancel() {
@@ -278,17 +302,24 @@
         if (current) { try { current.kill("SIGKILL"); } catch (e) { } }
     }
 
-    /** Existing outputs that a new run would overwrite. */
-    function existingOutputs(folder) {
-        return ["output.webm", "output.mov", "index.html"]
-            .map(function (f) { return path.join(folder, f); })
-            .filter(function (p) { return fs.existsSync(p); });
+    function zipPathFor(seq) {
+        return path.join(seq.folder, seq.prefix.replace(/_+$/, "") + "_Optimized.zip");
+    }
+
+    /** Existing outputs that a new run would overwrite. Pass the detected
+        sequence to include its ZIP, whose name depends on the frame prefix. */
+    function existingOutputs(folder, seq) {
+        var candidates = ["output.webm", "output.mov", "index.html"]
+            .map(function (f) { return path.join(folder, f); });
+        if (seq) candidates.push(zipPathFor(seq));
+        return candidates.filter(function (p) { return fs.existsSync(p); });
     }
 
     global.BHPost = {
         detectPNGSequence: detectPNGSequence,
         convert: convert,
         cancel: cancel,
-        existingOutputs: existingOutputs
+        existingOutputs: existingOutputs,
+        _internals: { makeHTML: makeHTML, makeMOV: makeMOV }
     };
 })(window);

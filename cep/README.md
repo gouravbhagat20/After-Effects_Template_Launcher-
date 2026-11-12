@@ -126,6 +126,20 @@ browser IIFEs load under Node via the `test/_load.js` shim. CI runs the suite
 on macOS + Windows (`.github/workflows/ci.yml`); AE-dependent behavior stays on
 the manual QA checklist in the root README.
 
+`test/parity.test.js` runs the ScriptUI launcher's own naming and render-format
+functions (lifted from `BigHappyLauncher_Templates.jsx`) against the panel's
+ports on shared inputs, so the two tools cannot drift apart unnoticed.
+
+### Inside After Effects
+
+The headless suite runs `jsx/host.jsx` against a mock of the AE DOM. To check
+it against the real thing, run `test/ae-smoke.jsx` from **File → Scripts → Run
+Script File…**. It works on a throwaway project in the temp folder (it refuses
+to start while the open project has unsaved changes), exercises the file-lock
+round trip, the render-queue formats and Collect, and shows a pass/fail report.
+Run it before a release that touches `host.jsx`.
+
+
 ## Debugging
 
 With AE running and the panel open, visit `http://localhost:8092` in Chrome for

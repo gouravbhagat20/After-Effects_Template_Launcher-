@@ -85,3 +85,64 @@ test("existingOutputs reports exactly the files a new run would clobber", () => 
         assert.deepStrictEqual(hits, ["index.html", "output.webm"]);
     } finally { rmrf(dir); }
 });
+
+test("existingOutputs includes the ZIP when given the sequence", () => {
+    const dir = tmpdir();
+    try {
+        fs.writeFileSync(path.join(dir, "frame_Optimized.zip"), "x");
+        const seq = { folder: dir, prefix: "frame_" };
+        assert.deepStrictEqual(Post.existingOutputs(dir), [], "no sequence, no ZIP name to check");
+        assert.deepStrictEqual(Post.existingOutputs(dir, seq).map((p) => path.basename(p)),
+            ["frame_Optimized.zip"], "the ZIP is deleted and rebuilt, so the prompt must list it");
+    } finally { rmrf(dir); }
+});
+
+test("the generated index.html escapes the project name", () => {
+    const dir = tmpdir();
+    try {
+        const out = path.join(dir, "index.html");
+        Post._internals.makeHTML(out, 'A&B <script>"x"</script>', 750, 300);
+        const html = fs.readFileSync(out, "utf8");
+        assert.ok(html.includes("<title>A&amp;B &lt;script&gt;&quot;x&quot;&lt;/script&gt; - Big Happy</title>"));
+        assert.ok(html.includes('width="750" height="300"'));
+    } finally { rmrf(dir); }
+});
+
+/** A stand-in ffmpeg: fails unless its arguments name an allowed codec. */
+function fakeFFmpeg(dir, allowedCodecs) {
+    const exe = path.join(dir, "fake-ffmpeg.sh");
+    fs.writeFileSync(exe, "#!/bin/sh\nfor last; do :; done\ncase \"$*\" in\n" +
+        allowedCodecs.map((c) => "  *" + c + "*) echo x > \"$last\"; exit 0;;\n").join("") +
+        "esac\nexit 1\n");
+    fs.chmodSync(exe, 0o755);
+    return exe;
+}
+
+test("a MOV that fell back to H.264 is reported as having no alpha",
+    { skip: process.platform === "win32" }, async () => {
+    const dir = tmpdir();
+    try {
+        const log = [];
+        const seq = { folder: dir, prefix: "f_", padding: 4, start: 1, count: 2 };
+        const res = await Post._internals.makeMOV(fakeFFmpeg(dir, ["libx264"]), seq, 24, 1,
+            path.join(dir, "output.mov"), () => { }, (msg, cls) => log.push({ msg, cls }));
+        assert.strictEqual(res.alpha, false);
+        const last = log[log.length - 1];
+        assert.match(last.msg, /NO alpha/);
+        assert.strictEqual(last.cls, "err", "it must not be logged as a plain success");
+        assert.ok(!log.some((l) => /SUCCESS/.test(l.msg)));
+    } finally { rmrf(dir); }
+});
+
+test("a MOV encoded with alpha is a plain success",
+    { skip: process.platform === "win32" }, async () => {
+    const dir = tmpdir();
+    try {
+        const log = [];
+        const seq = { folder: dir, prefix: "f_", padding: 4, start: 1, count: 2 };
+        const res = await Post._internals.makeMOV(fakeFFmpeg(dir, ["libx265"]), seq, 24, 1,
+            path.join(dir, "output.mov"), () => { }, (msg, cls) => log.push({ msg, cls }));
+        assert.strictEqual(res.alpha, true);
+        assert.match(log[0].msg, /SUCCESS via HEVC/);
+    } finally { rmrf(dir); }
+});

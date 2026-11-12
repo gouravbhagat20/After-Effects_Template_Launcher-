@@ -321,6 +321,24 @@ test("Cancel pressed while AE releases a file stops before that file is encoded"
     });
 });
 
+test("optimizing a file with sound warns that the audio will be dropped", async () => {
+    await withPanel({}, async (p) => {
+        p.window.BHFFmpeg.detect = () => Promise.resolve("/usr/bin/ffmpeg");
+        p.window.BHFFmpeg.probe = (exe, f) => Promise.resolve(
+            { path: f, sizeMB: 10, width: 1920, height: 1080, duration: 5, hasAudio: /sound/.test(f) });
+        p.fire("btn-pick-files", "drop",
+            { dataTransfer: { files: [{ path: "/w/sound.mp4" }, { path: "/w/silent.mp4" }] } });
+        await p.settle(60);
+        p.window.BHFFmpeg.optimize = (file) => Promise.resolve(
+            { path: file, before: 10, after: 5, met: true, attempts: 1, replaced: true, output: file });
+        p.$("btn-optimize").click();
+        await p.settle(80);
+        const log = p.$("opt-log").textContent;
+        assert.match(log, /sound\.mp4 has an audio track/);
+        assert.doesNotMatch(log, /silent\.mp4 has an audio track/);
+    });
+});
+
 /* ------------------------------------------- interrupted-run recovery --- */
 
 const ORPHAN = [{ index: 1, name: "BH_RELINK_1" }];

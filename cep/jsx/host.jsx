@@ -60,10 +60,12 @@ var BH = (function () {
             if (item instanceof CompItem && /^main$/i.test(item.name)) candidates.push(item);
         }
         if (candidates.length > 0) return candidates[0];
-        // Fallback: any comp named like "Main*"
+        // Fallback: "Main" as a whole word in the name ("Main_v2", "01 Main").
+        // A bare substring test also picked "Remaining" or "Domain_Intro" —
+        // and that comp is what gets rendered.
         for (var j = 1; j <= proj.numItems; j++) {
             var it = proj.item(j);
-            if (it instanceof CompItem && /main/i.test(it.name)) return it;
+            if (it instanceof CompItem && /(^|[^a-z0-9])main([^a-z0-9]|$)/i.test(it.name)) return it;
         }
         return null;
     }
@@ -157,11 +159,14 @@ var BH = (function () {
             var out = [];
             var proj = app.project;
             if (!proj) return ok(out);
-            var norm = String(folderPath).toLowerCase();
+            // Compare with a trailing separator, or /work/job would also
+            // claim everything under /work/job2.
+            var norm = String(folderPath).toLowerCase().replace(/[\/\\]+$/, "");
             for (var i = 1; i <= proj.numItems; i++) {
                 var it = proj.item(i);
-                if (it instanceof FootageItem && it.file &&
-                    it.file.fsName.toLowerCase().indexOf(norm) === 0) {
+                var fsLower = (it instanceof FootageItem && it.file) ? it.file.fsName.toLowerCase() : null;
+                if (fsLower !== null &&
+                    (fsLower.indexOf(norm + "/") === 0 || fsLower.indexOf(norm + "\\") === 0)) {
                     out.push({ index: i, name: it.name, path: it.file.fsName });
                 }
             }
@@ -559,10 +564,31 @@ var BH = (function () {
         } catch (e) { return false; }
     }
 
-    /** Port of collectAssets (no palette UI — the panel shows progress). */
+    /**
+     * Copy every linked footage file into footageFolder and relink the item.
+     * Port of collectAssets (no palette UI — the panel shows progress), with
+     * the name-clash handling the port was missing:
+     *
+     *  - Two DIFFERENT sources with the same file name never share one copy.
+     *    Single files get a _1/_2 suffix; an image sequence whose frame names
+     *    are already taken goes into its own subfolder. (Sequences used to
+     *    skip any frame that already existed, so a second "frame_0001.png…"
+     *    sequence was silently relinked to the first one's frames.)
+     *  - The SAME source used by several items is copied once and shared.
+     *  - A sequence is the files named <prefix><digits>.<ext>, nothing looser:
+     *    the old prefix test swept in every file starting with those letters.
+     */
     function collectAssetsInto(footageFolder) {
         var count = 0;
         var items = app.project.items;
+        var claimed = {};     // dest path (lower-cased) -> source path, files written this run
+        var singles = {};     // source path -> File it was copied to
+        var sequences = {};   // sequence identity -> Folder its frames were copied to
+
+        function claimKey(folder, name) {
+            return (folder.fsName + "/" + name).toLowerCase();
+        }
+
         for (var i = 1; i <= items.length; i++) {
             var item = items[i];
             if (!item || !(item instanceof FootageItem) || !item.file) continue;
@@ -571,70 +597,100 @@ var BH = (function () {
             if (!sourceFile.exists) continue;
 
             var destName = decodeURI(sourceFile.name);
-            var destFile = new File(footageFolder.fsName + "/" + destName);
+            var lowerExt = sourceFile.name.split(".").pop().toLowerCase();
 
-            var isSequence = false;
-            if (!item.mainSource.isStill) {
-                var ext = sourceFile.name.split(".").pop().toLowerCase();
-                if (/^(png|jpg|jpeg|tif|tiff|tga|exr|psd)$/i.test(ext)) isSequence = true;
-            }
+            var isSequence = !item.mainSource.isStill &&
+                /^(png|jpg|jpeg|tif|tiff|tga|exr|psd)$/.test(lowerExt);
 
+            var handled = false;
             if (isSequence) {
                 var seqFolder = sourceFile.parent;
                 if (!seqFolder || !seqFolder.exists) continue;
-                var namePart = decodeURI(sourceFile.name).replace(/\.[^\.]+$/, "");
-                var match = namePart.match(/^(.*?)(\d+)$/);
-                var found = false;
-                if (match) {
-                    var lowerPrefix = match[1].toLowerCase();
-                    var lowerExt = sourceFile.name.split(".").pop().toLowerCase();
-                    var seqFiles = seqFolder.getFiles(function (f) {
-                        if (f instanceof Folder) return false;
-                        var fName = decodeURI(f.name).toLowerCase();
-                        return fName.indexOf(lowerPrefix) === 0 && fName.indexOf("." + lowerExt) !== -1;
-                    });
-                    if (seqFiles && seqFiles.length > 0) {
-                        found = true;
+                var match = destName.replace(/\.[^\.]+$/, "").match(/^(.*?)(\d+)$/);
+                var seqFiles = match ? sequenceFiles(seqFolder, match[1].toLowerCase(), lowerExt) : null;
+
+                if (seqFiles && seqFiles.length > 0) {
+                    handled = true;
+                    var seqKey = (seqFolder.fsName + "|" + match[1] + "|" + lowerExt).toLowerCase();
+                    var destDir = sequences[seqKey];
+                    if (!destDir) {
+                        destDir = footageFolder;
+                        // Would any frame land on a name another source already took?
+                        var clash = false;
+                        for (var c = 0; c < seqFiles.length && !clash; c++) {
+                            var taken = claimed[claimKey(destDir, decodeURI(seqFiles[c].name))];
+                            if (taken && taken !== seqFiles[c].fsName) clash = true;
+                        }
+                        if (clash) {
+                            var n = 2;
+                            do {
+                                destDir = new Folder(footageFolder.fsName + "/" +
+                                    decodeURI(seqFolder.name) + "_" + n);
+                                n++;
+                            } while (destDir.exists);
+                            destDir.create();
+                        }
                         var allCopied = true;
                         for (var s = 0; s < seqFiles.length; s++) {
-                            var df = new File(footageFolder.fsName + "/" + decodeURI(seqFiles[s].name));
-                            if (!df.exists && !seqFiles[s].copy(df.fsName)) allCopied = false;
+                            var frameName = decodeURI(seqFiles[s].name);
+                            if (seqFiles[s].copy(destDir.fsName + "/" + frameName)) {
+                                claimed[claimKey(destDir, frameName)] = seqFiles[s].fsName;
+                            } else {
+                                allCopied = false;
+                            }
                         }
-                        if (allCopied) {
-                            destFile = new File(footageFolder.fsName + "/" + destName);
-                            var replaced = false;
-                            try {
-                                if (typeof item.replaceWithSequence === "function") {
-                                    item.replaceWithSequence(destFile, false);
-                                    replaced = true;
-                                }
-                            } catch (errSeq) { }
-                            if (!replaced) item.replace(destFile);
-                            count++;
-                        }
+                        if (!allCopied) continue;   // leave the item on its original files
+                        sequences[seqKey] = destDir;
                     }
-                }
-                if (!found) {
-                    if (!destFile.exists) sourceFile.copy(destFile.fsName);
-                    item.replace(destFile);
+                    var seqDest = new File(destDir.fsName + "/" + destName);
+                    var replaced = false;
+                    try {
+                        if (typeof item.replaceWithSequence === "function") {
+                            item.replaceWithSequence(seqDest, false);
+                            replaced = true;
+                        }
+                    } catch (errSeq) { }
+                    if (!replaced) item.replace(seqDest);
                     count++;
                 }
-            } else {
-                // single file — dedupe name collisions
-                var dupIdx = 1;
-                var parts = destName.split(".");
-                var fileExt = parts.pop();
-                var base = parts.join(".");
-                while (destFile.exists) {
-                    destFile = new File(footageFolder.fsName + "/" + base + "_" + dupIdx + "." + fileExt);
-                    dupIdx++;
+            }
+
+            if (!handled) {
+                // single file (or a "sequence" with no numbered frames)
+                var destFile = singles[sourceFile.fsName];
+                if (!destFile) {
+                    destFile = new File(footageFolder.fsName + "/" + destName);
+                    var dupIdx = 1;
+                    var parts = destName.split(".");
+                    var fileExt = parts.pop();
+                    var base = parts.join(".");
+                    while (destFile.exists) {
+                        destFile = new File(footageFolder.fsName + "/" + base + "_" + dupIdx + "." + fileExt);
+                        dupIdx++;
+                    }
+                    sourceFile.copy(destFile.fsName);
+                    singles[sourceFile.fsName] = destFile;
+                    claimed[destFile.fsName.toLowerCase()] = sourceFile.fsName;
                 }
-                sourceFile.copy(destFile.fsName);
                 item.replace(destFile);
                 count++;
             }
         }
         return count;
+    }
+
+    /** The frames of one sequence: files in `folder` named exactly
+        <prefix><digits>.<ext> (case-insensitive). */
+    function sequenceFiles(folder, lowerPrefix, lowerExt) {
+        var tail = "." + lowerExt;
+        return folder.getFiles(function (f) {
+            if (f instanceof Folder) return false;
+            var name = decodeURI(f.name).toLowerCase();
+            if (name.indexOf(lowerPrefix) !== 0) return false;
+            if (name.length <= lowerPrefix.length + tail.length) return false;
+            if (name.substring(name.length - tail.length) !== tail) return false;
+            return /^\d+$/.test(name.substring(lowerPrefix.length, name.length - tail.length));
+        });
     }
 
     function generatePackReport(destFolder, missingList) {

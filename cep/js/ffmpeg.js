@@ -87,7 +87,9 @@
             if (!out) throw new Error("ffprobe failed for " + file);
             var info = JSON.parse(out);
             var v = (info.streams || []).filter(function (s) { return s.codec_type === "video"; })[0] || {};
+            var hasAudio = (info.streams || []).some(function (s) { return s.codec_type === "audio"; });
             return {
+                hasAudio: hasAudio,
                 path: file,
                 sizeMB: fs.statSync(file).size / (1024 * 1024),
                 duration: parseFloat((info.format || {}).duration) || 0,
@@ -227,6 +229,7 @@
      * opts: { ffmpegPath, targetMB, replaceOriginal }
      * onProgress(pct 0-100)
      * Resolves { path, before, after, met, attempts, replaced }.
+     * The encode is video-only (-an): any audio in the source is dropped.
      */
     function optimize(file, opts, onProgress) {
         cancelled = false;

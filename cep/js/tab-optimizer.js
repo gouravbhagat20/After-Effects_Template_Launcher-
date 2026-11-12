@@ -196,6 +196,12 @@
                             optLog(f.path.split(/[\\/]/).pop() + ": Expandable unit — targeting " +
                                 fileTarget + " MB (under-4 delivery cap)");
                         }
+                        // Encodes are video-only. Say so when that actually
+                        // removes something, rather than letting the sound vanish.
+                        if (f.hasAudio && f.sizeMB > fileTarget) {
+                            optLog("Warning: " + f.path.split(/[\\/]/).pop() + " has an audio track — " +
+                                   "the optimized file will have NO sound.", "err");
+                        }
                         // Record the swap BEFORE releasing, so that a crash between
                         // release and restore still leaves a trail the boot sweep
                         // can follow back (see core.recoverStrandedFootage).

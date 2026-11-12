@@ -189,7 +189,7 @@
             var prIsDOOH = !!(parsed && parsed.isDOOH) || prType.indexOf("dooh") !== -1;
             var prTargetMB = prIsDOOH ? (parseFloat(core.S.dooh_target_mb) || 6.8) : null;
 
-            var clobber = global.BHPost.existingOutputs(prSeq.folder);
+            var clobber = global.BHPost.existingOutputs(prSeq.folder, options.zip ? prSeq : null);
             Promise.resolve(
                 clobber.length
                     ? ui.confirm("Output files already exist in this folder:\n" +
@@ -225,10 +225,13 @@
                         core.setProgress("pr-bar", pct);
                         core.announce(step);   // step changes only — announce() drops repeats
                     }, prLog).then(function (res) {
+                        var warns = res.warnings || [];
                         prLog("Conversion complete.", "ok");
-                        toast("✓ Conversion complete");
+                        if (!warns.length) toast("✓ Conversion complete");
                         $("pr-summary").textContent = res.outputs.length + " delivery file" +
-                            (res.outputs.length === 1 ? "" : "s") + " ready";
+                            (res.outputs.length === 1 ? "" : "s") + " ready" +
+                            (warns.length ? " — WARNING: " + warns.join("; ") : "");
+                        if (warns.length) toast("Converted with a warning — check the log", true);
                         $("pr-summary").classList.remove("hidden");
                         if (res.outputs.length) {
                             core.revealFile(res.outputs[0]);

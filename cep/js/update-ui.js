@@ -10,6 +10,13 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.10": [
+            "Collect: two image sequences with the same frame names are no longer merged — the second gets its own folder — and a file used by several items is copied once",
+            "Post-render: a MOV that had to fall back to H.264 is now flagged as having NO transparency instead of being logged as a success",
+            "Post-render: the overwrite prompt now lists the ZIP too, and the generated index.html handles project names with special characters",
+            "Optimizer: warns when a file has an audio track, since optimized files are video-only",
+            "The Main comp fallback no longer picks comps that merely contain the letters \"main\" (e.g. \"Remaining\")"
+        ],
         "0.4.9": [
             "Post-render now says in its log when a WebM is encoded at constant quality rather than to a size target (only DOOH units are size-targeted)"
         ],

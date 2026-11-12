@@ -433,6 +433,111 @@ test("collect reports when the original could not be reopened", () => {
     assert.equal(res.reopened, false, "the panel needs to know AE is still on the copy");
 });
 
+/* ------------------------------------------- collect: name clashes ------ */
+
+const SEQ = { isStill: false };
+const STILL = { isStill: true };
+
+function collect(spec) {
+    const ae = buildAE(Object.assign({ projectFile: "/p/orig.aep" }, spec,
+        { files: ["/p/orig.aep"].concat(spec.files || []) }));
+    const BH = loadHost(ae);
+    const res = unwrap(BH.collectProject("/dest/orig.aep", "/dest/(Footage)"));
+    return { ae, res };
+}
+
+test("two sequences with the same frame names are not merged into one", () => {
+    const { ae, res } = collect({
+        items: [
+            { kind: "footage", name: "A", path: "/src/shotA/frame_0001.png", mainSource: SEQ },
+            { kind: "footage", name: "B", path: "/src/shotB/frame_0001.png", mainSource: SEQ }
+        ],
+        files: ["/src/shotA/frame_0002.png", "/src/shotB/frame_0002.png"]
+    });
+    assert.equal(res.assets, 2);
+    const [a, b] = ae.items.map((i) => i.file.fsName);
+    assert.equal(a, "/dest/(Footage)/frame_0001.png");
+    assert.equal(b, "/dest/(Footage)/shotB_2/frame_0001.png",
+        "the second sequence gets its own folder instead of the first one's frames");
+    assert.ok(ae.vfs.hasFile("/dest/(Footage)/shotB_2/frame_0002.png"), "all of its frames are copied");
+    const copiedFromB = ae.log.filter((l) => l.op === "copy" && l.from.indexOf("/src/shotB/") === 0);
+    assert.equal(copiedFromB.length, 2);
+});
+
+test("one sequence used by two items is copied once and shared", () => {
+    const { ae, res } = collect({
+        items: [
+            { kind: "footage", name: "A", path: "/src/shot/frame_0001.png", mainSource: SEQ },
+            { kind: "footage", name: "A again", path: "/src/shot/frame_0001.png", mainSource: SEQ }
+        ],
+        files: ["/src/shot/frame_0002.png"]
+    });
+    assert.equal(res.assets, 2);
+    assert.equal(ae.items[1].file.fsName, "/dest/(Footage)/frame_0001.png");
+    assert.equal(ae.log.filter((l) => l.op === "copy").length, 2, "two frames, copied once each");
+});
+
+test("a sequence only takes its own numbered frames from the folder", () => {
+    const { ae } = collect({
+        items: [{ kind: "footage", name: "A", path: "/src/shot/frame_0001.png", mainSource: SEQ }],
+        files: ["/src/shot/frame_0002.png", "/src/shot/frame_notes.png", "/src/shot/frame_0001.png.bak"]
+    });
+    const copied = ae.log.filter((l) => l.op === "copy").map((l) => l.from).sort();
+    assert.deepEqual(copied, ["/src/shot/frame_0001.png", "/src/shot/frame_0002.png"]);
+});
+
+test("the same file used by two items is copied once", () => {
+    const { ae, res } = collect({
+        items: [
+            { kind: "footage", name: "logo", path: "/src/logo.png", mainSource: STILL },
+            { kind: "footage", name: "logo 2", path: "/src/logo.png", mainSource: STILL }
+        ]
+    });
+    assert.equal(res.assets, 2);
+    assert.equal(ae.log.filter((l) => l.op === "copy").length, 1);
+    assert.equal(ae.items[0].file.fsName, "/dest/(Footage)/logo.png");
+    assert.equal(ae.items[1].file.fsName, "/dest/(Footage)/logo.png");
+});
+
+test("different files with the same name still get separate copies", () => {
+    const { ae } = collect({
+        items: [
+            { kind: "footage", name: "logo", path: "/src/a/logo.png", mainSource: STILL },
+            { kind: "footage", name: "logo", path: "/src/b/logo.png", mainSource: STILL }
+        ]
+    });
+    assert.equal(ae.items[0].file.fsName, "/dest/(Footage)/logo.png");
+    assert.equal(ae.items[1].file.fsName, "/dest/(Footage)/logo_1.png");
+});
+
+/* ------------------------------------------------- comp / folder match --- */
+
+test("the Main fallback needs 'Main' as a whole word", () => {
+    const main = (names) => {
+        const ae = buildAE({
+            projectFile: "/p/x.aep",
+            items: names.map((name) => ({ kind: "comp", name, width: 1, height: 1, duration: 1, frameRate: 24 }))
+        });
+        const info = unwrap(loadHost(ae).getProjectInfo());
+        return info.mainComp && info.mainComp.name;
+    };
+    assert.equal(main(["Remaining", "Domain_Intro"]), null, "a substring is not a Main comp");
+    assert.equal(main(["Remaining", "Main_v2"]), "Main_v2");
+    assert.equal(main(["01 Main"]), "01 Main");
+    assert.equal(main(["Main_v2", "main"]), "main", "an exact match still wins");
+});
+
+test("getFootageIn does not claim a sibling folder with the same prefix", () => {
+    const ae = buildAE({
+        items: [
+            { kind: "footage", name: "in", path: "/work/job/a.mp4" },
+            { kind: "footage", name: "out", path: "/work/job2/b.mp4" }
+        ]
+    });
+    const hits = unwrap(loadHost(ae).getFootageIn("/work/job")).map((h) => h.name);
+    assert.deepEqual(hits, ["in"]);
+});
+
 /* ------------------------------------------------------ getSetting ------ */
 
 test("getSetting returns the default when the key is absent", () => {

@@ -15,8 +15,8 @@ jobs:
         os: [macos-latest, windows-latest]
         node: [20, 22]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
       - name: Syntax-check extension scripts
@@ -32,6 +32,8 @@ jobs:
         run: |
           cp jsx/host.jsx "$RUNNER_TEMP/host-check.js"
           node --check "$RUNNER_TEMP/host-check.js"
+          cp test/ae-smoke.jsx "$RUNNER_TEMP/smoke-check.js"
+          node --check "$RUNNER_TEMP/smoke-check.js"
       - name: Run test suite
         working-directory: cep
         run: node --test
@@ -40,8 +42,8 @@ jobs:
     name: ScriptUI parse check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       # ExtendScript is ES3-ish but this file is written to also parse as
@@ -64,7 +66,7 @@ jobs:
     name: CEP release consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # A CEP release touches four places that must agree: the manifest
       # (twice), BH_VERSION in main.js, a CHANGELOG entry, and the packaged
       # zxp in dist/. A mismatch aborts users' auto-updates with
