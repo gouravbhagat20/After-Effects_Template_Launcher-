@@ -37,7 +37,7 @@ same commit as any feature change.
 | Polished responsive workspace (bundled Geist typography, fluid GPU-friendly motion, dark/light themes, contextual tools and delivery presets) | ❌ | ✅ | Compact docked layout; destination preview, persistent results, keyboard help and reduced-motion support |
 | **Infrastructure** |
 | ffmpeg auto-detect / auto-install (Win + Mac) | ✅ | ✅ | Windows download SHA-256-verified. Mac (evermeet.cx publishes no SHA-256): exact-size check + `unzip -t` + `-version` run before the binary is accepted |
-| Auto-update | ✅ | ✅ | Both SHA-256-verified, fail closed. ScriptUI: commit-SHA check + raw download verified against the published `.jsx.sha256`. CEP: verified download, staged extract + validation, atomic swap, rollback backup kept until the new version boots; network calls time out |
+| Auto-update | ✅ | ✅ | CEP v0.4.12+: updates must also carry an Ed25519 signature from the release key (held outside the repo). Both SHA-256-verified, fail closed. ScriptUI: commit-SHA check + raw download verified against the published `.jsx.sha256`. CEP: verified download, staged extract + validation, atomic swap, rollback backup kept until the new version boots; network calls time out |
 | What's New changelog popup after update | ❌ | ✅ | |
 | Settings sync between the two tools | ✅ | ✅ | Same AE prefs section `BigHappyLauncher` |
 | Headless test suite + CI | ❌ | ✅ | `cep/test/` (190+ tests: updater, host.jsx against an AE mock, the panel on a DOM stub, and ScriptUI↔CEP parity), GitHub Actions macOS+Windows; `cep/test/ae-smoke.jsx` runs the host calls inside After Effects; CI also parse-checks both `.jsx` files and enforces release version sync + published checksums |

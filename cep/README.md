@@ -137,6 +137,17 @@ Add the new version's entry to `CHANGELOG` in `js/update-ui.js`, then run
 `js/core.js`, runs the tests and builds the signed zxp into `dist/`. It does
 not commit or push — it prints the commands.
 
+**Release signing.** The build also writes `dist/<zxp>.sig`, an Ed25519
+signature made with a private key that is *not* in this repository
+(`~/.config/bighappy-launcher/release-signing-key.pem`, or `$BH_SIGNING_KEY`).
+From v0.4.12 the panel refuses any update whose signature does not verify
+against the public keys pinned in `js/updater.js` (`RELEASE_PUBLIC_KEYS`), so
+releases can only be built on a machine that holds the key, and CI fails a
+push whose zxp is unsigned. **Back the key up.** If it is lost, installed
+panels accept no further updates until users reinstall by hand a build that
+pins a new key. To rotate: add the new public key in a release signed with the
+old one, and remove the old key one release later. See `sign-release.js`.
+
 ### Inside After Effects
 
 The headless suite runs `jsx/host.jsx` against a mock of the AE DOM. To check

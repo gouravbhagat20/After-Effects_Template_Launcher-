@@ -368,6 +368,63 @@ test("fetchWithTimeout: non-abort network errors propagate unchanged", async () 
         /ECONNREFUSED/);
 });
 
+// ---------------- release signature ----------------
+
+// A throwaway key pair standing in for the real release key.
+const TEST_KEYS = crypto.generateKeyPairSync("ed25519");
+const TEST_PUB = TEST_KEYS.publicKey.export({ type: "spki", format: "pem" });
+const signWith = (key, buf) => crypto.sign(null, buf, key).toString("base64");
+
+/**
+ * Make a test's download "signed": its fetch stub is taught to answer the
+ * .sig request with a signature (by the test key) of whatever bytes it serves
+ * as the package, and the updater is pointed at the test public key.
+ */
+function signedOpts(opts, signer) {
+    const inner = opts.fetchImpl;
+    const fetchImpl = (url) => {
+        if (!/\.sig$/.test(url)) return inner(url);
+        return Promise.resolve(inner(url.replace(/\.sig$/, ""))).then((r) => {
+            if (!r.ok) return { ok: true, text: () => Promise.resolve("AAAA") };
+            return r.arrayBuffer().then((ab) => ({
+                ok: true,
+                text: () => Promise.resolve((signer || ((b) => signWith(TEST_KEYS.privateKey, b)))(Buffer.from(ab)))
+            }));
+        });
+    };
+    return Object.assign({}, opts, { fetchImpl, publicKeys: [TEST_PUB] });
+}
+
+test("verifySignature accepts a signature by a pinned key and nothing else", () => {
+    const data = Buffer.from("package bytes");
+    const good = signWith(TEST_KEYS.privateKey, data);
+    U.verifySignature(data, good + "\n", [TEST_PUB]);                      // trailing newline tolerated
+
+    const other = crypto.generateKeyPairSync("ed25519");
+    assert.throws(() => U.verifySignature(data, signWith(other.privateKey, data), [TEST_PUB]),
+        /not signed with the BigHappy release key/, "a different key");
+    assert.throws(() => U.verifySignature(Buffer.from("tampered"), good, [TEST_PUB]),
+        /Signature check failed/, "changed bytes");
+    assert.throws(() => U.verifySignature(data, "", [TEST_PUB]), /missing or malformed/);
+    assert.throws(() => U.verifySignature(data, "<html>404</html>", [TEST_PUB]), /missing or malformed/);
+    assert.throws(() => U.verifySignature(data, good, []), /Signature check failed/, "no pinned keys");
+    assert.throws(() => U.verifySignature(data, good, ["not a key"]), /Signature check failed/);
+});
+
+test("verifySignature honours any of several pinned keys (rotation)", () => {
+    const data = Buffer.from("package bytes");
+    const next = crypto.generateKeyPairSync("ed25519");
+    const nextPub = next.publicKey.export({ type: "spki", format: "pem" });
+    U.verifySignature(data, signWith(next.privateKey, data), [TEST_PUB, nextPub]);
+});
+
+test("the pinned release key is a usable Ed25519 public key", () => {
+    assert.ok(U.RELEASE_PUBLIC_KEYS.length >= 1);
+    for (const pem of U.RELEASE_PUBLIC_KEYS) {
+        assert.strictEqual(crypto.createPublicKey(pem).asymmetricKeyType, "ed25519");
+    }
+});
+
 // ---------------- downloadAndInstall (failure paths, injected fetch) ----------------
 
 function bufToArrayBuffer(buf) {
@@ -385,7 +442,7 @@ test("downloadAndInstall: checksum mismatch leaves the live install untouched", 
             : { ok: true, arrayBuffer: () => Promise.resolve(bufToArrayBuffer(bogusZip)) });
 
         await assert.rejects(
-            U.downloadAndInstall("9.9.9", target, { fetchImpl, tmpDir: dir }),
+            U.downloadAndInstall("9.9.9", target, signedOpts({ fetchImpl, tmpDir: dir })),
             /Checksum mismatch/);
         assert.strictEqual(fs.readFileSync(path.join(target, "index.html"), "utf8"), "OLD");
         assert.ok(!fs.existsSync(target + ".staging"), "no staging left behind");
@@ -403,7 +460,7 @@ test("downloadAndInstall: missing release file rejects before touching disk", as
             : { ok: false, status: 404 });
 
         await assert.rejects(
-            U.downloadAndInstall("9.9.9", target, { fetchImpl, tmpDir: dir }),
+            U.downloadAndInstall("9.9.9", target, signedOpts({ fetchImpl, tmpDir: dir })),
             /Download failed \(404\)/);
         assert.strictEqual(fs.readFileSync(path.join(target, "index.html"), "utf8"), "OLD");
     } finally { cleanup(dir); }
@@ -437,7 +494,7 @@ test("downloadAndInstall: verified package swaps in, old version kept as .backup
         const target = path.join(dir, "ext");
         makeExtensionDir(target, "1.0.0", "OLD");
 
-        await U.downloadAndInstall("9.9.9", target, { fetchImpl, tmpDir: dir });
+        await U.downloadAndInstall("9.9.9", target, signedOpts({ fetchImpl, tmpDir: dir }));
 
         assert.strictEqual(U.parseBundleVersion(
             fs.readFileSync(path.join(target, "CSXS", "manifest.xml"), "utf8")), "9.9.9");
@@ -474,7 +531,7 @@ test("downloadAndInstall: an in-place extract that dies half-way is rolled back"
 
         await assert.rejects(
             U.downloadAndInstall("9.9.9", target,
-                { fetchImpl: fakePackage(), tmpDir: dir, extractImpl, swapImpl: swapRefused }),
+                signedOpts({ fetchImpl: fakePackage(), tmpDir: dir, extractImpl, swapImpl: swapRefused })),
             /unzip died/);
         assert.strictEqual(fs.readFileSync(path.join(target, "index.html"), "utf8"), "OLD",
             "the live install must be the old version again, not a mix of two");
@@ -491,9 +548,42 @@ test("downloadAndInstall: a successful in-place extract installs the new version
         const extractImpl = (zip, dest) => { makeExtensionDir(dest, "9.9.9", "NEW"); return Promise.resolve(); };
 
         await U.downloadAndInstall("9.9.9", target,
-            { fetchImpl: fakePackage(), tmpDir: dir, extractImpl, swapImpl: swapRefused });
+            signedOpts({ fetchImpl: fakePackage(), tmpDir: dir, extractImpl, swapImpl: swapRefused }));
         assert.strictEqual(fs.readFileSync(path.join(target, "index.html"), "utf8"), "NEW");
         assert.strictEqual(fs.readFileSync(path.join(target + ".backup", "index.html"), "utf8"), "OLD",
             "the copy taken before overwriting is kept, like the swap path's backup");
+    } finally { cleanup(dir); }
+});
+
+// ---------------- downloadAndInstall refuses unsigned or wrongly signed packages ----------------
+
+test("downloadAndInstall: a package with a valid checksum but the wrong signer is refused", async () => {
+    const dir = tmpdir();
+    try {
+        const target = path.join(dir, "ext");
+        makeExtensionDir(target, "1.0.0", "OLD");
+        const attacker = crypto.generateKeyPairSync("ed25519");
+        let extracted = false;
+        const opts = signedOpts(
+            { fetchImpl: fakePackage(), tmpDir: dir, extractImpl: () => { extracted = true; return Promise.resolve(); } },
+            (buf) => signWith(attacker.privateKey, buf));
+
+        await assert.rejects(U.downloadAndInstall("9.9.9", target, opts), /not signed with the BigHappy release key/);
+        assert.strictEqual(extracted, false, "nothing is extracted from an untrusted package");
+        assert.strictEqual(fs.readFileSync(path.join(target, "index.html"), "utf8"), "OLD");
+    } finally { cleanup(dir); }
+});
+
+test("downloadAndInstall: a release with no .sig file is refused", async () => {
+    const dir = tmpdir();
+    try {
+        const target = path.join(dir, "ext");
+        makeExtensionDir(target, "1.0.0", "OLD");
+        const pkg = fakePackage();
+        const fetchImpl = (url) => /\.sig$/.test(url) ? Promise.resolve({ ok: false, status: 404 }) : pkg(url);
+
+        await assert.rejects(U.downloadAndInstall("9.9.9", target, { fetchImpl, tmpDir: dir, publicKeys: [TEST_PUB] }),
+            /Signature file missing \(404\)/);
+        assert.strictEqual(fs.readFileSync(path.join(target, "index.html"), "utf8"), "OLD");
     } finally { cleanup(dir); }
 });

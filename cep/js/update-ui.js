@@ -10,6 +10,9 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.12": [
+            "Updates are now only installed if they carry a valid signature from the BigHappy release key, in addition to the existing checksum check"
+        ],
         "0.4.11": [
             "Collect Project now shows progress and can be cancelled — After Effects no longer freezes for the whole collect",
             "Cancelling a collect reopens your original project",

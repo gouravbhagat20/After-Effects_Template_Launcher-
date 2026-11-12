@@ -80,6 +80,10 @@ echo "Signed (timestamp: $SIGNED_WITH)"
 # install a download whose hash doesn't match this file.
 shasum -a 256 "$OUT" | awk '{print $1}' > "$OUT.sha256"
 
+# 5b. Sign it with the release key (kept outside the repo). Installed panels
+# refuse a package without a valid signature — see cep/sign-release.js.
+node "$CEP/sign-release.js" "$OUT"
+
 echo ""
 echo "Built: $OUT"
 echo "SHA-256: $(cat "$OUT.sha256")"
@@ -90,6 +94,6 @@ echo "SHA-256: $(cat "$OUT.sha256")"
 for old in "$DIST"/BigHappyLauncher_v*.zxp; do
     [ "$old" = "$OUT" ] && continue
     [ -e "$old" ] || continue
-    rm -f "$old" "$old.sha256"
+    rm -f "$old" "$old.sha256" "$old.sig"
     echo "Pruned: $(basename "$old")"
 done

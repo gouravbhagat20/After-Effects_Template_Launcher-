@@ -86,6 +86,9 @@ jobs:
           expected="$(awk '{print tolower($1)}' "$zxp.sha256")"
           actual="$(shasum -a 256 "$zxp" | awk '{print $1}')"
           [ "$expected" = "$actual" ] || { echo "::error::$zxp.sha256 does not match $zxp"; exit 1; }
+          # Installed panels refuse a package whose .sig does not verify against
+          # the keys pinned in js/updater.js — an unsigned release strands them.
+          node cep/sign-release.js --verify "$zxp" || { echo "::error::$zxp is not signed with a pinned release key — build with cep/build-zxp.sh on the machine that holds the key"; exit 1; }
 
       # The checks above only prove the zxp is internally consistent — its
       # checksum matches ITSELF. They cannot tell a freshly built package from

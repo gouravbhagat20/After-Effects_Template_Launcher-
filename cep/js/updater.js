@@ -82,6 +82,47 @@
         }
     }
 
+    /**
+     * Public halves of the keys allowed to sign a release (Ed25519, SPKI PEM).
+     *
+     * The checksum beside a package is published in the same repository as
+     * the package, so it only proves the download arrived intact — anyone who
+     * can push there can publish a matching pair. The signature is made with
+     * a private key that is NOT in the repository (see cep/sign-release.js),
+     * so a package is only installed if whoever built it held that key.
+     *
+     * More than one entry is allowed so a key can be rotated: add the new key
+     * in a release signed by the old one, drop the old one a release later.
+     */
+    var RELEASE_PUBLIC_KEYS = [
+        "-----BEGIN PUBLIC KEY-----\n" +
+        "MCowBQYDK2VwAyEA8tPvbxyAZDJ2wzXZpfMgA1+MhlHs9SNZZjJEUkcqvTI=\n" +
+        "-----END PUBLIC KEY-----"
+    ];
+
+    /**
+     * Throw unless `sigText` (base64, the contents of <package>.sig) is a
+     * valid signature of `data` by one of the pinned keys. Fails closed: a
+     * malformed signature, an unreadable key or a runtime without Ed25519
+     * all refuse the package.
+     */
+    function verifySignature(data, sigText, publicKeys) {
+        var keys = publicKeys || RELEASE_PUBLIC_KEYS;
+        var b64 = String(sigText == null ? "" : sigText).replace(/\s+/g, "");
+        if (!b64 || !/^[A-Za-z0-9+\/]+=*$/.test(b64)) {
+            throw new Error("Signature file is missing or malformed — refusing to install an unsigned package.");
+        }
+        var B = (global.cep_node && global.cep_node.Buffer) || global.Buffer ||
+            (typeof Buffer !== "undefined" ? Buffer : null);
+        var sig = B.from(b64, "base64");
+        for (var i = 0; i < keys.length; i++) {
+            try {
+                if (crypto.verify(null, data, crypto.createPublicKey(keys[i]), sig)) return;
+            } catch (e) { /* unusable key or signature — try the next key */ }
+        }
+        throw new Error("Signature check failed — this package was not signed with the BigHappy release key. Download discarded.");
+    }
+
     // ---------------- filesystem helpers ----------------
 
     /** Dev installs are symlinked/copied from the git repo — never self-overwrite those. */
@@ -319,7 +360,10 @@
      * (previous version kept as <targetPath>.backup for rollback). On any
      * failure: best-effort rollback, cleanup, reject — the live install is
      * left working.
-     * opts (tests only): { fetchImpl, tmpDir, extractImpl, swapImpl }
+     * The package must pass BOTH checks before anything is extracted: the
+     * published checksum (intact download) and the release signature (built
+     * by a holder of the release key).
+     * opts (tests only): { fetchImpl, tmpDir, extractImpl, swapImpl, publicKeys }
      */
     function downloadAndInstall(remoteVersion, targetPath, opts) {
         opts = opts || {};
@@ -339,6 +383,10 @@
             fetchWithTimeout(baseUrl + ".sha256", META_TIMEOUT_MS, opts.fetchImpl).then(function (r) {
                 if (!r.ok) throw new Error("Checksum file missing (" + r.status + ") — refusing to install an unverifiable package.");
                 return r.text();
+            }),
+            fetchWithTimeout(baseUrl + ".sig", META_TIMEOUT_MS, opts.fetchImpl).then(function (r) {
+                if (!r.ok) throw new Error("Signature file missing (" + r.status + ") — refusing to install an unsigned package.");
+                return r.text();
             })
         ])
             .then(function (results) {
@@ -346,6 +394,7 @@
                     (typeof Buffer !== "undefined" ? Buffer : null);
                 var data = B.from(results[0]);
                 verifyPackage(data, results[1]);
+                verifySignature(data, results[2], opts.publicKeys);
                 fs.writeFileSync(tmpZip, data);
 
                 // staged extraction: never touch the live install until the
@@ -421,6 +470,8 @@
         looksLikeZip: looksLikeZip,
         parseBundleVersion: parseBundleVersion,
         verifyPackage: verifyPackage,
+        verifySignature: verifySignature,
+        RELEASE_PUBLIC_KEYS: RELEASE_PUBLIC_KEYS,
         // fs
         isDevInstall: isDevInstall,
         dirWritable: dirWritable,

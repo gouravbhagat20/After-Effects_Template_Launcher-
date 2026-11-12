@@ -10,6 +10,7 @@ install-mac.sh
 install-win.bat
 build-zxp.sh
 release.sh
+sign-release.js
 *.md
 test
 package.json
