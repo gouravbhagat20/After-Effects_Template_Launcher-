@@ -163,11 +163,59 @@ var BH = (function () {
     };
 
     /**
+     * What has to follow a sequence that is already a layer somewhere when
+     * its frame rate changes, or null if that cannot be done safely.
+     *
+     * Conforming changes the footage's length. A layer does not follow: at
+     * 30 → 24 fps the footage gets a quarter longer and the layer still ends
+     * where it did, hiding the tail. That is only safe to repair when every
+     * layer simply shows the whole sequence — unlocked, not trimmed, not
+     * stretched, not time-remapped. Then the layer's out point is moved to
+     * the new end. Anything else is somebody's edit and is left alone.
+     *
+     * A comp that was made FROM the sequence (drag to "new composition", or
+     * Create Composition on import: one layer, the sequence's frame rate and
+     * length) is the sequence's own wrapper, so it takes the new frame rate
+     * and length too.
+     */
+    function planSequenceRetime(it) {
+        var plan = [];
+        var comps = it.usedIn;
+        for (var c = 0; c < comps.length; c++) {
+            var comp = comps[c];
+            var tol = 1 / comp.frameRate;
+            var layers = [];
+            for (var L = 1; L <= comp.numLayers; L++) {
+                var layer = comp.layer(L);
+                var src = null;
+                try { src = layer.source; } catch (eSrc) { src = null; }
+                if (src !== it) continue;
+                if (layer.locked || layer.timeRemapEnabled) return null;
+                if (Math.abs(layer.stretch - 100) > 0.001) return null;
+                if (Math.abs(layer.inPoint - layer.startTime) > tol) return null;
+                if (Math.abs(layer.outPoint - (layer.startTime + it.duration)) > tol) return null;
+                layers.push(layer);
+            }
+            plan.push({
+                comp: comp,
+                layers: layers,
+                wrapper: comp.numLayers === 1 && layers.length === 1 &&
+                         Math.abs(comp.frameRate - it.frameRate) <= 0.001 &&
+                         Math.abs(comp.duration - it.duration) <= tol
+            });
+        }
+        return plan;
+    }
+
+    /**
      * Conform the image sequences with these ids to `fps`. Only image
      * sequences are touched — a video in the list is refused, because
-     * conforming one changes its speed — and only ones not yet used in a
-     * comp (see isFootageInUse). Returns { fixed: [{ name, from }],
-     * failed: [name], inUse: [name] }. One undo step.
+     * conforming one changes its speed. A sequence already used in a comp is
+     * conformed only if its layers can follow (see planSequenceRetime);
+     * otherwise it is returned in inUse, unchanged.
+     * Returns { fixed: [{ name, from, layers, comps: [name] }], failed: [name],
+     * inUse: [name] } — layers is how many layers were extended, comps the
+     * comps that were set to the new frame rate. One undo step.
      */
     api.conformFrameRates = function (ids, fps) {
         try {
@@ -182,14 +230,35 @@ var BH = (function () {
                     if (!it || !isFpsCandidate(it)) continue;      // deleted since the scan
                     var ext = String(it.file.name).split(".").pop().toLowerCase();
                     if (!FPS_SEQUENCE_EXT.test(ext)) { failed.push(String(it.name)); continue; }
-                    // Checked again here: it may have been dropped into a comp since the scan.
-                    if (isFootageInUse(it)) { inUse.push(String(it.name)); continue; }
+                    // Looked up here, not taken from the scan: it may have
+                    // been dropped into a comp since.
+                    var plan = [];
+                    if (isFootageInUse(it)) {
+                        try { plan = planSequenceRetime(it); } catch (ePlan) { plan = null; }
+                        if (!plan) { inUse.push(String(it.name)); continue; }
+                    }
                     var before = it.frameRate;
                     try {
                         it.mainSource.conformFrameRate = fps;
-                        if (Math.abs(it.frameRate - fps) > 0.001) failed.push(String(it.name));
-                        else fixed.push({ name: String(it.name), from: before });
-                    } catch (eConform) { failed.push(String(it.name)); }
+                        if (Math.abs(it.frameRate - fps) > 0.001) { failed.push(String(it.name)); continue; }
+                    } catch (eConform) { failed.push(String(it.name)); continue; }
+
+                    var extended = 0, retimed = [];
+                    for (var p = 0; p < plan.length; p++) {
+                        try {
+                            if (plan[p].wrapper) {
+                                plan[p].comp.frameRate = fps;
+                                plan[p].comp.duration = it.duration;
+                                retimed.push(String(plan[p].comp.name));
+                            }
+                            for (var q = 0; q < plan[p].layers.length; q++) {
+                                var lay = plan[p].layers[q];
+                                lay.outPoint = lay.startTime + it.duration;
+                                extended++;
+                            }
+                        } catch (eLayer) { /* the footage is right; a layer AE would not move is left as it is */ }
+                    }
+                    fixed.push({ name: String(it.name), from: before, layers: extended, comps: retimed });
                 }
             } finally { app.endUndoGroup(); }
             return ok({ fixed: fixed, failed: failed, inUse: inUse });

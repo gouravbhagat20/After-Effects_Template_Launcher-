@@ -140,7 +140,10 @@ class MFootageItem extends MItem {
             set(v) {
                 if (spec.conformThrows) throw new Error("conformFrameRate refused for " + item.name);
                 conform = v;
-                if (!spec.conformIgnored) item.frameRate = v;
+                if (!spec.conformIgnored) {
+                    item.duration = item.duration * item.frameRate / v;   // same frames, new rate
+                    item.frameRate = v;
+                }
             }
         });
     }

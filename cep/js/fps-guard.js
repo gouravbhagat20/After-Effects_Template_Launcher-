@@ -49,9 +49,11 @@
          * Conform the mismatched sequences, list what was left alone, and
          * tell the user. `manual` also reports when there was nothing to do.
          *
-         * A sequence that is already a layer in a comp is NOT conformed:
-         * that changes its length under the layer (slowed down, the layer
-         * keeps its old out point and the tail is cut off). It is reported.
+         * A sequence that is already a layer in a comp is conformed when its
+         * layers simply show the whole sequence — the host then moves their
+         * out points to the new end, and retimes a comp that was made from
+         * the sequence. A layer somebody trimmed, stretched or time-remapped
+         * is not second-guessed: that sequence is reported, unchanged.
          *
          * The returned promise settles once After Effects has been changed —
          * it does not wait for the dialog. A dialog nobody answers (the panel
@@ -61,9 +63,10 @@
             var seqs = [], videos = [], inUse = [];
             items.forEach(function (it) {
                 if (Math.abs(it.fps - main.fps) <= TOL) return;
-                if (!it.seq) videos.push(it);
-                else if (it.used) inUse.push(it.name + "  (" + fmt(it.fps) + " fps)");
-                else seqs.push(it);
+                // A sequence already on a timeline goes to the host as well:
+                // it conforms it when the layers can simply follow, and hands
+                // it back in `inUse` when they cannot.
+                (it.seq ? seqs : videos).push(it);
             });
 
             var conform = seqs.length
@@ -78,7 +81,14 @@
                 if (fixed.length) {
                     msg += "Image sequences conformed to \"" + main.name + "\" (" + fmt(main.fps) + " fps):\n" +
                         fixed.map(function (f) {
-                            return "• " + f.name + "  (" + fmt(f.from) + " → " + fmt(main.fps) + " fps)";
+                            var extra = [];
+                            if (f.comps && f.comps.length) {
+                                extra.push("comp \"" + f.comps.join("\", \"") + "\" set to " + fmt(main.fps) + " fps");
+                            } else if (f.layers) {
+                                extra.push(f.layers + " layer(s) extended to the new length");
+                            }
+                            return "• " + f.name + "  (" + fmt(f.from) + " → " + fmt(main.fps) + " fps)" +
+                                (extra.length ? " — " + extra.join(", ") : "");
                         }).join("\n") + "\n\n";
                 }
                 if (videos.length) {
@@ -88,10 +98,10 @@
                         "Re-render it at " + fmt(main.fps) + " fps, or conform it yourself in Interpret Footage.\n\n";
                 }
                 if (inUse.length) {
-                    msg += "Image sequences already used in a comp — not changed:\n" +
+                    msg += "Image sequences used in a comp with trimmed, stretched, time-remapped or locked layers — not changed:\n" +
                         inUse.map(function (n) { return "• " + n; }).join("\n") +
-                        "\n\nConforming these would change their length under the layers that use them. " +
-                        "Set them to " + fmt(main.fps) + " fps in Interpret Footage, then check those layers.\n\n";
+                        "\n\nConforming these would shift the edit on those layers. " +
+                        "Set them to " + fmt(main.fps) + " fps in Interpret Footage, then check the layers.\n\n";
                 }
                 if (failed.length) {
                     msg += "Could not be changed:\n" +

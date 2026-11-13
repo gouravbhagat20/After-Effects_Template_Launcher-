@@ -724,13 +724,24 @@ test("a new video with a different frame rate is reported, never changed", async
     });
 });
 
-test("a new sequence that is already on a timeline is reported, not conformed", async () => {
-    const g = guardPanel();
+test("a new sequence that is already on a timeline is conformed, and the dialog says what followed", async () => {
+    const g = guardPanel({ hostImpl: {
+        conformFrameRates: () => ({ fixed: [{ name: NEW_SEQ.name, from: 30, layers: 1, comps: ["SunriseUnit"] }], failed: [], inUse: [] })
+    } });
     await withPanel(g.opts, async (p) => {
         await p.settle(60);
         await g.importing(p, [Object.assign({}, NEW_SEQ, { used: true })]);
-        assert.equal(p.callsTo("conformFrameRates").length, 0, "conforming would cut the layer's tail off");
-        assert.match(p.$("bh-modal-msg").textContent, /already used in a comp — not changed/);
+        assert.deepEqual(p.callsTo("conformFrameRates")[0].args, [[2], 24], "dragging it into a comp first must not exempt it");
+        assert.match(p.$("bh-modal-msg").textContent, /\(30 → 24 fps\) — comp "SunriseUnit" set to 24 fps/);
+    });
+});
+
+test("a sequence whose layers were edited is reported as left alone", async () => {
+    const g = guardPanel({ hostImpl: { conformFrameRates: () => ({ fixed: [], failed: [], inUse: [NEW_SEQ.name] }) } });
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        await g.importing(p, [Object.assign({}, NEW_SEQ, { used: true })]);
+        assert.match(p.$("bh-modal-msg").textContent, /trimmed, stretched, time-remapped or locked layers — not changed/);
         assert.match(p.$("bh-modal-msg").textContent, /new_\[001-050\]\.png/);
     });
 });

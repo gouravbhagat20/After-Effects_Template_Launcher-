@@ -10,6 +10,11 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.17": [
+            "Frame rate guard: an imported image sequence is now conformed to Main's frame rate even if you dropped it straight into a comp — its layer is extended to the new length so no frames are hidden",
+            "A comp created from the sequence (one layer, same frame rate and length) is set to the new frame rate and length along with it",
+            "Sequences whose layers are trimmed, stretched, time-remapped or locked are still left alone and reported"
+        ],
         "0.4.16": [
             "New: frame rate guard. When you import an image sequence (PNG, EXR, TIFF…) whose frame rate differs from the Main comp, the panel conforms it to Main's rate and tells you what it changed",
             "Videos with a different frame rate are never changed — you get a warning instead, because conforming a video alters its speed",

@@ -371,19 +371,43 @@
               res.fixed.length === 1 && res.failed.length === 0 && Math.abs(after - target) < 0.001,
               "asked for " + target + ", item is now " + after + " fps");
 
-        // Once the sequence is a layer in a comp it must be left alone:
-        // conforming changes its length under the layer.
-        var comp = app.project.items.addComp("FPS guard comp", 100, 100, 1, 10, 24);
-        comp.layers.add(app.project.itemByID(seqEntry.id));
+        // A sequence already on a timeline: the layer has to follow, and a
+        // comp made from the sequence has to be retimed with it.
+        var item = app.project.itemByID(seqEntry.id);
+        item.mainSource.conformFrameRate = 30;
+        var wrapper = app.project.items.addComp("Seq wrapper", 100, 100, 1, item.duration, 30);   // as "new comp from selection" makes it
+        var wLayer = wrapper.layers.add(item);
+        var user = app.project.items.addComp("Some comp", 100, 100, 1, 10, 24);
+        var uLayer = user.layers.add(item);
+        uLayer.startTime = 2;
+        var frames = Math.round(item.duration * 30);
+
         var again = unwrap(BH.frameRateScan());
         var usedFlag = false;
         for (var u = 0; u < again.items.length; u++) if (again.items[u].id === seqEntry.id) usedFlag = again.items[u].used;
         check("the scan marks a sequence that is used in a comp", usedFlag === true);
-        var refused = unwrap(BH.conformFrameRates([seqEntry.id], 24));
-        check("a sequence used in a comp is not conformed",
-              refused.inUse.length === 1 && refused.fixed.length === 0 &&
-              Math.abs(app.project.itemByID(seqEntry.id).frameRate - target) < 0.001,
-              "item is still " + app.project.itemByID(seqEntry.id).frameRate + " fps");
+
+        var follow = unwrap(BH.conformFrameRates([seqEntry.id], 24));
+        var newDur = frames / 24;
+        check("a sequence on a timeline is still conformed",
+              follow.fixed.length === 1 && follow.inUse.length === 0 && Math.abs(item.frameRate - 24) < 0.001,
+              "item is now " + item.frameRate + " fps, " + item.duration + " s");
+        check("its layer is extended to the new end, so no frames are hidden",
+              Math.abs(uLayer.outPoint - (2 + newDur)) < 0.05 && follow.fixed[0].layers === 2,
+              "layer ends at " + uLayer.outPoint + ", expected " + (2 + newDur));
+        check("a comp that merely uses it keeps its own frame rate and length",
+              Math.abs(user.frameRate - 24) < 0.001 && Math.abs(user.duration - 10) < 0.001);
+        check("the comp made from the sequence takes the new frame rate and length",
+              Math.abs(wrapper.frameRate - 24) < 0.001 && Math.abs(wrapper.duration - newDur) < 0.05 &&
+              Math.abs(wLayer.outPoint - newDur) < 0.05,
+              "wrapper: " + wrapper.frameRate + " fps, " + wrapper.duration + " s, layer ends " + wLayer.outPoint);
+
+        // Somebody trimmed the layer: that edit is not second-guessed.
+        uLayer.inPoint = uLayer.inPoint + 0.25;
+        var refused = unwrap(BH.conformFrameRates([seqEntry.id], 30));
+        check("a sequence with a trimmed layer is reported, not conformed",
+              refused.inUse.length === 1 && refused.fixed.length === 0 && Math.abs(item.frameRate - 24) < 0.001,
+              "item is still " + item.frameRate + " fps");
     });
 
     // ----------------------------------------------------------------- report

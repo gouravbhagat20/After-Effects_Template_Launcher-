@@ -840,7 +840,8 @@ test("conformFrameRates conforms image sequences and refuses videos", () => {
     const BH = loadHost(ae);
     const items = unwrap(BH.frameRateScan()).items;
     const res = unwrap(BH.conformFrameRates(items.map((i) => i.id).concat([987654]), 24));
-    assert.deepEqual(res.fixed, [{ name: "shot_[0001-0100].png", from: 30 }, { name: "ok.exr", from: 24 }]);
+    assert.deepEqual(res.fixed, [{ name: "shot_[0001-0100].png", from: 30, layers: 0, comps: [] },
+                                 { name: "ok.exr", from: 24, layers: 0, comps: [] }]);
     assert.deepEqual(res.failed, ["clip.mp4"], "a video is never conformed, even if asked");
     assert.equal(ae.items[2].frameRate, 24);
     assert.equal(ae.items[3].frameRate, 25, "the video keeps its speed");
@@ -855,15 +856,57 @@ test("conformFrameRates reports a sequence After Effects would not change", () =
     assert.equal(JSON.parse(BH.conformFrameRates([ae.items[2].id], 0)).ok, false);
 });
 
-test("a sequence already used in a comp is reported, never conformed", () => {
+/** Put footage `seq` (5 s at 30 fps in the mock) on a timeline as one layer of `comp`. */
+function layerOf(seq, comp, over) {
+    const layer = Object.assign({ source: seq, locked: false, timeRemapEnabled: false, stretch: 100,
+                                  startTime: 0, inPoint: 0, outPoint: seq.duration }, over || {});
+    comp.numLayers = 1;
+    comp.layer = () => layer;
+    seq.usedIn = [comp];
+    return layer;
+}
+
+test("a sequence dropped into a comp is conformed and its layer follows to the new end", () => {
     const ae = fpsAE();
-    ae.items[2].usedIn = [ae.items[1]];          // the sequence is a layer in Main
+    const seq = ae.items[2], main = ae.items[1];
+    main.duration = 15;
+    const layer = layerOf(seq, main, { startTime: 2, inPoint: 2, outPoint: 7 });
     const BH = loadHost(ae);
-    const scan = unwrap(BH.frameRateScan());
-    assert.equal(scan.items[0].used, true);
-    const res = unwrap(BH.conformFrameRates([ae.items[2].id], 24));
-    assert.deepEqual(res, { fixed: [], failed: [], inUse: ["shot_[0001-0100].png"] });
-    assert.equal(ae.items[2].frameRate, 30, "its length under the layer is not changed");
+    assert.equal(unwrap(BH.frameRateScan()).items[0].used, true);
+
+    const res = unwrap(BH.conformFrameRates([seq.id], 24));
+    assert.deepEqual(res, { fixed: [{ name: "shot_[0001-0100].png", from: 30, layers: 1, comps: [] }], failed: [], inUse: [] });
+    assert.equal(seq.frameRate, 24);
+    assert.equal(seq.duration, 6.25, "the same frames now last a quarter longer");
+    assert.equal(layer.outPoint, 8.25, "so the layer is extended — without this its tail is hidden");
+    assert.equal(main.frameRate, 24, "a comp that merely uses the sequence keeps its own settings");
+    assert.equal(main.duration, 15);
+});
+
+test("a comp made from the sequence takes the new frame rate and length with it", () => {
+    const ae = fpsAE();
+    const seq = ae.items[2];
+    const wrapper = { name: "shot", frameRate: 30, duration: 5 };      // drag to "new composition"
+    const layer = layerOf(seq, wrapper);
+    const BH = loadHost(ae);
+    const res = unwrap(BH.conformFrameRates([seq.id], 24));
+    assert.deepEqual(res.fixed, [{ name: "shot_[0001-0100].png", from: 30, layers: 1, comps: ["shot"] }]);
+    assert.equal(wrapper.frameRate, 24);
+    assert.equal(wrapper.duration, 6.25);
+    assert.equal(layer.outPoint, 6.25);
+});
+
+test("a sequence somebody trimmed, stretched, remapped or locked is reported, not conformed", () => {
+    for (const edit of [{ inPoint: 1 }, { outPoint: 3 }, { stretch: 50 }, { timeRemapEnabled: true }, { locked: true }]) {
+        const ae = fpsAE();
+        const seq = ae.items[2];
+        const layer = layerOf(seq, ae.items[1], edit);
+        const BH = loadHost(ae);
+        const res = unwrap(BH.conformFrameRates([seq.id], 24));
+        assert.deepEqual(res, { fixed: [], failed: [], inUse: ["shot_[0001-0100].png"] }, JSON.stringify(edit));
+        assert.equal(seq.frameRate, 30, "the edit on that layer is not shifted: " + JSON.stringify(edit));
+        assert.equal(layer.outPoint, edit.outPoint || 5);
+    }
 });
 
 /* ------------------------------------------------- comp / folder match --- */
