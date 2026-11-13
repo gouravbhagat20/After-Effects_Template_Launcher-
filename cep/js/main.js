@@ -60,6 +60,7 @@
         updates.checkForUpdate();
         updates.cleanupUpdateBackup();     // this version booted fine — retire the rollback copy
         core.recoverStrandedFootage();     // finish any optimize that was cut short
+        render.recoverInterruptedCollect(); // a collect the panel did not see the end of
     }).catch(function (err) {
         // Settings could not be loaded (host bridge down / prefs error).
         // Without this the panel rendered empty with no explanation — surface

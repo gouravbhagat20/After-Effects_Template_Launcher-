@@ -738,6 +738,65 @@ test("a file that could not be copied is reported and the rest are still collect
     assert.equal(ae.project.file.fsName, "/p/orig.aep");
 });
 
+test("a long image sequence is copied across several steps, not in one frozen call", () => {
+    const frames = [];
+    for (let i = 2; i <= 6; i++) frames.push("/src/s/f_000" + i + ".png");
+    const ae = buildAE({
+        projectFile: "/p/orig.aep",
+        files: ["/p/orig.aep"].concat(frames),
+        items: [
+            { kind: "footage", name: "Seq", path: "/src/s/f_0001.png", mainSource: SEQ },
+            { kind: "footage", name: "Seq again", path: "/src/s/f_0001.png", mainSource: SEQ },
+            { kind: "footage", name: "logo", path: "/src/logo.png", mainSource: STILL }
+        ]
+    });
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.vfs.copyFails = () => {                  // every frame takes a few real milliseconds
+        const until = Date.now() + 3;
+        while (Date.now() < until) { /* spin */ }
+        return false;
+    };
+
+    const first = unwrap(BH.collectStep(1));    // 1 ms: room for one frame
+    assert.equal(first.done, 0, "the sequence is not finished, so the item is not counted yet");
+    assert.equal(first.finished, false);
+    assert.ok(first.frac > 0 && first.frac < 1, "but the panel is told how far into it we are: " + first.frac);
+    assert.equal(first.current, "Seq");
+    assert.equal(ae.items[0].file.fsName, "/src/s/f_0001.png", "not relinked until every frame is there");
+
+    let p = first, steps = 1;
+    while (!p.finished && steps < 50) { p = unwrap(BH.collectStep(1)); steps++; }
+    assert.ok(steps >= 6, "one frame per step at this budget: " + steps + " steps");
+
+    const res = unwrap(BH.collectFinish());
+    assert.deepEqual(res, { assets: 3, missing: 0, failed: 0, reopened: true });
+    const copies = ae.log.filter((l) => l.op === "copy" && /\/src\/s\//.test(l.from));
+    assert.equal(copies.length, 6, "each frame copied exactly once, across all the steps");
+    assert.ok(ae.vfs.hasFile("/dest/(Footage)/f_0006.png"));
+});
+
+test("a sequence frame that fails in a later step still marks the whole sequence as not copied", () => {
+    const ae = buildAE({
+        projectFile: "/p/orig.aep",
+        files: ["/p/orig.aep", "/src/s/f_0002.png", "/src/s/f_0003.png"],
+        items: [{ kind: "footage", name: "Seq", path: "/src/s/f_0001.png", mainSource: SEQ }]
+    });
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.vfs.copyFails = (p) => {
+        const until = Date.now() + 3;
+        while (Date.now() < until) { /* spin */ }
+        return /f_0003/.test(p);
+    };
+    let p, steps = 0;
+    do { p = unwrap(BH.collectStep(1)); steps++; } while (!p.finished && steps < 20);
+    const res = unwrap(BH.collectFinish());
+    assert.equal(res.failed, 1);
+    assert.equal(res.assets, 0);
+    assert.equal(ae.items[0].file.fsName, "/src/s/f_0001.png");
+});
+
 test("a failure inside a step abandons the collect and returns to the original", () => {
     const ae = steppedAE({ replaceThrowsFor: () => true });
     const BH = loadHost(ae);

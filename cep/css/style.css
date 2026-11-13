@@ -172,6 +172,7 @@ button { cursor: pointer; }
     border: 0; border-radius: 18px; background: none;
     color: var(--muted); font-size: 13px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background-color var(--motion-ui) var(--ease-out), color var(--motion-fast) ease;
 }
 .tab:hover { color: var(--text); }
 .tab.active, .tab.active:hover { background: var(--accent); color: var(--on-accent); font-weight: 600; }
@@ -208,7 +209,8 @@ button { cursor: pointer; }
     height: 40px; padding: 0 18px; border: 0; border-radius: 20px;
     background: var(--raised); color: var(--text);
     font-size: 13px; font-weight: 600; white-space: nowrap;
-    transition: background-color var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out);
+    transition: background-color var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out),
+                opacity var(--motion-ui) ease;
 }
 .btn:hover { background: var(--border); }
 .btn:active { transform: scale(0.98); }
@@ -447,6 +449,26 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
     transition: transform var(--motion-ui) linear;
 }
 .bar-fill.alt { background: var(--green); }
+/* length not known yet: a short segment travelling along the track */
+.bar.indeterminate .bar-fill {
+    width: 36%; transform: none; transition: none;
+    animation: bar-travel 1.15s var(--ease-in-out) infinite;
+}
+@keyframes bar-travel {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(278%); }
+}
+
+/* Things that appear mid-task (progress, results, Cancel) ease in instead of
+   popping. A CSS animation, not a scripted one: it restarts whenever the
+   element stops being display:none, and still ends in the right place if
+   After Effects starves the panel of frames. */
+@keyframes reveal {
+    from { opacity: 0; transform: translateY(4px); }
+}
+.progress-area, .result-summary, .collect-block > .bar, #btn-collect-cancel, .pill-update {
+    animation: reveal var(--motion-panel) var(--ease-out) both;
+}
 
 .result-summary { font-size: 13px; font-weight: 600; color: var(--green); }
 .result-summary.warn { color: var(--accent-text); }
@@ -467,12 +489,19 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
     width: 100%; height: 56px; padding: 0 20px;
     border: 0; border-radius: var(--r-card); background: var(--card);
     color: var(--text); font-size: 15px; font-weight: 600; text-align: left;
+    transition: background-color var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out),
+                opacity var(--motion-ui) ease;
 }
 .row-card::after {
     content: ""; width: 8px; height: 8px; flex: none;
     border-right: 1.8px solid var(--muted); border-bottom: 1.8px solid var(--muted);
     transform: rotate(-45deg);
+    transition: transform var(--motion-ui) var(--ease-out);
 }
+.row-card:active { transform: scale(0.99); }
+.row-card:hover::after { transform: translateX(2px) rotate(-45deg); }
+.row-card:disabled { transform: none; }
+.row-card:disabled:hover::after { transform: rotate(-45deg); }
 .row-card:hover { background: var(--raised); }
 .row-card:disabled { opacity: 0.45; cursor: default; }
 .row-card:disabled:hover { background: var(--card); }
@@ -711,6 +740,10 @@ body.light .bh-toast.err { color: #ffffff; }
         transition-duration: 1ms !important;
     }
     .bar-fill, .ring .value { transition: none; }
+    .tab, .row-card, .row-card::after { transition: none; }
+    .progress-area, .result-summary, .collect-block > .bar, #btn-collect-cancel, .pill-update { animation: none; }
+    /* no travelling segment: a steady, dimmed, full bar still says "working" */
+    .bar.indeterminate .bar-fill { animation: none; width: 100%; opacity: 0.45; }
     .bh-toast { transform: translateX(-50%); }
     .bh-modal { transform: none; }
 }

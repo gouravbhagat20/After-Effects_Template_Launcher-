@@ -305,6 +305,85 @@
         var collectRunning = false;
         var collectCancelled = false;
 
+        // The host works in short slices with a breath between them. While a
+        // slice runs After Effects cannot redraw or take input at all, so the
+        // slices are kept short and the gap gives its own event loop a turn —
+        // AE stays responsive instead of beach-balling through a collect.
+        var COLLECT_SLICE_MS = 120;
+        var COLLECT_GAP_MS = 30;
+
+        function pause(ms) {
+            return new Promise(function (resolve) { setTimeout(resolve, ms); });
+        }
+
+        /** fraction 0..1 fills the bar; null shows it working with no known
+            length (the two saves before copying starts); false hides it. */
+        function collectBar(fraction) {
+            var wrap = $("collect-bar-wrap");
+            if (fraction === false) {
+                wrap.classList.add("hidden");
+                wrap.classList.remove("indeterminate");
+                wrap.removeAttribute("aria-valuenow");
+                core.setProgress("collect-bar", 0);
+                return;
+            }
+            wrap.classList.remove("hidden");
+            if (fraction === null) {
+                wrap.classList.add("indeterminate");
+                wrap.removeAttribute("aria-valuenow");
+                return;
+            }
+            var pct = Math.max(0, Math.min(100, fraction * 100));
+            wrap.classList.remove("indeterminate");
+            wrap.setAttribute("aria-valuenow", String(Math.round(pct)));
+            core.setProgress("collect-bar", pct);
+        }
+
+        // ---- a collect the panel did not see the end of ----
+        // The panel can be closed or reloaded mid-collect; After Effects is
+        // then left on the collected copy with nothing on screen to say so.
+        // A breadcrumb in AE's preferences survives that, and the next boot
+        // offers the way back.
+
+        function markPendingCollect(copyPath, originalPath) {
+            try {
+                core.setSetting("pending_collect", JSON.stringify({ copy: copyPath, original: originalPath, ts: Date.now() }));
+            } catch (e) { /* a lost breadcrumb must never fail the collect */ }
+        }
+
+        function clearPendingCollect() {
+            if (core.S.pending_collect) core.setSetting("pending_collect", "");
+        }
+
+        function recoverInterruptedCollect() {
+            if (!core.S.pending_collect) return Promise.resolve();
+            var rec = null;
+            try { rec = JSON.parse(core.S.pending_collect); } catch (e) { rec = null; }
+            clearPendingCollect();              // ask once, not on every launch
+            if (!rec || !rec.copy || !rec.original) return Promise.resolve();
+
+            return host("getProjectInfo").then(function (info) {
+                // Only worth a prompt if AE really is still on that copy.
+                if (!info || !info.open || !info.path || !core.samePath(info.path, rec.copy)) return;
+                return ui.confirm("A collect was interrupted, and After Effects is still showing the collected COPY:\n" +
+                    rec.copy + "\n\nAnything you do now lands in the collect folder. " +
+                    "Go back to your original project?\n" + rec.original, "Unfinished Collect")
+                    .then(function (goBack) {
+                        if (!goBack) return;
+                        return core.guardUnsaved("reopen your original project").then(function (go) {
+                            if (!go) return;
+                            return host("openProject", rec.original, true).then(function () {
+                                toast("✓ Back on your original project");
+                                core.refreshProject();
+                            }, function (e) {
+                                return ui.alert("Your original project could not be reopened:\n" + e.message +
+                                    "\n\nOpen it yourself in After Effects:\n" + rec.original, "Reopen Failed");
+                            });
+                        });
+                    });
+            }).catch(function () { /* host down — boot already reports that */ });
+        }
+
         $("btn-collect-cancel").addEventListener("click", function () {
             if (!collectRunning) return;
             collectCancelled = true;
@@ -328,6 +407,9 @@
             cancelBtn.disabled = false;
             cancelBtn.classList.remove("hidden");
             status.textContent = "Saving a copy to collect…";
+            collectBar(null);
+            markPendingCollect(destAep, project.path);
+            var announced = -1;
 
             function step(total) {
                 if (collectCancelled) {
@@ -338,17 +420,27 @@
                         throw e;
                     });
                 }
-                return host("collectStep", 250).then(function (p) {
-                    status.textContent = "Collecting… " + p.done + " / " + p.total + " item(s)";
-                    core.announce("Collecting " + p.done + " of " + p.total);
+                return host("collectStep", COLLECT_SLICE_MS).then(function (p) {
+                    // `frac` is how far into a long image sequence the current
+                    // item is, so the bar keeps moving inside one big item.
+                    collectBar(p.total ? (p.done + (p.frac || 0)) / p.total : 1);
+                    status.textContent = p.finished
+                        ? "Saving the collected copy…"
+                        : "Collecting " + (p.done + 1) + " of " + p.total + (p.current ? " — " + p.current : "");
+                    if (p.done !== announced) {      // once per item, not once per slice
+                        announced = p.done;
+                        core.announce("Collecting " + p.done + " of " + p.total);
+                    }
                     // A Cancel pressed during the last slice still counts:
                     // step() sees it and aborts instead of finishing.
-                    return (p.finished && !collectCancelled) ? host("collectFinish") : step(total);
+                    if (p.finished && !collectCancelled) return host("collectFinish");
+                    return pause(COLLECT_GAP_MS).then(function () { return step(total); });
                 });
             }
 
             return host("collectBegin", destAep, footageFolder).then(function (info) {
-                status.textContent = "Collecting… 0 / " + info.total + " item(s)";
+                status.textContent = "Collecting " + (info.total ? "1" : "0") + " of " + info.total;
+                collectBar(0);
                 return step(info.total);
             }).then(function (res) {
                 status.textContent = "✓ Collected " + res.assets + " asset(s)" +
@@ -397,6 +489,8 @@
                 });
             }).then(function () {
                 collectRunning = false;
+                collectBar(false);
+                clearPendingCollect();
                 core.busy(false);
                 $("btn-collect").disabled = false;
                 cancelBtn.classList.add("hidden");
@@ -477,7 +571,7 @@
             core.setSetting("ame_enabled", this.checked ? "true" : "false");
         });
 
-        return { applySettings: applySettings };
+        return { applySettings: applySettings, recoverInterruptedCollect: recoverInterruptedCollect };
     }
 
     global.BHRender = { init: init };

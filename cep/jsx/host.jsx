@@ -569,7 +569,8 @@ var BH = (function () {
             count: 0,
             claimed: {},      // dest path (lower-cased) -> source path, files written this run
             singles: {},      // source path -> File it was copied to
-            sequences: {}     // sequence identity -> Folder its frames were copied to
+            sequences: {},    // sequence identity -> Folder its frames were copied to
+            seqJob: null      // the sequence being copied across steps: { files, dir, f, ok }
         };
         collectState = st;
 
@@ -596,17 +597,21 @@ var BH = (function () {
     }
 
     /** Copy + relink queued items until the queue is empty or `budgetMs` is
-        spent (always at least one item). budgetMs <= 0 means no limit. */
+        spent (always at least one file). budgetMs <= 0 means no limit. A long
+        image sequence is spread over several calls — st.seqJob remembers how
+        far its frames got — so one item can no longer freeze AE for minutes. */
     function collectRun(st, budgetMs) {
         var t0 = new Date().getTime();
+        var deadline = budgetMs > 0 ? t0 + budgetMs : 0;
         while (st.pos < st.queue.length) {
             // AE is usable between steps: a queued item may have been deleted
             // since. That is one item less to collect, not a failed collect.
             var item = null;
             try { item = app.project.itemByID(st.queue[st.pos]); } catch (gone) { item = null; }
+            if (collectOne(item, st, deadline) === false) break;   // mid-sequence: same item next call
             st.pos++;
-            collectOne(item, st);
-            if (budgetMs > 0 && new Date().getTime() - t0 >= budgetMs) break;
+            st.seqJob = null;
+            if (deadline > 0 && new Date().getTime() >= deadline) break;
         }
     }
 
@@ -677,7 +682,7 @@ var BH = (function () {
     };
 
     /** Do up to budgetMs (default 250) of copying. Returns { done, total,
-        finished }. On failure the collect is abandoned and the original
+        finished, frac, current }. On failure the collect is abandoned and the original
         reopened, exactly as in the one-call form. */
     api.collectStep = function (budgetMs) {
         try {
@@ -690,7 +695,16 @@ var BH = (function () {
                 return fail(PROJECT_CHANGED);
             }
             collectRun(st, budgetMs > 0 ? budgetMs : 250);
-            return ok({ done: st.pos, total: st.queue.length, finished: st.pos >= st.queue.length });
+            // For the panel's progress line: how far into the current item a
+            // long sequence is, and the name of what is being worked on next.
+            var job = st.seqJob;
+            var frac = job && job.files.length ? Math.round(1000 * job.f / job.files.length) / 1000 : 0;
+            var current = "";
+            if (st.pos < st.queue.length) {
+                try { current = String(app.project.itemByID(st.queue[st.pos]).name); } catch (eName) { current = ""; }
+            }
+            return ok({ done: st.pos, total: st.queue.length, finished: st.pos >= st.queue.length,
+                        frac: frac, current: current });
         } catch (e) {
             return fail(collectAbortImpl() ? e : String(e) + STILL_ON_COPY);
         }
@@ -750,7 +764,7 @@ var BH = (function () {
      *  - A sequence is the files named <prefix><digits>.<ext>, nothing looser:
      *    the old prefix test swept in every file starting with those letters.
      */
-    function collectOne(item, st) {
+    function collectOne(item, st, deadline) {
         var footageFolder = st.footageFolder;
         var claimed = st.claimed;
 
@@ -773,41 +787,53 @@ var BH = (function () {
             var seqFolder = sourceFile.parent;
             if (!seqFolder || !seqFolder.exists) return;
             var match = destName.replace(/\.[^\.]+$/, "").match(/^(.*?)(\d+)$/);
-            var seqFiles = match ? sequenceFiles(seqFolder, match[1].toLowerCase(), lowerExt) : null;
+            // Resuming a sequence from the previous step: do not list the folder again.
+            var seqFiles = st.seqJob ? st.seqJob.files
+                         : (match ? sequenceFiles(seqFolder, match[1].toLowerCase(), lowerExt) : null);
 
             if (seqFiles && seqFiles.length > 0) {
                 var seqKey = (seqFolder.fsName + "|" + match[1] + "|" + lowerExt).toLowerCase();
                 var destDir = st.sequences[seqKey];
                 if (!destDir) {
-                    destDir = footageFolder;
-                    // Would any frame land on a name another source already took?
-                    var clash = false;
-                    for (var c = 0; c < seqFiles.length && !clash; c++) {
-                        var taken = claimed[claimKey(destDir, decodeURI(seqFiles[c].name))];
-                        if (taken && taken !== seqFiles[c].fsName) clash = true;
-                    }
-                    if (clash) {
-                        var n = 2;
-                        do {
-                            destDir = new Folder(footageFolder.fsName + "/" +
-                                decodeURI(seqFolder.name) + "_" + n);
-                            n++;
-                        } while (destDir.exists);
-                        destDir.create();
-                    }
-                    var allCopied = true;
-                    for (var f = 0; f < seqFiles.length; f++) {
-                        var frameName = decodeURI(seqFiles[f].name);
-                        if (seqFiles[f].copy(destDir.fsName + "/" + frameName)) {
-                            claimed[claimKey(destDir, frameName)] = seqFiles[f].fsName;
-                        } else {
-                            allCopied = false;
+                    var job = st.seqJob;
+                    if (!job) {
+                        destDir = footageFolder;
+                        // Would any frame land on a name another source already took?
+                        var clash = false;
+                        for (var c = 0; c < seqFiles.length && !clash; c++) {
+                            var taken = claimed[claimKey(destDir, decodeURI(seqFiles[c].name))];
+                            if (taken && taken !== seqFiles[c].fsName) clash = true;
                         }
+                        if (clash) {
+                            var n = 2;
+                            do {
+                                destDir = new Folder(footageFolder.fsName + "/" +
+                                    decodeURI(seqFolder.name) + "_" + n);
+                                n++;
+                            } while (destDir.exists);
+                            destDir.create();
+                        }
+                        job = st.seqJob = { files: seqFiles, dir: destDir, f: 0, ok: true };
                     }
-                    if (!allCopied) {               // leave the item on its original files
+                    while (job.f < job.files.length) {
+                        var frame = job.files[job.f];
+                        var frameName = decodeURI(frame.name);
+                        if (frame.copy(job.dir.fsName + "/" + frameName)) {
+                            claimed[claimKey(job.dir, frameName)] = frame.fsName;
+                        } else {
+                            job.ok = false;
+                        }
+                        job.f++;
+                        // Out of time with frames left: hand control back and
+                        // pick this sequence up again on the next step.
+                        if (deadline > 0 && job.f < job.files.length && new Date().getTime() >= deadline) return false;
+                    }
+                    st.seqJob = null;
+                    if (!job.ok) {                  // leave the item on its original files
                         st.failed.push(item.name + " → " + sourceFile.fsName);
                         return;
                     }
+                    destDir = job.dir;
                     st.sequences[seqKey] = destDir;
                 }
                 var seqDest = new File(destDir.fsName + "/" + destName);

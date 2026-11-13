@@ -10,6 +10,12 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.15": [
+            "Collect now shows a progress bar and the name of the item being collected",
+            "After Effects stays responsive during a collect: long image sequences are copied in short steps instead of one frozen call",
+            "If the panel is closed or reloaded during a collect and After Effects is left on the collected copy, the panel now offers to take you back to your original project",
+            "Smoother feel across the panel: tabs, the Collect row, progress areas and results ease in instead of popping"
+        ],
         "0.4.14": [
             "Collect: cancelling or finishing after you have switched to another project no longer closes or saves that project — it is left exactly as it is",
             "Collect: choosing a destination that would save the copy over the project you have open is now refused, so the original is never modified",

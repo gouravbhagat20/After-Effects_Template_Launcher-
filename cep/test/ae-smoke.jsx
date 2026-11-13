@@ -298,6 +298,59 @@
         }
     });
 
+    // ------------------------------------- 5. a sequence spread over steps
+
+    section("An image sequence copied across several steps", function () {
+        var orig = new File(work.fsName + "/orig.aep");
+        var FRAMES = 24;
+        for (var i = 1; i <= FRAMES; i++) {
+            writePng(work.fsName + "/src/seq/shot_" + ("000" + i).slice(-4) + ".png");
+        }
+        var io = new ImportOptions(new File(work.fsName + "/src/seq/shot_0001.png"));
+        io.sequence = true;
+        var seq = app.project.importFile(io);
+        seq.name = "Shot sequence";
+        var seqId = seq.id;
+        app.project.save();
+
+        var destFolder = new Folder(work.fsName + "/collected_seq");
+        destFolder.create();
+        var footage = destFolder.fsName + "/(Footage)";
+
+        var begin = unwrap(BH.collectBegin(destFolder.fsName + "/orig.aep", footage));
+        check("begin queues the stills and the sequence", begin.total === 5, "total: " + begin.total);
+        var steps = 0, partial = 0, p;
+        do {
+            p = unwrap(BH.collectStep(1));
+            steps++;
+            if (p.frac > 0) partial++;
+        } while (!p.finished && steps < 500);
+        check("the steps run to completion", p.finished === true && p.done === 5,
+              "done " + p.done + " / " + p.total);
+        record("INFO", "How the sequence was sliced at a 1 ms budget",
+               steps + " step(s), " + partial + " of them ended part-way through the sequence");
+        var res = unwrap(BH.collectFinish());
+        check("nothing failed to copy", res.failed === 0 && res.assets === 5,
+              "assets: " + res.assets + ", failed: " + res.failed);
+        var copied = new Folder(footage).getFiles("shot_*.png");
+        check("every frame of the sequence was copied", copied.length === FRAMES, "frames in the collect folder: " + copied.length);
+        check("finish returns to the original",
+              res.reopened === true && !!app.project.file && samePath(app.project.file.fsName, orig.fsName));
+        var back = app.project.itemByID(seqId);
+        check("the original still links the sequence to its source frames",
+              !!back.file && samePath(back.file.parent.fsName, work.fsName + "/src/seq"),
+              back.file ? back.file.fsName : "(none)");
+
+        // And the copy really was relinked to the collected frames.
+        app.open(new File(destFolder.fsName + "/orig.aep"));
+        var inCopy = app.project.itemByID(seqId);
+        check("the collected copy links the sequence to the collected frames",
+              !!inCopy.file && samePath(inCopy.file.parent.fsName, footage) && inCopy.mainSource.isStill === false,
+              inCopy.file ? inCopy.file.fsName : "(none)");
+        app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
+        app.open(orig);
+    });
+
     // ----------------------------------------------------------------- report
 
     try { app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES); } catch (eEnd) { }

@@ -431,7 +431,7 @@ async function startCollect(p, dest) {
     p.window.cep.fs.showOpenDialogEx = () => ({ err: 0, data: [dest] });
     p.window.BHCore.revealFile = () => { };
     p.$("btn-collect").click();
-    await p.settle(120);
+    await p.settle(320);     // three slices, with the breath the panel leaves After Effects between them
 }
 
 test("collect runs in steps and reports the result", async () => {
@@ -477,6 +477,115 @@ test("a collect that could not return to the original says so", async () => {
             assert.match(p.$("bh-modal-msg").textContent, /collected COPY/);
         });
     } finally { c.cleanup(); }
+});
+
+test("collect shows a progress bar that follows the host, including inside one long sequence", async () => {
+    const seen = [];
+    let panel, n = 0;
+    const c = collectPanel({
+        collectBegin: () => {
+            seen.push(panel.$("collect-bar-wrap").className);      // while the copy is being saved
+            return { total: 2, missing: 0 };
+        },
+        collectStep: () => {
+            n++;
+            seen.push(panel.$("collect-bar-wrap").getAttribute("aria-valuenow"));
+            // one sequence, half done after the first slice, then both items done
+            return n === 1 ? { done: 0, total: 2, finished: false, frac: 0.5, current: "shot_[0001-0400].png" }
+                           : { done: 2, total: 2, finished: true, frac: 0, current: "" };
+        },
+        collectFinish: () => {
+            seen.push(panel.$("collect-status").textContent);
+            return { assets: 2, missing: 0, failed: 0, reopened: true };
+        }
+    });
+    try {
+        await withPanel(c.opts, async (p) => {
+            panel = p;
+            await startCollect(p, c.dest);
+            assert.match(seen[0], /indeterminate/, "no known length yet while saving");
+            assert.doesNotMatch(seen[0], /hidden/);
+            assert.equal(seen[1], "0", "the bar starts empty once the total is known");
+            assert.equal(seen[2], "25", "half of the first of two items");
+            assert.match(seen[3], /Saving the collected copy/);
+            assert.ok(p.$("collect-bar-wrap").classList.contains("hidden"), "and goes away when done");
+        });
+    } finally { c.cleanup(); }
+});
+
+test("the status line names the item being collected", async () => {
+    let panel, text = "";
+    let n = 0;
+    const c = collectPanel({
+        collectStep: () => {
+            n++;
+            if (n === 2) text = panel.$("collect-status").textContent;
+            return { done: n, total: 3, finished: n >= 3, frac: 0, current: n < 3 ? "clip " + (n + 1) + ".mp4" : "" };
+        }
+    });
+    try {
+        await withPanel(c.opts, async (p) => {
+            panel = p;
+            await startCollect(p, c.dest);
+            assert.equal(text, "Collecting 2 of 3 — clip 2.mp4");
+        });
+    } finally { c.cleanup(); }
+});
+
+const COPY = "/dest/Nike_Q1_750x300_V1_R1/Nike_Q1_750x300_V1_R1.aep";
+const crumb = () => JSON.stringify({ copy: COPY, original: SAVED.path, ts: 1 });
+
+test("a collect is recorded while it runs and the record is cleared when it ends", async () => {
+    let during = null, panel;
+    const c = collectPanel({ collectFinish: () => { during = panel.settings.pending_collect; return { assets: 3, missing: 0, reopened: true }; } });
+    try {
+        await withPanel(c.opts, async (p) => {
+            panel = p;
+            await startCollect(p, c.dest);
+            const rec = JSON.parse(during);
+            assert.equal(rec.original, SAVED.path);
+            assert.match(rec.copy, /Nike_Q1_750x300_V1_R1\.aep$/);
+            assert.equal(p.settings.pending_collect, "", "nothing to recover after a collect that ended");
+        });
+    } finally { c.cleanup(); }
+});
+
+test("after a reload mid-collect the panel offers the way back to the original", async () => {
+    await withPanel({
+        settings: { pending_collect: crumb() },
+        projectInfo: Object.assign({}, SAVED, { path: COPY }),      // AE is still on the copy
+        hostImpl: { openProject: () => ({ opened: SAVED.path }) }
+    }, async (p) => {
+        await p.settle(60);
+        assert.match(p.$("bh-modal-msg").textContent, /still showing the collected COPY/);
+        p.document.querySelector(".bh-modal-yes").click();
+        await p.settle(300);
+        const call = p.callsTo("openProject")[0];
+        assert.ok(call, "the original is reopened");
+        assert.equal(call.args[0], SAVED.path);
+        assert.equal(p.settings.pending_collect, "", "asked once, not on every launch");
+    });
+});
+
+test("no prompt when After Effects is not on the collected copy any more", async () => {
+    await withPanel({ settings: { pending_collect: crumb() }, projectInfo: SAVED }, async (p) => {
+        await p.settle(60);
+        assert.equal(p.callsTo("openProject").length, 0);
+        assert.ok(!p.document.querySelector(".bh-modal-overlay.show"), "nothing to ask");
+        assert.equal(p.settings.pending_collect, "");
+    });
+});
+
+test("declining leaves After Effects on the copy", async () => {
+    await withPanel({
+        settings: { pending_collect: crumb() },
+        projectInfo: Object.assign({}, SAVED, { path: COPY })
+    }, async (p) => {
+        await p.settle(60);
+        p.document.querySelector(".bh-modal-no").click();
+        await p.settle(60);
+        assert.equal(p.callsTo("openProject").length, 0);
+    });
 });
 
 test("a collect call that fails without the host backing out is aborted by the panel", async () => {
