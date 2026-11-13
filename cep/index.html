@@ -264,6 +264,14 @@
         </div>
     </div>
 
+    <div class="card">
+        <label class="switch-row">
+            <span data-tip="When you import footage, image sequences (PNG, EXR, TIFF…) whose frame rate differs from the Main comp are conformed to it. Videos are never changed — you get a warning instead.">Match new footage to Main's frame rate</span>
+            <input type="checkbox" id="fps-guard" class="switch" role="switch" checked>
+        </label>
+        <button id="btn-fps-check" class="btn">Check all footage now</button>
+    </div>
+
     <div class="card list-card">
         <h2 class="label">Tools</h2>
 
@@ -355,6 +363,7 @@
 <script src="js/tab-render.js"></script>
 <script src="js/tab-optimizer.js"></script>
 <script src="js/tab-settings.js"></script>
+<script src="js/fps-guard.js"></script>
 <script src="js/update-ui.js"></script>
 <script src="js/main.js"></script>
 </body>

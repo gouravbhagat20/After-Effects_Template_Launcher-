@@ -10,6 +10,13 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.16": [
+            "New: frame rate guard. When you import an image sequence (PNG, EXR, TIFF…) whose frame rate differs from the Main comp, the panel conforms it to Main's rate and tells you what it changed",
+            "Videos with a different frame rate are never changed — you get a warning instead, because conforming a video alters its speed",
+            "A sequence that is already used in a comp is reported rather than changed, so no layer is cut short",
+            "Footage already in a project when you open it is left alone; use Settings → Check all footage now to check everything",
+            "Turn it off any time in Settings → Match new footage to Main's frame rate"
+        ],
         "0.4.15": [
             "Collect now shows a progress bar and the name of the item being collected",
             "After Effects stays responsive during a collect: long image sequences are copied in short steps instead of one frozen call",

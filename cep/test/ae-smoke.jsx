@@ -351,6 +351,41 @@
         app.open(orig);
     });
 
+    // -------------------------------------------------- 6. frame rate guard
+
+    section("Frame rate guard: scan and conform", function () {
+        var scan = unwrap(BH.frameRateScan());
+        var seqEntry = null;
+        for (var i = 0; i < scan.items.length; i++) if (scan.items[i].seq) seqEntry = scan.items[i];
+        check("the scan lists the image sequence and leaves the stills out",
+              scan.items.length === 1 && !!seqEntry, "items: " + scan.items.length);
+        record("INFO", "Main comp seen by the scan",
+               scan.main ? scan.main.name + " at " + scan.main.fps + " fps" : "(none)");
+        if (!seqEntry) return;
+        record("INFO", "Frame rate After Effects gave the imported sequence", String(seqEntry.fps));
+
+        var target = Math.abs(seqEntry.fps - 25) < 0.01 ? 24 : 25;
+        var res = unwrap(BH.conformFrameRates([seqEntry.id], target));
+        var after = app.project.itemByID(seqEntry.id).frameRate;
+        check("the sequence is conformed to the requested rate",
+              res.fixed.length === 1 && res.failed.length === 0 && Math.abs(after - target) < 0.001,
+              "asked for " + target + ", item is now " + after + " fps");
+
+        // Once the sequence is a layer in a comp it must be left alone:
+        // conforming changes its length under the layer.
+        var comp = app.project.items.addComp("FPS guard comp", 100, 100, 1, 10, 24);
+        comp.layers.add(app.project.itemByID(seqEntry.id));
+        var again = unwrap(BH.frameRateScan());
+        var usedFlag = false;
+        for (var u = 0; u < again.items.length; u++) if (again.items[u].id === seqEntry.id) usedFlag = again.items[u].used;
+        check("the scan marks a sequence that is used in a comp", usedFlag === true);
+        var refused = unwrap(BH.conformFrameRates([seqEntry.id], 24));
+        check("a sequence used in a comp is not conformed",
+              refused.inUse.length === 1 && refused.fixed.length === 0 &&
+              Math.abs(app.project.itemByID(seqEntry.id).frameRate - target) < 0.001,
+              "item is still " + app.project.itemByID(seqEntry.id).frameRate + " fps");
+    });
+
     // ----------------------------------------------------------------- report
 
     try { app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES); } catch (eEnd) { }

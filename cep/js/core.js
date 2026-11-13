@@ -24,7 +24,7 @@
     var T = global.BHTemplates;
     var ui = global.BHDialog;
 
-    var BH_VERSION = "0.4.15";   // keep in sync with CSXS/manifest.xml
+    var BH_VERSION = "0.4.16";   // keep in sync with CSXS/manifest.xml
     var REPO_URL = "https://github.com/gouravbhagat20/After-Effects_Template_Launcher-";
 
     // ---------------- host bridge ----------------
@@ -99,7 +99,7 @@
                         "ffmpeg_path", "recent_files", "ame_enabled", "dooh_target_mb",
                         "target_size_mb",
                         "post_render_webm", "post_render_mov", "post_render_html", "post_render_zip",
-                        "seed_expandable", "pending_relink", "pending_collect"];
+                        "seed_expandable", "pending_relink", "pending_collect", "fps_guard"];
 
     function loadSettings() {
         return Promise.all(SETTING_KEYS.map(function (k) { return host("getSetting", k, null); }))
@@ -618,7 +618,8 @@
         pickFiles: pickFiles, pickFolder: pickFolder,
         revealInOS: revealInOS, revealFile: revealFile,
         samePath: samePath, dedupePaths: dedupePaths,
-        toast: toast, announce: announce, busy: busy, setProgress: setProgress,
+        toast: toast, announce: announce, busy: busy, isBusy: function () { return busyCount > 0; },
+        setProgress: setProgress,
         guardUnsaved: guardUnsaved, applyTheme: applyTheme,
         initTabs: initTabs, initCollapsibles: initCollapsibles,
 

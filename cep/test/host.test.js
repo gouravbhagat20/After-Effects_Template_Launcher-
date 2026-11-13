@@ -805,6 +805,67 @@ test("a failure inside a step abandons the collect and returns to the original",
     assert.equal(ae.project.file.fsName, "/p/orig.aep");
 });
 
+/* ----------------------------------------------------- frame rate guard --- */
+
+function fpsAE(extra) {
+    return buildAE(Object.assign({
+        projectFile: "/p/x.aep",
+        items: [
+            { kind: "comp", name: "Precomp", frameRate: 12 },
+            { kind: "comp", name: "Main", frameRate: 24 },
+            { kind: "footage", name: "shot_[0001-0100].png", path: "/src/shot_0001.png", mainSource: SEQ, frameRate: 30 },
+            { kind: "footage", name: "clip.mp4", path: "/src/clip.mp4", frameRate: 25 },
+            { kind: "footage", name: "logo.png", path: "/src/logo.png", mainSource: STILL },
+            { kind: "footage", name: "ok.exr", path: "/src/ok_0001.exr", mainSource: SEQ, frameRate: 24 }
+        ]
+    }, extra || {}));
+}
+
+test("frameRateScan lists moving footage against the Main comp, never another comp", () => {
+    const ae = fpsAE();
+    const BH = loadHost(ae);
+    const res = unwrap(BH.frameRateScan());
+    assert.deepEqual(res.main, { name: "Main", fps: 24 });
+    assert.ok(res.items.every((i) => i.used === false));
+    assert.deepEqual(res.items.map((i) => [i.name, i.fps, i.seq]), [
+        ["shot_[0001-0100].png", 30, true],
+        ["clip.mp4", 25, false],
+        ["ok.exr", 24, true]
+    ], "stills are left out; sequences are told apart from videos");
+    assert.equal(unwrap(BH.getProjectInfo()).numItems, 6);
+});
+
+test("conformFrameRates conforms image sequences and refuses videos", () => {
+    const ae = fpsAE();
+    const BH = loadHost(ae);
+    const items = unwrap(BH.frameRateScan()).items;
+    const res = unwrap(BH.conformFrameRates(items.map((i) => i.id).concat([987654]), 24));
+    assert.deepEqual(res.fixed, [{ name: "shot_[0001-0100].png", from: 30 }, { name: "ok.exr", from: 24 }]);
+    assert.deepEqual(res.failed, ["clip.mp4"], "a video is never conformed, even if asked");
+    assert.equal(ae.items[2].frameRate, 24);
+    assert.equal(ae.items[3].frameRate, 25, "the video keeps its speed");
+});
+
+test("conformFrameRates reports a sequence After Effects would not change", () => {
+    const ae = fpsAE();
+    ae.items[2].mainSource = { isStill: false, set conformFrameRate(v) { throw new Error("locked"); } };
+    const BH = loadHost(ae);
+    const res = unwrap(BH.conformFrameRates([ae.items[2].id], 24));
+    assert.deepEqual(res, { fixed: [], failed: ["shot_[0001-0100].png"], inUse: [] });
+    assert.equal(JSON.parse(BH.conformFrameRates([ae.items[2].id], 0)).ok, false);
+});
+
+test("a sequence already used in a comp is reported, never conformed", () => {
+    const ae = fpsAE();
+    ae.items[2].usedIn = [ae.items[1]];          // the sequence is a layer in Main
+    const BH = loadHost(ae);
+    const scan = unwrap(BH.frameRateScan());
+    assert.equal(scan.items[0].used, true);
+    const res = unwrap(BH.conformFrameRates([ae.items[2].id], 24));
+    assert.deepEqual(res, { fixed: [], failed: [], inUse: ["shot_[0001-0100].png"] });
+    assert.equal(ae.items[2].frameRate, 30, "its length under the layer is not changed");
+});
+
 /* ------------------------------------------------- comp / folder match --- */
 
 test("the Main fallback needs 'Main' as a whole word", () => {

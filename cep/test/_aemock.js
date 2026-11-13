@@ -128,7 +128,21 @@ class MFootageItem extends MItem {
         this.height = spec.height == null ? 1080 : spec.height;
         this.frameRate = spec.frameRate == null ? 30 : spec.frameRate;
         this.duration = spec.duration == null ? 5 : spec.duration;
-        this.mainSource = spec.mainSource || { isStill: false };
+        // Specs share plain {isStill} objects between items; each item needs its own.
+        const src = spec.mainSource || { isStill: false };
+        this.mainSource = Object.getPrototypeOf(src) === Object.prototype ? Object.assign({}, src) : src;
+        // AE: setting mainSource.conformFrameRate changes the item's frameRate.
+        const item = this;
+        let conform = 0;
+        Object.defineProperty(this.mainSource, "conformFrameRate", {
+            configurable: true,
+            get() { return conform; },
+            set(v) {
+                if (spec.conformThrows) throw new Error("conformFrameRate refused for " + item.name);
+                conform = v;
+                if (!spec.conformIgnored) item.frameRate = v;
+            }
+        });
     }
     /** AE throws when the replacement file is not on disk. */
     replace(file) {

@@ -34,6 +34,7 @@
     var render = window.BHRender.init(core);
     var optimizer = window.BHOptimizer.init(core);
     var settings = window.BHSettings.init(core);
+    var fpsGuard = window.BHFpsGuard.init(core);
     var updates = window.BHUpdateUI.init(core);
 
     // ---------------- boot ----------------
@@ -55,6 +56,7 @@
         settings.applySettings();
         render.applySettings();
         optimizer.applySettings();
+        fpsGuard.applySettings();          // from here on, new imports are checked
 
         updates.showWhatsNew();
         updates.checkForUpdate();

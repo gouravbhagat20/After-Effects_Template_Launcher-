@@ -670,6 +670,157 @@ test("items that could not be copied are surfaced in the result", async () => {
     } finally { c.cleanup(); }
 });
 
+/* ----------------------------------------------------- frame rate guard --- */
+
+const MAIN24 = { name: "Main", fps: 24 };
+const OLD = { id: 1, name: "old_[001-050].png", fps: 30, seq: true };     // already in the project
+const NEW_SEQ = { id: 2, name: "new_[001-050].png", fps: 30, seq: true };
+const NEW_VID = { id: 3, name: "clip.mp4", fps: 25, seq: false };
+const NEW_OK = { id: 4, name: "fine_[001-050].png", fps: 24, seq: true };
+
+/** A panel on a saved project whose footage list a test can grow, as an import would. */
+function guardPanel(extra) {
+    const state = { items: [OLD], info: Object.assign({}, SAVED, { numItems: 3 }), main: MAIN24 };
+    const opts = Object.assign({
+        projectInfo: state.info,
+        hostImpl: Object.assign({
+            frameRateScan: () => ({ main: state.main, items: state.items.slice() }),
+            conformFrameRates: (ids) => ({
+                fixed: state.items.filter((i) => ids.indexOf(i.id) >= 0).map((i) => ({ name: i.name, from: i.fps })),
+                failed: []
+            })
+        }, (extra && extra.hostImpl) || {})
+    }, (extra && extra.opts) || {});
+    const importing = async (p, items) => {
+        state.items = state.items.concat(items);
+        state.info.numItems += items.length;
+        await p.window.BHCore.refreshProject();
+        await p.settle(60);
+    };
+    return { state, opts, importing };
+}
+
+test("footage already in the project is left alone; a new mismatched sequence is conformed", async () => {
+    const g = guardPanel();
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        assert.equal(p.callsTo("conformFrameRates").length, 0, "what was there when the project was opened is not touched");
+        await g.importing(p, [NEW_SEQ, NEW_OK]);
+        const call = p.callsTo("conformFrameRates")[0];
+        assert.ok(call, "the new sequence is conformed");
+        assert.deepEqual(call.args, [[2], 24], "only the mismatched new one, to Main's rate");
+        assert.match(p.$("bh-modal-msg").textContent, /new_\[001-050\]\.png\s+\(30 → 24 fps\)/);
+    });
+});
+
+test("a new video with a different frame rate is reported, never changed", async () => {
+    const g = guardPanel();
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        await g.importing(p, [NEW_VID]);
+        assert.equal(p.callsTo("conformFrameRates").length, 0);
+        assert.match(p.$("bh-modal-msg").textContent, /clip\.mp4\s+\(25 fps\)/);
+        assert.match(p.$("bh-modal-msg").textContent, /Not changed/);
+    });
+});
+
+test("a new sequence that is already on a timeline is reported, not conformed", async () => {
+    const g = guardPanel();
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        await g.importing(p, [Object.assign({}, NEW_SEQ, { used: true })]);
+        assert.equal(p.callsTo("conformFrameRates").length, 0, "conforming would cut the layer's tail off");
+        assert.match(p.$("bh-modal-msg").textContent, /already used in a comp — not changed/);
+        assert.match(p.$("bh-modal-msg").textContent, /new_\[001-050\]\.png/);
+    });
+});
+
+test("a dialog nobody has answered does not stop later imports being checked", async () => {
+    const g = guardPanel();
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        await g.importing(p, [NEW_SEQ]);
+        assert.ok(p.document.querySelector(".bh-modal-overlay.show"), "the first result is still on screen");
+        await g.importing(p, [Object.assign({}, NEW_SEQ, { id: 9, name: "later_[001-050].png" })]);
+        assert.equal(p.callsTo("conformFrameRates").length, 2, "the panel may be behind another tab for hours");
+        assert.deepEqual(p.callsTo("conformFrameRates")[1].args, [[9], 24]);
+    });
+});
+
+test("a new empty project forgets the last one's item ids", async () => {
+    // After Effects numbers items from 1 again in each new project.
+    const g = guardPanel();
+    g.state.info.path = null;                    // untitled, holding item id 1
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        g.state.items = []; g.state.info.numItems = 0;           // File > New
+        await p.window.BHCore.refreshProject();
+        await p.settle(30);
+        g.state.items = [Object.assign({}, NEW_SEQ, { id: 1 })]; g.state.info.numItems = 1;
+        await p.window.BHCore.refreshProject();
+        await p.settle(60);
+        assert.deepEqual(p.callsTo("conformFrameRates")[0].args, [[1], 24]);
+    });
+});
+
+test("the project is only scanned when its item count changes", async () => {
+    const g = guardPanel();
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        const before = p.callsTo("frameRateScan").length;
+        await p.window.BHCore.refreshProject();
+        await p.window.BHCore.refreshProject();
+        await p.settle(30);
+        assert.equal(p.callsTo("frameRateScan").length, before, "an idle poll costs no project walk");
+    });
+});
+
+test("the guard stands down while the panel is busy with its own work", async () => {
+    const g = guardPanel();
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        p.window.BHCore.busy(true);              // a collect or optimize is relinking footage
+        await g.importing(p, [NEW_SEQ]);
+        assert.equal(p.callsTo("conformFrameRates").length, 0);
+        p.window.BHCore.busy(false);
+    });
+});
+
+test("switched off, nothing is scanned or conformed", async () => {
+    const g = guardPanel({ opts: { settings: { fps_guard: "false" } } });
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        await g.importing(p, [NEW_SEQ]);
+        assert.equal(p.callsTo("frameRateScan").length, 0);
+        assert.equal(p.$("fps-guard").checked, false);
+    });
+});
+
+test("new footage in a project with no Main comp is checked once Main exists", async () => {
+    const g = guardPanel();
+    g.state.main = null;
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        await g.importing(p, [NEW_SEQ]);
+        assert.equal(p.callsTo("conformFrameRates").length, 0);
+        g.state.main = MAIN24;
+        g.state.info.numItems += 1;              // the Main comp was created
+        await p.window.BHCore.refreshProject();
+        await p.settle(60);
+        assert.deepEqual(p.callsTo("conformFrameRates")[0].args, [[2], 24]);
+    });
+});
+
+test("Check all footage now covers what was already in the project", async () => {
+    const g = guardPanel();
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        p.$("btn-fps-check").click();
+        await p.settle(60);
+        assert.deepEqual(p.callsTo("conformFrameRates")[0].args, [[1], 24]);
+    });
+});
+
 /* ------------------------------------------- interrupted-run recovery --- */
 
 const ORPHAN = [{ index: 1, name: "BH_RELINK_1" }];

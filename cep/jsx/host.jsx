@@ -103,6 +103,7 @@ var BH = (function () {
                 path: proj.file ? proj.file.fsName : null,
                 folder: proj.file ? proj.file.parent.fsName : null,
                 dirty: isProjectDirty(),
+                numItems: proj.numItems,
                 numComps: comps,
                 numFootage: footage,
                 mainComp: main ? {
@@ -113,6 +114,85 @@ var BH = (function () {
                     fps: main.frameRate
                 } : null
             });
+        } catch (e) { return fail(e); }
+    };
+
+    // ---------- frame rate guard ----------
+
+    var FPS_SEQUENCE_EXT = /^(png|jpg|jpeg|tif|tiff|exr|tga|dpx|bmp|psd|hdr|cin)$/;
+
+    /** Moving footage that comes from a file: image sequences and videos.
+        Stills, solids, placeholders and audio-only files have no frame rate
+        worth comparing. */
+    function isFpsCandidate(it) {
+        try {
+            return (it instanceof FootageItem) && !!it.file && !!it.mainSource &&
+                   !(it.mainSource instanceof SolidSource) &&
+                   it.mainSource.isStill !== true && it.hasVideo !== false;
+        } catch (e) { return false; }
+    }
+
+    /** Is this footage already a layer in some comp? Conforming it then
+        changes its length under those layers: slowed down, the layer keeps
+        its old out point and the tail of the sequence is cut off. */
+    function isFootageInUse(it) {
+        try { return !!it.usedIn && it.usedIn.length > 0; } catch (e) { return false; }
+    }
+
+    /**
+     * Every moving footage item with its frame rate, and the Main comp they
+     * are compared against. Returns { main: { name, fps } | null,
+     * items: [{ id, name, fps, seq, used }] } — seq marks an image sequence,
+     * used one that is already a layer in a comp.
+     */
+    api.frameRateScan = function () {
+        try {
+            var proj = app.project;
+            var out = [];
+            if (!proj) return ok({ main: null, items: out });
+            for (var i = 1; i <= proj.numItems; i++) {
+                var it = proj.item(i);
+                if (!isFpsCandidate(it)) continue;
+                var ext = String(it.file.name).split(".").pop().toLowerCase();
+                out.push({ id: it.id, name: String(it.name), fps: it.frameRate,
+                           seq: FPS_SEQUENCE_EXT.test(ext), used: isFootageInUse(it) });
+            }
+            var main = findMainComp();
+            return ok({ main: main ? { name: String(main.name), fps: main.frameRate } : null, items: out });
+        } catch (e) { return fail(e); }
+    };
+
+    /**
+     * Conform the image sequences with these ids to `fps`. Only image
+     * sequences are touched — a video in the list is refused, because
+     * conforming one changes its speed — and only ones not yet used in a
+     * comp (see isFootageInUse). Returns { fixed: [{ name, from }],
+     * failed: [name], inUse: [name] }. One undo step.
+     */
+    api.conformFrameRates = function (ids, fps) {
+        try {
+            fps = Number(fps);
+            if (!(fps > 0)) return fail("Invalid frame rate.");
+            var fixed = [], failed = [], inUse = [];
+            app.beginUndoGroup("Conform image sequences to Main's frame rate");
+            try {
+                for (var i = 0; i < ids.length; i++) {
+                    var it = null;
+                    try { it = app.project.itemByID(ids[i]); } catch (gone) { it = null; }
+                    if (!it || !isFpsCandidate(it)) continue;      // deleted since the scan
+                    var ext = String(it.file.name).split(".").pop().toLowerCase();
+                    if (!FPS_SEQUENCE_EXT.test(ext)) { failed.push(String(it.name)); continue; }
+                    // Checked again here: it may have been dropped into a comp since the scan.
+                    if (isFootageInUse(it)) { inUse.push(String(it.name)); continue; }
+                    var before = it.frameRate;
+                    try {
+                        it.mainSource.conformFrameRate = fps;
+                        if (Math.abs(it.frameRate - fps) > 0.001) failed.push(String(it.name));
+                        else fixed.push({ name: String(it.name), from: before });
+                    } catch (eConform) { failed.push(String(it.name)); }
+                }
+            } finally { app.endUndoGroup(); }
+            return ok({ fixed: fixed, failed: failed, inUse: inUse });
         } catch (e) { return fail(e); }
     };
 
