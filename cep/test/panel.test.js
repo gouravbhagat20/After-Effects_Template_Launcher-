@@ -479,6 +479,88 @@ test("a collect that could not return to the original says so", async () => {
     } finally { c.cleanup(); }
 });
 
+test("a collect call that fails without the host backing out is aborted by the panel", async () => {
+    // What a timed-out or garbled reply looks like: the host never got to clean up.
+    const c = collectPanel({ collectStep: () => new Error("After Effects did not respond to collectStep") });
+    try {
+        await withPanel(c.opts, async (p) => {
+            await startCollect(p, c.dest);
+            assert.equal(p.callsTo("collectAbort").length, 1, "AE must not be left on the copy with a collect pending");
+            assert.match(p.$("bh-modal-msg").textContent, /Collect failed/);
+        });
+    } finally { c.cleanup(); }
+});
+
+test("a failed collect that leaves AE on the copy says so", async () => {
+    const c = collectPanel({
+        collectStep: () => new Error("boom"),
+        collectAbort: () => ({ reopened: false, projectChanged: false })
+    });
+    try {
+        await withPanel(c.opts, async (p) => {
+            await startCollect(p, c.dest);
+            assert.match(p.$("bh-modal-msg").textContent, /collected COPY/);
+        });
+    } finally { c.cleanup(); }
+});
+
+test("a failed collect whose abort also fails warns that AE may be on the copy", async () => {
+    const c = collectPanel({
+        collectStep: () => new Error("boom"),
+        collectAbort: () => new Error("no reply")
+    });
+    try {
+        await withPanel(c.opts, async (p) => {
+            await startCollect(p, c.dest);
+            assert.match(p.$("bh-modal-msg").textContent, /may still be showing the collected COPY/);
+        });
+    } finally { c.cleanup(); }
+});
+
+test("Cancel pressed during the last slice aborts instead of finishing", async () => {
+    let panel;
+    const c = collectPanel({
+        collectStep: () => {
+            panel.$("btn-collect-cancel").click();
+            return { done: 3, total: 3, finished: true };
+        }
+    });
+    try {
+        await withPanel(c.opts, async (p) => {
+            panel = p;
+            await startCollect(p, c.dest);
+            assert.equal(p.callsTo("collectAbort").length, 1);
+            assert.equal(p.callsTo("collectFinish").length, 0);
+            assert.match(p.$("collect-status").textContent, /cancelled/i);
+        });
+    } finally { c.cleanup(); }
+});
+
+test("a destination that lands on the open project is refused by the panel", async () => {
+    const c = collectPanel();
+    try {
+        // The project already sits in <dest>/<its own name>/ — where a collect into <dest> would write.
+        const own = require("node:path").join(c.dest, SAVED.name, SAVED.name + ".aep");
+        c.opts.projectInfo = Object.assign({}, SAVED, { path: own });
+        await withPanel(c.opts, async (p) => {
+            await startCollect(p, c.dest);
+            assert.equal(require("node:fs").existsSync(require("node:path").dirname(own)), false, "no folder is created either");
+            assert.equal(p.callsTo("collectBegin").length, 0);
+            assert.match(p.$("bh-modal-msg").textContent, /over the project/);
+        });
+    } finally { c.cleanup(); }
+});
+
+test("items that could not be copied are surfaced in the result", async () => {
+    const c = collectPanel({ collectFinish: () => ({ assets: 2, missing: 0, failed: 1, reopened: true }) });
+    try {
+        await withPanel(c.opts, async (p) => {
+            await startCollect(p, c.dest);
+            assert.match(p.$("collect-status").textContent, /1 could not be copied \(see _Pack_Report/);
+        });
+    } finally { c.cleanup(); }
+});
+
 /* ------------------------------------------- interrupted-run recovery --- */
 
 const ORPHAN = [{ index: 1, name: "BH_RELINK_1" }];

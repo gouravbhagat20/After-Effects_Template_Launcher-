@@ -281,6 +281,21 @@
         check("cancel reopens the original without a save prompt",
               aborted.reopened === true && !!app.project.file && samePath(app.project.file.fsName, orig.fsName),
               "open project: " + (app.project.file ? app.project.file.fsName : "(unsaved)"));
+
+        // A destination that IS the open project must be refused untouched.
+        var refused = String(BH.collectBegin(orig.fsName, work.fsName + "/(Footage)"));
+        check("a collect onto the open project itself is refused",
+              refused.indexOf('"ok":false') >= 0 && !!app.project.file && samePath(app.project.file.fsName, orig.fsName),
+              refused);
+
+        // The stepped collect looks queued items up by id between steps; the
+        // host copes with either answer, this just records which one AE gives.
+        try {
+            var ghost = app.project.itemByID(987654321);
+            record("INFO", "itemByID for an id that does not exist", "returns " + String(ghost));
+        } catch (eGhost) {
+            record("INFO", "itemByID for an id that does not exist", "throws: " + String(eGhost));
+        }
     });
 
     // ----------------------------------------------------------------- report

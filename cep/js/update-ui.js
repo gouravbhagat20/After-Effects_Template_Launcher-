@@ -10,6 +10,13 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.14": [
+            "Collect: cancelling or finishing after you have switched to another project no longer closes or saves that project — it is left exactly as it is",
+            "Collect: choosing a destination that would save the copy over the project you have open is now refused, so the original is never modified",
+            "Collect: if a collect fails or After Effects stops responding, the panel now goes back to your original project, or tells you clearly when After Effects is still on the collected copy",
+            "Collect: files that could not be copied are now counted and listed in _Pack_Report.txt instead of being reported as collected; one failed file no longer abandons the whole collect",
+            "Collect: deleting a footage item while a collect is running no longer fails it, and Cancel pressed at the very end is honoured"
+        ],
         "0.4.13": [
             "New look: a dark dashboard design across all four tabs",
             "Projects: pick a template from tiles drawn in each format's shape; date and version sit in one expandable row",

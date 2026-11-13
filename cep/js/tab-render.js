@@ -333,14 +333,17 @@
                 if (collectCancelled) {
                     return host("collectAbort").then(function (res) {
                         var e = new Error("CANCELLED");
-                        e.reopened = !res || res.reopened !== false;
+                        e.projectChanged = !!(res && res.projectChanged);
+                        e.reopened = e.projectChanged || !res || res.reopened !== false;
                         throw e;
                     });
                 }
                 return host("collectStep", 250).then(function (p) {
                     status.textContent = "Collecting… " + p.done + " / " + p.total + " item(s)";
                     core.announce("Collecting " + p.done + " of " + p.total);
-                    return p.finished ? host("collectFinish") : step(total);
+                    // A Cancel pressed during the last slice still counts:
+                    // step() sees it and aborts instead of finishing.
+                    return (p.finished && !collectCancelled) ? host("collectFinish") : step(total);
                 });
             }
 
@@ -349,8 +352,11 @@
                 return step(info.total);
             }).then(function (res) {
                 status.textContent = "✓ Collected " + res.assets + " asset(s)" +
-                    (res.missing ? " — " + res.missing + " missing (see _Pack_Report.txt)" : "") + ".";
-                toast("✓ Project collected");
+                    (res.missing ? " — " + res.missing + " missing" : "") +
+                    (res.failed ? " — " + res.failed + " could not be copied" : "") +
+                    (res.missing || res.failed ? " (see _Pack_Report.txt)" : "") + ".";
+                toast(res.failed ? "Collected, but " + res.failed + " item(s) could not be copied" : "✓ Project collected",
+                      !!res.failed);
                 core.revealFile(destAep);
                 // The host reopens the original afterwards. If it could
                 // not, AE is still on the collected copy — say so, or
@@ -362,7 +368,8 @@
                 }
             }, function (e) {
                 if (e.message === "CANCELLED") {
-                    status.textContent = "Collect cancelled. Files already copied are still in the collect folder.";
+                    status.textContent = "Collect cancelled. Files already copied are still in the collect folder." +
+                        (e.projectChanged ? " The project now open in After Effects was left as it is." : "");
                     toast("Collect cancelled", true);
                     if (e.reopened === false) {
                         return stillOnCopy("Collect was cancelled, but your original project could not be reopened.",
@@ -371,7 +378,23 @@
                     return;
                 }
                 status.textContent = "";
-                return ui.alert("Collect failed:\n" + e.message);
+                // A failure the host reported has already put AE back on the
+                // original. One it did not — a call that timed out, a bad
+                // reply — leaves AE on the copy with the collect still
+                // pending, so always ask the host to back out. With nothing
+                // pending this is a no-op.
+                return host("collectAbort").then(function (res) {
+                    if (res && res.reopened === false && !res.projectChanged) {
+                        return stillOnCopy("Collect failed:\n" + e.message, destAep, project.path);
+                    }
+                    return ui.alert("Collect failed:\n" + e.message);
+                }, function () {
+                    return ui.alert("Collect failed:\n" + e.message +
+                        "\n\nAfter Effects did not confirm that it went back to your original project. " +
+                        "It may still be showing the collected COPY:\n" + destAep +
+                        "\n\nCheck which project is open before you keep working. Your original is:\n" +
+                        project.path, "Check the Open Project");
+                });
             }).then(function () {
                 collectRunning = false;
                 core.busy(false);
@@ -419,12 +442,17 @@
 
                     var destFolder = pathMod.join(destRoot, collectName);
                     var footageFolder = pathMod.join(destFolder, "(Footage)");
+                    var destAep = pathMod.join(destFolder, project.name + ".aep");
+                    if (pathMod.resolve(destAep).toLowerCase() === pathMod.resolve(project.path).toLowerCase()) {
+                        status.textContent = "";
+                        return ui.alert("That destination would save the collected copy over the project " +
+                            "you have open:\n" + project.path + "\n\nChoose a different destination folder.");
+                    }
                     try { fsMod.mkdirSync(footageFolder, { recursive: true }); }
                     catch (mkErr) {
                         status.textContent = "";
                         return ui.alert("Could not create the collect folder:\n" + mkErr.message);
                     }
-                    var destAep = pathMod.join(destFolder, project.name + ".aep");
 
                     return runCollect(project, destAep, footageFolder, status);
                 });

@@ -549,6 +549,12 @@ var BH = (function () {
 
     function collectBeginImpl(destAepPath, footageFolderPath) {
         if (!app.project || !app.project.file) throw new Error("No saved project open (BH-2003).");
+        // Save As onto the open project is not a copy: the relinks would be
+        // saved straight into the original this function promises not to touch.
+        if (new File(destAepPath).fsName.toLowerCase() === app.project.file.fsName.toLowerCase()) {
+            throw new Error("The collect destination is the open project itself — choose a different " +
+                            "destination folder. Nothing was changed.");
+        }
 
         app.project.save();                          // original, unmodified
         var st = {
@@ -557,6 +563,7 @@ var BH = (function () {
             destAepPath: destAepPath,
             footageFolder: new Folder(footageFolderPath),
             missing: [],
+            failed: [],       // found, but could not be copied: still linked outside the collect folder
             queue: [],        // ids of the footage items to copy + relink
             pos: 0,
             count: 0,
@@ -593,7 +600,10 @@ var BH = (function () {
     function collectRun(st, budgetMs) {
         var t0 = new Date().getTime();
         while (st.pos < st.queue.length) {
-            var item = app.project.itemByID(st.queue[st.pos]);
+            // AE is usable between steps: a queued item may have been deleted
+            // since. That is one item less to collect, not a failed collect.
+            var item = null;
+            try { item = app.project.itemByID(st.queue[st.pos]); } catch (gone) { item = null; }
             st.pos++;
             collectOne(item, st);
             if (budgetMs > 0 && new Date().getTime() - t0 >= budgetMs) break;
@@ -602,26 +612,50 @@ var BH = (function () {
 
     function collectFinishImpl(st) {
         app.project.save();                          // persist relinks in the copy
-        generatePackReport(new File(st.destAepPath).parent, st.missing);
+        generatePackReport(new File(st.destAepPath).parent, st.missing, st.failed);
         var reopened = reopenOriginal(st.originalFile, false);
         collectState = null;
-        return { assets: st.count, missing: st.missing.length, reopened: reopened };
+        return { assets: st.count, missing: st.missing.length, failed: st.failed.length, reopened: reopened };
     }
 
+    /** Is the collect's COPY the project open in AE right now? AE is usable
+        between steps, so the user may have opened, closed or created another
+        project since Save As. Everything that saves or closes "the copy"
+        must ask this first — st.onCopy only says the copy was once open. */
+    function collectOnCopy(st) {
+        if (!st || !st.onCopy || !st.copyFsName) return false;
+        var open = app.project && app.project.file ? app.project.file.fsName : null;
+        return open !== null && open.toLowerCase() === st.copyFsName.toLowerCase();
+    }
+
+    var PROJECT_CHANGED = "The project was changed in After Effects while it was being collected — " +
+                          "collect stopped. Nothing was changed in the project that is open now.";
+
     /** Give up on a collect: leave the copy (unsaved) and go back to the
-        original. Returns whether the original is open again. */
+        original. Returns false only when AE is left stuck on the copy. If
+        some other project is open by now it is not ours to close — closing
+        it unsaved would throw away the user's work — so it is left alone. */
     function collectAbortImpl() {
         var st = collectState;
         collectState = null;
         if (!st || !st.onCopy) return true;          // never left the original
+        if (!collectOnCopy(st)) return true;         // the user moved on; hands off
         return reopenOriginal(st.originalFile, true);
     }
 
     var STILL_ON_COPY = " — After Effects is still showing the collected COPY; " +
                         "reopen your original project before continuing.";
 
+    /** Forget a stepped collect the panel walked away from (it was reloaded,
+        or a call timed out). Its state is only dropped, never acted on: by
+        now the user may have kept working in that copy, and closing it
+        unsaved to "go back" would throw their work away. The new collect
+        runs on whatever project is open — the one the panel just inspected. */
+    function collectForgetStale() { collectState = null; }
+
     api.collectProject = function (destAepPath, footageFolderPath) {
         try {
+            collectForgetStale();
             var st = collectBeginImpl(destAepPath, footageFolderPath);
             collectRun(st, 0);
             return ok(collectFinishImpl(st));
@@ -634,7 +668,7 @@ var BH = (function () {
         number of footage items collectStep will work through. */
     api.collectBegin = function (destAepPath, footageFolderPath) {
         try {
-            if (collectState) collectAbortImpl();    // a previous run the panel walked away from
+            collectForgetStale();
             var st = collectBeginImpl(destAepPath, footageFolderPath);
             return ok({ total: st.queue.length, missing: st.missing.length });
         } catch (e) {
@@ -651,11 +685,9 @@ var BH = (function () {
             if (!st) return fail("No collect in progress.");
             // AE is usable between steps. If the user has since opened or
             // closed a project, relinking "the copy" would edit something else.
-            var open = app.project && app.project.file ? app.project.file.fsName : null;
-            if (open === null || open.toLowerCase() !== st.copyFsName.toLowerCase()) {
+            if (!collectOnCopy(st)) {
                 collectState = null;
-                return fail("The project was changed in After Effects while it was being collected — " +
-                            "collect stopped. Nothing was changed in the project that is open now.");
+                return fail(PROJECT_CHANGED);
             }
             collectRun(st, budgetMs > 0 ? budgetMs : 250);
             return ok({ done: st.pos, total: st.queue.length, finished: st.pos >= st.queue.length });
@@ -667,17 +699,29 @@ var BH = (function () {
     api.collectFinish = function () {
         try {
             if (!collectState) return fail("No collect in progress.");
+            // Finishing saves the open project and writes the report: on any
+            // project but the copy that would save the wrong file.
+            if (!collectOnCopy(collectState)) {
+                collectState = null;
+                return fail(PROJECT_CHANGED);
+            }
             return ok(collectFinishImpl(collectState));
         } catch (e) {
             return fail(collectAbortImpl() ? e : String(e) + STILL_ON_COPY);
         }
     };
 
-    /** Cancel a stepped collect. Returns { reopened }. Files already copied
-        stay in the collect folder; the copied .aep is left as Save As wrote it. */
+    /** Cancel a stepped collect. Returns { reopened, projectChanged }. Files
+        already copied stay in the collect folder; the copied .aep is left as
+        Save As wrote it. projectChanged means another project was open by
+        then: it was not touched, and the original was not reopened over it. */
     api.collectAbort = function () {
-        try { return ok({ reopened: collectAbortImpl() }); }
-        catch (e) { return fail(e); }
+        try {
+            var st = collectState;
+            var changed = !!(st && st.onCopy && !collectOnCopy(st));
+            var back = collectAbortImpl();
+            return ok({ reopened: back && !changed, projectChanged: changed });
+        } catch (e) { return fail(e); }
     };
 
     /** Leave the collected copy and reopen the original project. The copy is
@@ -760,7 +804,10 @@ var BH = (function () {
                             allCopied = false;
                         }
                     }
-                    if (!allCopied) return;         // leave the item on its original files
+                    if (!allCopied) {               // leave the item on its original files
+                        st.failed.push(item.name + " → " + sourceFile.fsName);
+                        return;
+                    }
                     st.sequences[seqKey] = destDir;
                 }
                 var seqDest = new File(destDir.fsName + "/" + destName);
@@ -789,7 +836,10 @@ var BH = (function () {
                 destFile = new File(footageFolder.fsName + "/" + base + "_" + dupIdx + "." + fileExt);
                 dupIdx++;
             }
-            sourceFile.copy(destFile.fsName);
+            if (!sourceFile.copy(destFile.fsName)) {   // leave the item on its original file
+                st.failed.push(item.name + " → " + sourceFile.fsName);
+                return;
+            }
             st.singles[sourceFile.fsName] = destFile;
             claimed[destFile.fsName.toLowerCase()] = sourceFile.fsName;
         }
@@ -811,7 +861,7 @@ var BH = (function () {
         });
     }
 
-    function generatePackReport(destFolder, missingList) {
+    function generatePackReport(destFolder, missingList, failedList) {
         try {
             var report = "=== PACK REPORT ===\n";
             report += "Generated: " + new Date().toLocaleString() + "\n";
@@ -820,6 +870,12 @@ var BH = (function () {
             report += "--- MISSING FILES (" + missingList.length + ") ---\n";
             report += missingList.length === 0 ? "(None - All files found!)\n" : "";
             for (var i = 0; i < missingList.length; i++) report += "• " + missingList[i] + "\n";
+
+            if (failedList && failedList.length) {
+                report += "\n--- COULD NOT BE COPIED (" + failedList.length + ") ---\n";
+                report += "(Still linked to the files below, outside this folder)\n";
+                for (var q = 0; q < failedList.length; q++) report += "• " + failedList[q] + "\n";
+            }
 
             var fonts = getFontsUsed();
             report += "\n--- FONTS USED (" + fonts.length + ") ---\n";

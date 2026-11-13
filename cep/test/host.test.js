@@ -575,7 +575,7 @@ test("a stepped collect reports progress and ends like the one-call form", () =>
     assert.equal(seen[seen.length - 1], 3);
 
     const res = unwrap(BH.collectFinish());
-    assert.deepEqual(res, { assets: 3, missing: 1, reopened: true });
+    assert.deepEqual(res, { assets: 3, missing: 1, failed: 0, reopened: true });
     assert.equal(ae.project.file.fsName, "/p/orig.aep");
     assert.ok(ae.vfs.hasFile("/dest/(Footage)/c.png"));
     assert.equal(JSON.parse(BH.collectStep(250)).ok, false, "nothing is left in progress afterwards");
@@ -623,6 +623,119 @@ test("a step refuses to touch a different project opened mid-collect", () => {
     assert.match(parsed.error, /changed in After Effects/);
     assert.equal(ae.log.length, before, "nothing was copied, relinked, closed or opened");
     assert.equal(ae.project.file.fsName, "/elsewhere/other.aep");
+});
+
+function switchedMidCollect(extra) {
+    const ae = steppedAE(extra);
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.vfs.addFile("/elsewhere/other.aep");
+    ae.app.open(new ae.globals.File("/elsewhere/other.aep"));   // the user switched projects
+    return { ae, BH, before: ae.log.length };
+}
+
+test("cancelling after switching projects leaves the newly opened project alone", () => {
+    const { ae, BH, before } = switchedMidCollect();
+    const res = unwrap(BH.collectAbort());
+    assert.deepEqual(res, { reopened: false, projectChanged: true });
+    assert.equal(ae.log.length, before, "the other project is not closed unsaved, nor replaced by the original");
+    assert.equal(ae.project.file.fsName, "/elsewhere/other.aep");
+    assert.equal(JSON.parse(BH.collectStep(250)).ok, false, "the collect is over");
+});
+
+test("finishing after switching projects does not save the newly opened project", () => {
+    const { ae, BH, before } = switchedMidCollect();
+    const parsed = JSON.parse(BH.collectFinish());
+    assert.equal(parsed.ok, false);
+    assert.match(parsed.error, /changed in After Effects/);
+    assert.equal(ae.log.length, before, "nothing was saved, closed or opened");
+    assert.equal(ae.project.file.fsName, "/elsewhere/other.aep");
+    assert.equal(JSON.parse(BH.collectFinish()).ok, false, "the collect is over");
+});
+
+test("starting a new collect does not close a project opened during an abandoned one", () => {
+    const { ae, BH, before } = switchedMidCollect();
+    unwrap(BH.collectBegin("/dest2/other.aep", "/dest2/(Footage)"));
+    const ops = ae.log.slice(before).map((l) => l.op);
+    assert.ok(ops.indexOf("close") < 0, "the open project is never closed unsaved");
+    assert.equal(ae.project.file.fsName, "/dest2/other.aep", "the new collect runs on the project that is open");
+});
+
+test("a collect whose destination is the open project is refused before anything is saved", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    for (const call of [() => BH.collectBegin("/P/Orig.aep", "/p/(Footage)"),
+                        () => BH.collectProject("/p/orig.aep", "/p/(Footage)")]) {
+        const parsed = JSON.parse(call());
+        assert.equal(parsed.ok, false);
+        assert.match(parsed.error, /destination is the open project/);
+    }
+    assert.equal(ae.log.length, 0, "the original is not saved over, relinked or closed");
+    assert.equal(JSON.parse(BH.collectStep(250)).ok, false, "no collect was started");
+});
+
+test("a collect left pending is forgotten, not undone, when the next one starts", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.project.dirty = true;                 // the panel went away; the user kept working in the copy
+    const before = ae.log.length;
+
+    unwrap(BH.collectBegin("/dest2/orig.aep", "/dest2/(Footage)"));
+    const ops = ae.log.slice(before).map((l) => l.op);
+    assert.ok(ops.indexOf("close") < 0, "their work is not closed unsaved");
+    assert.ok(ops.indexOf("open") < 0, "and the project is not swapped for the old original underneath them");
+    assert.equal(ae.project.file.fsName, "/dest2/orig.aep", "the project that was open is the one collected");
+});
+
+test("a one-call collect that fails early leaves a pending stepped collect's project alone", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.project.save = () => { throw new Error("disk full"); };
+    const before = ae.log.length;
+    assert.equal(JSON.parse(BH.collectProject("/dest3/orig.aep", "/dest3/(Footage)")).ok, false);
+    assert.equal(ae.log.length, before, "nothing closed or reopened");
+});
+
+test("an item deleted between steps is skipped, not a failed collect", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.items.splice(1, 1);                   // the user deleted "b"
+    const p = unwrap(BH.collectStep(-1));
+    assert.equal(p.finished, true);
+    const res = unwrap(BH.collectFinish());
+    assert.equal(res.assets, 2);
+    assert.equal(res.failed, 0);
+});
+
+test("a sequence that could not be fully copied is reported, not passed off as collected", () => {
+    const ae = buildAE({
+        projectFile: "/p/orig.aep",
+        files: ["/p/orig.aep", "/src/s/f_0002.png"],
+        items: [{ kind: "footage", name: "S", path: "/src/s/f_0001.png", mainSource: SEQ }]
+    });
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.vfs.copyFails = (p) => /f_0002/.test(p);
+    unwrap(BH.collectStep(-1));
+    const res = unwrap(BH.collectFinish());
+    assert.equal(res.assets, 0);
+    assert.equal(res.failed, 1);
+    assert.equal(ae.items[0].file.fsName, "/src/s/f_0001.png", "the item stays on files that exist");
+});
+
+test("a file that could not be copied is reported and the rest are still collected", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    ae.vfs.copyFails = (p) => /a\.png/.test(p);
+    unwrap(BH.collectStep(-1));
+    const res = unwrap(BH.collectFinish());
+    assert.deepEqual(res, { assets: 2, missing: 1, failed: 1, reopened: true });
+    assert.equal(ae.items[0].file.fsName, "/src/a.png", "not relinked to a file that was never written");
+    assert.equal(ae.project.file.fsName, "/p/orig.aep");
 });
 
 test("a failure inside a step abandons the collect and returns to the original", () => {
