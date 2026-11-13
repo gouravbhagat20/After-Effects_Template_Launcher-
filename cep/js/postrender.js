@@ -29,6 +29,14 @@
      * an unnumbered one sorted first and made the whole folder read as "no
      * sequence", and any stray inflated the frame count — and with it the
      * duration every bitrate is computed from. The largest group wins.
+     *
+     * ffmpeg reads the frames through ONE numbered pattern and stops at the
+     * first number it cannot find. So frames it would not reach — numbers
+     * padded differently (shot_2.png beside shot_0001.png), a duplicate
+     * number, a gap — are not converted; it used to encode what it found and
+     * report success. `problem` says so in words, and convert() refuses a
+     * sequence that has one. A run with no leading zeros at all (9, 10, 11)
+     * is fine: that is padding 0, read with %d.
      */
     function detectPNGSequence(folder) {
         var names;
@@ -57,12 +65,37 @@
         var match = files[0].match(/^(.*?)(\d+)(\.png)$/i);
         if (!match) return null;
 
+        var digits = files.map(function (f) { return f.match(/(\d+)\.png$/i)[1]; });
+        var start = parseInt(match[2], 10);
+        var width = digits[0].length;
+        var sameWidth = digits.every(function (d) { return d.length === width; });
+        var noLeadingZeros = digits.every(function (d) { return d === String(parseInt(d, 10)); });
+        var padding = sameWidth ? width : 0;
+        var problem = null;
+
+        if (!sameWidth && !noLeadingZeros) {
+            var odd = files.filter(function (f, i) { return digits[i].length !== width; })[0];
+            problem = "The frame numbers are padded differently (" + files[0] + " and " + odd +
+                "), so the frames cannot be read as one sequence. Re-render, or rename them to one padding.";
+        } else {
+            for (var i = 0; i < digits.length; i++) {
+                var n = parseInt(digits[i], 10);
+                if (n === start + i) continue;
+                problem = n < start + i
+                    ? "Frame " + n + " is there twice (" + files[i - 1] + " and " + files[i] + ")."
+                    : "Frame " + (start + i) + " is missing (" + files[i - 1] + " is followed by " + files[i] +
+                      "), so only the first " + i + " of " + files.length + " frames would be converted.";
+                break;
+            }
+        }
+
         return {
             folder: folder,
             prefix: match[1],
-            padding: match[2].length,
-            start: parseInt(match[2], 10),
-            count: files.length
+            padding: padding,
+            start: start,
+            count: files.length,
+            problem: problem
         };
     }
 
@@ -73,7 +106,10 @@
             var proc = cp.spawn(exe, args, { windowsHide: true });
             current = proc;
             var errTail = "";
+            var frames = null;      // last "frame=N" ffmpeg reported: how many it actually wrote
             proc.stdout.on("data", function (chunk) {
+                var fr = String(chunk).match(/frame=\s*(\d+)/g);
+                if (fr) frames = parseInt(fr[fr.length - 1].replace(/\D/g, ""), 10);
                 var m = /out_time_us=(\d+)/.exec(String(chunk));
                 if (m && totalSec > 0 && onProgress) {
                     onProgress(Math.min(100, (parseInt(m[1], 10) / 1e6) / totalSec * 100));
@@ -84,14 +120,24 @@
             proc.on("close", function (code) {
                 current = null;
                 if (cancelled) reject(new Error("CANCELLED"));
-                else if (code === 0) resolve();
+                else if (code === 0) resolve({ frames: frames });
                 else reject(new Error("ffmpeg exited " + code + ":\n" + errTail.split("\n").slice(-5).join("\n")));
             });
         });
     }
 
+    /** A finished encode has to contain every frame of the sequence. ffmpeg
+        exits 0 on a shorter one — it just stops where the numbering stops. */
+    function assertAllFrames(res, seq, what) {
+        if (!res || res.frames === null || res.frames === undefined) return;   // no progress line seen: nothing to compare
+        if (res.frames !== seq.count) {
+            throw new Error(what + " has " + res.frames + " frame(s) but the sequence has " + seq.count +
+                " — some frames were not read.");
+        }
+    }
+
     function inputArgs(seq, fps) {
-        var pattern = path.join(seq.folder, seq.prefix + "%0" + seq.padding + "d.png");
+        var pattern = path.join(seq.folder, seq.prefix + (seq.padding ? "%0" + seq.padding + "d" : "%d") + ".png");
         return ["-framerate", fps, "-start_number", seq.start, "-i", pattern].map(String);
     }
 
@@ -151,8 +197,9 @@
 
         return spawnFF(exe, pass1, durationSec, function (p) { onProgress(p / 2); })
             .then(function () { return spawnFF(exe, pass2, durationSec, function (p) { onProgress(50 + p / 2); }); })
-            .then(function () {
+            .then(function (res) {
                 try { fs.unlinkSync(passLog + "-0.log"); } catch (e) { }
+                assertAllFrames(res, seq, "WebM");
                 if (!okFile(outWebM)) throw new Error("WebM output missing/empty.");
                 onLog("WebM: SUCCESS (" + (fs.statSync(outWebM).size / 1048576).toFixed(2) + " MB)");
             });
@@ -174,8 +221,9 @@
         ];
         function tryAt(i) {
             if (i >= attempts.length) throw new Error("All MOV codecs failed.");
-            return spawnFF(exe, attempts[i].args, durationSec, onProgress).then(function () {
+            return spawnFF(exe, attempts[i].args, durationSec, onProgress).then(function (res) {
                 if (!okFile(outMov)) throw new Error("empty");
+                assertAllFrames(res, seq, "MOV (" + attempts[i].label + ")");
                 if (attempts[i].alpha) {
                     onLog("MOV: SUCCESS via " + attempts[i].label);
                 } else {
@@ -272,6 +320,9 @@
      * deliveries that were written but are not what was asked for.
      */
     function convert(opts, onProgress, onLog) {
+        if (opts.seq && opts.seq.problem) {
+            return Promise.reject(new Error("This PNG sequence cannot be converted: " + opts.seq.problem));
+        }
         cancelled = false;
         var outDir = opts.seq.folder;
         var outWebM = path.join(outDir, "output.webm");
@@ -349,6 +400,6 @@
         convert: convert,
         cancel: cancel,
         existingOutputs: existingOutputs,
-        _internals: { makeHTML: makeHTML, makeMOV: makeMOV }
+        _internals: { makeHTML: makeHTML, makeMOV: makeMOV, inputArgs: inputArgs }
     };
 })(window);

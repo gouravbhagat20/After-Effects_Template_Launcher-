@@ -13,6 +13,26 @@ function rmrf(p) {
     try { fs.rmSync(p, { recursive: true, force: true }); } catch (e) { }
 }
 
+test("a brand or campaign that is a directory reference is refused", () => {
+    for (const bad of ["..", ".", "...", ".hidden", "Nike.", "Nike "]) {
+        assert.match(T.validate(bad, ""), /BH-4009/, "brand " + JSON.stringify(bad));
+        assert.match(T.validate("Nike", bad), /BH-4009/, "campaign " + JSON.stringify(bad));
+    }
+    assert.strictEqual(T.validate("Nike", "Air.Max"), null, "a dot inside a name is fine");
+    assert.strictEqual(T.validate("St.Ives", ""), null);
+});
+
+test("createProjectStructure refuses a project folder outside its quarter", () => {
+    const base = tmpBase();
+    try {
+        for (const name of ["..", ".", "../../Elsewhere"]) {
+            assert.throws(() => T.createProjectStructure(base, 2026, "Q3", name, "Sunrise_750x300", "R1", "sunrise", "V1"),
+                /BH-1007/, "project name " + JSON.stringify(name));
+        }
+        assert.deepStrictEqual(fs.readdirSync(base), [], "nothing is created on the way to refusing");
+    } finally { rmrf(base); }
+});
+
 test("createProjectStructure builds the full v0.3 layout", () => {
     const base = tmpBase();
     try {

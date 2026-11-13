@@ -166,10 +166,15 @@
                     }
                     return;
                 }
-                fresh.forEach(function (it) { seen[it.id] = true; });
-                return handle(fresh, res.main, false);
+                // Marked as seen only once the host has dealt with them. If
+                // the conform call fails (After Effects busy, a timeout) they
+                // stay new and the next poll tries again — marking them first
+                // meant one hiccup left a sequence unconformed for good.
+                return handle(fresh, res.main, false).then(function () {
+                    fresh.forEach(function (it) { seen[it.id] = true; });
+                });
             }).catch(function () {
-                /* host busy or down — the next poll tries again */
+                lastCount = -1;     // host busy or down — scan again on the next poll
             }).then(function () { scanning = false; });
         }
 
@@ -182,11 +187,15 @@
                     return ui.alert("This project has no Main comp to compare frame rates against.", "Frame Rate Guard");
                 }
                 var items = res.items || [];
-                if (seen && seenKey !== null) items.forEach(function (it) { seen[it.id] = true; });
                 if (!items.length) {
                     return ui.alert("There are no image sequences or videos in this project.", "Frame Rate Guard");
                 }
-                return handle(items, res.main, true);
+                return handle(items, res.main, true).then(function () {
+                    if (seen && seenKey !== null) items.forEach(function (it) { seen[it.id] = true; });
+                }, function (e) {
+                    return ui.alert("Could not change the frame rates:\n" + e.message +
+                        "\n\nNothing was marked as checked — try again.", "Frame Rate Guard");
+                });
             }, function (e) {
                 return ui.alert("Could not check frame rates:\n" + e.message, "Frame Rate Guard");
             });

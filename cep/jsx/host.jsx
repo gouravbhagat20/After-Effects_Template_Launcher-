@@ -238,25 +238,59 @@ var BH = (function () {
                         if (!plan) { inUse.push(String(it.name)); continue; }
                     }
                     var before = it.frameRate;
+                    var prevConform = it.mainSource.conformFrameRate;   // 0 = "use the file's own rate"
                     try {
                         it.mainSource.conformFrameRate = fps;
                         if (Math.abs(it.frameRate - fps) > 0.001) { failed.push(String(it.name)); continue; }
                     } catch (eConform) { failed.push(String(it.name)); continue; }
 
-                    var extended = 0, retimed = [];
-                    for (var p = 0; p < plan.length; p++) {
-                        try {
+                    // The layers and wrapper comps have to follow, all of
+                    // them. If After Effects refuses one — or accepts the
+                    // value and does not apply it — the footage would be left
+                    // longer than a layer showing it. So every change is
+                    // remembered and, on any shortfall, undone: the item ends
+                    // up as it was and is reported as failed, never as fixed.
+                    var extended = 0, retimed = [], undo = [], complete = true;
+                    try {
+                        for (var p = 0; p < plan.length && complete; p++) {
+                            var pc = plan[p].comp;
                             if (plan[p].wrapper) {
-                                plan[p].comp.frameRate = fps;
-                                plan[p].comp.duration = it.duration;
-                                retimed.push(String(plan[p].comp.name));
+                                undo.push({ comp: pc, frameRate: pc.frameRate, duration: pc.duration });
+                                pc.frameRate = fps;
+                                pc.duration = it.duration;
+                                // Both have to have taken: the right frame rate on a comp
+                                // still at its old length leaves the tail outside the comp.
+                                if (Math.abs(pc.frameRate - fps) > 0.001 ||
+                                    Math.abs(pc.duration - it.duration) > 1 / fps) complete = false;
+                                retimed.push(String(pc.name));
                             }
-                            for (var q = 0; q < plan[p].layers.length; q++) {
+                            for (var q = 0; q < plan[p].layers.length && complete; q++) {
                                 var lay = plan[p].layers[q];
-                                lay.outPoint = lay.startTime + it.duration;
+                                var wanted = lay.startTime + it.duration;
+                                undo.push({ layer: lay, outPoint: lay.outPoint });
+                                lay.outPoint = wanted;
+                                // Short of the new end is only acceptable where the
+                                // comp itself ends first: nothing visible is lost.
+                                var tolQ = 1 / pc.frameRate;
+                                if (Math.abs(lay.outPoint - wanted) > tolQ &&
+                                    !(wanted > pc.duration && lay.outPoint >= pc.duration - tolQ)) complete = false;
                                 extended++;
                             }
-                        } catch (eLayer) { /* the footage is right; a layer AE would not move is left as it is */ }
+                        }
+                    } catch (eLayer) { complete = false; }
+
+                    if (!complete) {
+                        // Footage first: a layer cannot be put back to an out
+                        // point beyond the footage it shows.
+                        try { it.mainSource.conformFrameRate = prevConform; } catch (eBack) { }
+                        for (var u = undo.length - 1; u >= 0; u--) {
+                            try {
+                                if (undo[u].layer) undo[u].layer.outPoint = undo[u].outPoint;
+                                else { undo[u].comp.frameRate = undo[u].frameRate; undo[u].comp.duration = undo[u].duration; }
+                            } catch (eUndo) { }
+                        }
+                        failed.push(String(it.name));
+                        continue;
                     }
                     fixed.push({ name: String(it.name), from: before, layers: extended, comps: retimed });
                 }
@@ -868,6 +902,13 @@ var BH = (function () {
                 collectState = null;
                 return fail(PROJECT_CHANGED);
             }
+            // Finishing with items still queued would save the copy, write
+            // its report and announce a collect that copied only part of the
+            // footage. The collect stays in progress: step on, or abort.
+            if (collectState.pos < collectState.queue.length) {
+                return fail("The collect is not finished: " + (collectState.queue.length - collectState.pos) +
+                            " of " + collectState.queue.length + " item(s) are still to be copied.");
+            }
             return ok(collectFinishImpl(collectState));
         } catch (e) {
             return fail(collectAbortImpl() ? e : String(e) + STILL_ON_COPY);
@@ -924,7 +965,13 @@ var BH = (function () {
         if (!item || !(item instanceof FootageItem) || !item.file) return;
         if (!item.mainSource || item.mainSource instanceof SolidSource) return;
         var sourceFile = item.file;
-        if (!sourceFile.exists) return;
+        // It was there when the collect began (missing files never enter the
+        // queue), so it went away since — a drive unmounted, a render
+        // overwritten. That is a missing file in the result, not a skip.
+        if (!sourceFile.exists) {
+            st.missing.push(item.name + " → " + sourceFile.fsName);
+            return;
+        }
 
         var destName = decodeURI(sourceFile.name);
         var lowerExt = sourceFile.name.split(".").pop().toLowerCase();
@@ -934,7 +981,10 @@ var BH = (function () {
 
         if (isSequence) {
             var seqFolder = sourceFile.parent;
-            if (!seqFolder || !seqFolder.exists) return;
+            if (!seqFolder || !seqFolder.exists) {
+                st.missing.push(item.name + " → " + sourceFile.fsName);
+                return;
+            }
             var match = destName.replace(/\.[^\.]+$/, "").match(/^(.*?)(\d+)$/);
             // Resuming a sequence from the previous step: do not list the folder again.
             var seqFiles = st.seqJob ? st.seqJob.files

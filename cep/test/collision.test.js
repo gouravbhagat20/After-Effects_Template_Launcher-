@@ -29,6 +29,42 @@ test("detectPNGSequence sorts numerically across mixed padding", () => {
         assert.ok(seq);
         assert.strictEqual(seq.start, 1, "lowest frame number wins regardless of padding");
         assert.strictEqual(seq.count, 3);
+        assert.match(seq.problem, /padded differently/,
+            "ffmpeg reads one pattern: it would encode shot_0001 alone and call that a success");
+    } finally { rmrf(dir); }
+});
+
+test("a sequence ffmpeg could not read in full says why, and is refused", async () => {
+    const cases = [
+        [["f_0001.png", "f_0002.png", "f_0004.png"], /Frame 3 is missing.*only the first 2 of 3/],
+        [["f_1.png", "f_01.png", "f_02.png"], /padded differently/],
+        [["f_0001.png", "f_0002.png", "f_0003.png"], null],
+        [["f_8.png", "f_9.png", "f_10.png", "f_11.png"], null]       // no padding at all is consistent
+    ];
+    for (const [files, problem] of cases) {
+        const dir = tmpdir();
+        try {
+            files.forEach((f) => fs.writeFileSync(path.join(dir, f), "x"));
+            const seq = Post.detectPNGSequence(dir);
+            if (!problem) { assert.strictEqual(seq.problem, null, files.join(" ")); continue; }
+            assert.match(seq.problem, problem);
+            await assert.rejects(
+                Post.convert({ ffmpegPath: "ffmpeg", seq, fps: 24, width: 1, height: 1, webm: true }, () => { }, () => { }),
+                /cannot be converted/);
+            assert.ok(!fs.existsSync(path.join(dir, "output.webm")), "nothing is encoded from part of a sequence");
+        } finally { rmrf(dir); }
+    }
+});
+
+test("an unpadded sequence is read with %d, not a zero-padded pattern", () => {
+    const dir = tmpdir();
+    try {
+        ["f_8.png", "f_9.png", "f_10.png"].forEach((f) => fs.writeFileSync(path.join(dir, f), "x"));
+        const seq = Post.detectPNGSequence(dir);
+        assert.strictEqual(seq.padding, 0);
+        const args = Post._internals.inputArgs(seq, 24);
+        assert.strictEqual(args[args.length - 1], path.join(dir, "f_%d.png"));
+        assert.strictEqual(args[args.indexOf("-start_number") + 1], "8");
     } finally { rmrf(dir); }
 });
 
@@ -118,7 +154,7 @@ const { EventEmitter } = require("node:events");
  * call time, so this reaches it — and unlike a fake shell script it behaves
  * the same on Windows.
  */
-async function withFakeFFmpeg(allowedCodecs, body) {
+async function withFakeFFmpeg(allowedCodecs, body, framesWritten) {
     const real = cp.spawn;
     cp.spawn = (exe, args) => {
         const proc = new EventEmitter();
@@ -129,6 +165,7 @@ async function withFakeFFmpeg(allowedCodecs, body) {
             const ok = allowedCodecs.some((c) => args.indexOf(c) !== -1);
             const out = args[args.length - 1];
             if (ok && !/^(NUL|\/dev\/null)$/.test(out)) fs.writeFileSync(out, "ENCODED");
+            if (ok && framesWritten != null) proc.stdout.emit("data", "frame=" + framesWritten + "\nprogress=end\n");
             proc.emit("close", ok ? 0 : 1);
         });
         return proc;
@@ -182,6 +219,19 @@ test("a failed conversion leaves the previous output.webm intact", async () => {
         await assert.rejects(withFakeFFmpeg([], (exe) => convertWebM(dir, exe)));
         assert.strictEqual(fs.readFileSync(path.join(dir, "output.webm"), "utf8"), "PREVIOUS GOOD");
         assert.ok(!fs.existsSync(path.join(dir, "output.partial.webm")), "no partial file left behind");
+    } finally { rmrf(dir); }
+});
+
+test("an encode that came out short of the sequence is a failure, not a success", async () => {
+    const dir = seqDir();
+    try {
+        // ffmpeg exits 0 after writing 1 of the 2 frames
+        await assert.rejects(withFakeFFmpeg(["libvpx-vp9"], (exe) => convertWebM(dir, exe), 1),
+            /WebM has 1 frame\(s\) but the sequence has 2/);
+        assert.strictEqual(fs.readFileSync(path.join(dir, "output.webm"), "utf8"), "PREVIOUS GOOD",
+            "the short file never replaces the previous good one");
+        const full = await withFakeFFmpeg(["libvpx-vp9"], (exe) => convertWebM(dir, exe), 2);
+        assert.strictEqual(full.outputs.length, 1);
     } finally { rmrf(dir); }
 });
 

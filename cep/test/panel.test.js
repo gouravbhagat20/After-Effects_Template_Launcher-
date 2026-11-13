@@ -567,6 +567,30 @@ test("after a reload mid-collect the panel offers the way back to the original",
     });
 });
 
+test("the recovery record survives a host that could not answer at startup", async () => {
+    await withPanel({
+        settings: { pending_collect: crumb() },
+        hostImpl: { getProjectInfo: () => new Error("After Effects did not respond") }
+    }, async (p) => {
+        await p.settle(80);
+        assert.equal(p.settings.pending_collect, crumb(), "the next launch can still offer the way back");
+    });
+});
+
+test("the recovery record survives a failed reopen", async () => {
+    await withPanel({
+        settings: { pending_collect: crumb() },
+        projectInfo: Object.assign({}, SAVED, { path: COPY }),
+        hostImpl: { openProject: () => new Error("File not found") }
+    }, async (p) => {
+        await p.settle(60);
+        p.document.querySelector(".bh-modal-yes").click();
+        await p.settle(300);
+        assert.equal(p.settings.pending_collect, crumb());
+        assert.match(p.$("bh-modal-msg").textContent, /could not be reopened/);
+    });
+});
+
 test("no prompt when After Effects is not on the collected copy any more", async () => {
     await withPanel({ settings: { pending_collect: crumb() }, projectInfo: SAVED }, async (p) => {
         await p.settle(60);
@@ -771,6 +795,30 @@ test("a new empty project forgets the last one's item ids", async () => {
         await p.window.BHCore.refreshProject();
         await p.settle(60);
         assert.deepEqual(p.callsTo("conformFrameRates")[0].args, [[1], 24]);
+    });
+});
+
+test("a conform that fails for a moment is tried again, not forgotten", async () => {
+    let attempts = 0;
+    const g = guardPanel({ hostImpl: {
+        conformFrameRates: (ids) => {
+            attempts++;
+            if (attempts === 1) return new Error("After Effects did not respond to conformFrameRates");
+            return { fixed: ids.map((i) => ({ name: "item" + i, from: 30 })), failed: [], inUse: [] };
+        }
+    } });
+    await withPanel(g.opts, async (p) => {
+        await p.settle(60);
+        await g.importing(p, [NEW_SEQ]);
+        assert.equal(attempts, 1);
+        assert.ok(!p.document.querySelector(".bh-modal-overlay.show"), "a hiccup is not worth a dialog");
+        await p.window.BHCore.refreshProject();              // the next poll
+        await p.settle(60);
+        assert.equal(attempts, 2, "the sequence was still new, so it is conformed now");
+        assert.deepEqual(p.callsTo("conformFrameRates")[1].args, [[2], 24]);
+        await p.window.BHCore.refreshProject();
+        await p.settle(60);
+        assert.equal(attempts, 2, "and once done it is not conformed again");
     });
 });
 

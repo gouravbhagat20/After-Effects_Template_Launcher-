@@ -160,8 +160,20 @@
         return { name: renderName, type: type, parsed: parsed };
     }
 
+    /** "." and ".." are not names, they are directions: joined into a path
+        they resolve to the folder itself or its parent, so a brand of ".."
+        put the project a level above its quarter. A leading dot hides the
+        folder on macOS and a trailing dot or space is silently dropped by
+        Windows, so neither survives as typed. */
+    function isUnsafeName(s) {
+        s = String(s || "");
+        return /^\.+$/.test(s) || /^\./.test(s) || /[. ]$/.test(s);
+    }
+
     function validate(brand, campaign) {
         if (!brand) return "Brand name is required. (BH-4001)";
+        if (isUnsafeName(brand)) return "Brand cannot start or end with a dot. (BH-4009)";
+        if (campaign && isUnsafeName(campaign)) return "Campaign cannot start or end with a dot. (BH-4009)";
         if (brand.length < LIMITS.BRAND_MIN || brand.length > LIMITS.BRAND_MAX) {
             return "Brand must be " + LIMITS.BRAND_MIN + "-" + LIMITS.BRAND_MAX + " characters. (BH-4007)";
         }
@@ -184,6 +196,12 @@
         }
 
         var projectRoot = path.join(basePath, String(year), quarter, projectName);
+        // Whatever the names were, the project has to land INSIDE its quarter.
+        var quarterRoot = path.resolve(basePath, String(year), quarter);
+        if (path.resolve(projectRoot).indexOf(quarterRoot + path.sep) !== 0) {
+            throw new Error("The project folder would be created outside " + quarterRoot +
+                " (BH-1007). Check the brand and campaign names.");
+        }
         var sizeFolder = path.join(projectRoot, size);
         var versionFolder = path.join(sizeFolder, version);
         var aeFolder = path.join(versionFolder, FOLDER_AE);

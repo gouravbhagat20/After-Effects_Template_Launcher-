@@ -110,7 +110,10 @@
 
         function setPRSeq(folder) {
             prSeq = folder ? global.BHPost.detectPNGSequence(folder) : null;
-            if (prSeq) {
+            if (prSeq && prSeq.problem) {
+                $("pr-seq").textContent = "Cannot convert " + prSeq.prefix + " [" + prSeq.count +
+                    " files]: " + prSeq.problem;
+            } else if (prSeq) {
                 $("pr-seq").textContent = "Sequence: " + prSeq.prefix + " [" + prSeq.count +
                     " frames] — " + folder;
             } else {
@@ -118,7 +121,7 @@
                     ? "No PNG sequence found in: " + folder
                     : "No sequence selected.";
             }
-            $("btn-pr-convert").disabled = !prSeq || prRunning;
+            $("btn-pr-convert").disabled = !prSeq || !!prSeq.problem || prRunning;
         }
 
         $("btn-pr-folder").addEventListener("click", function () {
@@ -189,7 +192,7 @@
         }
 
         $("btn-pr-convert").addEventListener("click", function () {
-            if (!prSeq || prRunning) return;
+            if (!prSeq || prSeq.problem || prRunning) return;
             var options = {
                 webm: $("pr-webm").checked, mov: $("pr-mov").checked,
                 html: $("pr-html").checked, zip: $("pr-zip").checked
@@ -289,7 +292,7 @@
                         prRunning = false;
                         core.busy(false);
                         $("btn-pr-convert").classList.remove("loading");
-                        $("btn-pr-convert").disabled = !prSeq;
+                        $("btn-pr-convert").disabled = !prSeq || !!prSeq.problem;
                         $("btn-pr-cancel").disabled = true;
                     });
                 }).catch(function () { /* no ffmpeg — already alerted */ });
@@ -359,20 +362,27 @@
             if (!core.S.pending_collect) return Promise.resolve();
             var rec = null;
             try { rec = JSON.parse(core.S.pending_collect); } catch (e) { rec = null; }
-            clearPendingCollect();              // ask once, not on every launch
-            if (!rec || !rec.copy || !rec.original) return Promise.resolve();
+            if (!rec || !rec.copy || !rec.original) { clearPendingCollect(); return Promise.resolve(); }
 
+            // The record is only dropped once the question is settled: AE is
+            // not on the copy, the user answered, or the original is open
+            // again. A host call that fails here (AE busy at startup) leaves
+            // it in place, so the next launch asks again instead of never.
             return host("getProjectInfo").then(function (info) {
                 // Only worth a prompt if AE really is still on that copy.
-                if (!info || !info.open || !info.path || !core.samePath(info.path, rec.copy)) return;
+                if (!info || !info.open || !info.path || !core.samePath(info.path, rec.copy)) {
+                    clearPendingCollect();
+                    return;
+                }
                 return ui.confirm("A collect was interrupted, and After Effects is still showing the collected COPY:\n" +
                     rec.copy + "\n\nAnything you do now lands in the collect folder. " +
                     "Go back to your original project?\n" + rec.original, "Unfinished Collect")
                     .then(function (goBack) {
-                        if (!goBack) return;
+                        if (!goBack) { clearPendingCollect(); return; }      // answered: ask once
                         return core.guardUnsaved("reopen your original project").then(function (go) {
-                            if (!go) return;
+                            if (!go) return;                                 // backed out of the save prompt: ask again next time
                             return host("openProject", rec.original, true).then(function () {
+                                clearPendingCollect();
                                 toast("✓ Back on your original project");
                                 core.refreshProject();
                             }, function (e) {

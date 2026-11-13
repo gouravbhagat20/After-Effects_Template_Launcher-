@@ -134,6 +134,7 @@ class MFootageItem extends MItem {
         // AE: setting mainSource.conformFrameRate changes the item's frameRate.
         const item = this;
         let conform = 0;
+        const native = this.frameRate;
         Object.defineProperty(this.mainSource, "conformFrameRate", {
             configurable: true,
             get() { return conform; },
@@ -141,8 +142,9 @@ class MFootageItem extends MItem {
                 if (spec.conformThrows) throw new Error("conformFrameRate refused for " + item.name);
                 conform = v;
                 if (!spec.conformIgnored) {
-                    item.duration = item.duration * item.frameRate / v;   // same frames, new rate
-                    item.frameRate = v;
+                    const rate = v || native;                             // AE: 0 means "the file's own rate"
+                    item.duration = item.duration * item.frameRate / rate;   // same frames, new rate
+                    item.frameRate = rate;
                 }
             }
         });

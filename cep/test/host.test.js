@@ -797,6 +797,43 @@ test("a sequence frame that fails in a later step still marks the whole sequence
     assert.equal(ae.items[0].file.fsName, "/src/s/f_0001.png");
 });
 
+test("a collect cannot be finished while items are still queued", () => {
+    const ae = steppedAE();
+    const BH = loadHost(ae);
+    unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)"));
+    const before = ae.log.length;
+
+    const early = JSON.parse(BH.collectFinish());
+    assert.equal(early.ok, false);
+    assert.match(early.error, /not finished: 3 of 3 item\(s\) are still to be copied/);
+    assert.equal(ae.log.length, before, "the copy is not saved and the original is not reopened");
+    assert.equal(ae.project.file.fsName, "/dest/orig.aep", "the collect is still in progress on the copy");
+
+    let p;
+    do { p = unwrap(BH.collectStep(-1)); } while (!p.finished);
+    assert.deepEqual(unwrap(BH.collectFinish()), { assets: 3, missing: 1, failed: 0, reopened: true });
+});
+
+test("a source that disappears during a collect is reported missing, not skipped", () => {
+    const ae = buildAE({
+        projectFile: "/p/orig.aep",
+        files: ["/p/orig.aep", "/src/s/f_0002.png"],
+        items: [
+            { kind: "footage", name: "a", path: "/src/a.png", mainSource: STILL },
+            { kind: "footage", name: "Seq", path: "/src/s/f_0001.png", mainSource: SEQ },
+            { kind: "footage", name: "c", path: "/src/c.png", mainSource: STILL }
+        ]
+    });
+    const BH = loadHost(ae);
+    assert.deepEqual(unwrap(BH.collectBegin("/dest/orig.aep", "/dest/(Footage)")), { total: 3, missing: 0 });
+    new ae.globals.File("/src/a.png").remove();              // the drive went away after the collect began
+    new ae.globals.File("/src/s/f_0001.png").remove();
+    unwrap(BH.collectStep(-1));
+    const res = unwrap(BH.collectFinish());
+    assert.deepEqual(res, { assets: 1, missing: 2, failed: 0, reopened: true },
+        "two of three were not collected — the result has to say so");
+});
+
 test("a failure inside a step abandons the collect and returns to the original", () => {
     const ae = steppedAE({ replaceThrowsFor: () => true });
     const BH = loadHost(ae);
@@ -894,6 +931,51 @@ test("a comp made from the sequence takes the new frame rate and length with it"
     assert.equal(wrapper.frameRate, 24);
     assert.equal(wrapper.duration, 6.25);
     assert.equal(layer.outPoint, 6.25);
+});
+
+test("a retime After Effects only half applies is undone and reported as failed, never as fixed", () => {
+    // Two ways a layer refuses to follow: the write throws, or it is accepted and ignored.
+    for (const refusal of ["throws", "ignored"]) {
+        const ae = fpsAE();
+        const seq = ae.items[2];
+        const wrapper = { name: "shot", frameRate: 30, duration: 5 };
+        let out = 5;
+        const layer = { source: seq, locked: false, timeRemapEnabled: false, stretch: 100, startTime: 0, inPoint: 0,
+            get outPoint() { return out; },
+            set outPoint(v) {
+                if (v === 5) { out = v; return; }                    // putting it back is allowed
+                if (refusal === "throws") throw new Error("AE refused");
+            } };
+        wrapper.numLayers = 1; wrapper.layer = () => layer; seq.usedIn = [wrapper];
+        const BH = loadHost(ae);
+
+        const res = unwrap(BH.conformFrameRates([seq.id], 24));
+        assert.deepEqual(res, { fixed: [], failed: ["shot_[0001-0100].png"], inUse: [] }, refusal);
+        assert.equal(seq.frameRate, 30, "the footage is put back: 6.25 s of frames behind a 5 s layer hides the tail");
+        assert.equal(seq.duration, 5);
+        assert.equal(wrapper.frameRate, 30, "and so is the comp that had already been retimed");
+        assert.equal(wrapper.duration, 5);
+        assert.equal(layer.outPoint, 5);
+    }
+});
+
+test("a wrapper comp that takes the frame rate but not the new length is undone too", () => {
+    const ae = fpsAE();
+    const seq = ae.items[2];
+    let dur = 5;
+    const wrapper = { name: "shot", frameRate: 30,
+        get duration() { return dur; },
+        set duration(v) { if (v === 5) dur = v; /* any other length is accepted and ignored */ } };
+    const layer = layerOf(seq, wrapper);
+    const BH = loadHost(ae);
+
+    const res = unwrap(BH.conformFrameRates([seq.id], 24));
+    assert.deepEqual(res, { fixed: [], failed: ["shot_[0001-0100].png"], inUse: [] },
+        "6.25 s of footage in a 5 s comp is not 'fixed'");
+    assert.equal(seq.frameRate, 30);
+    assert.equal(seq.duration, 5);
+    assert.equal(wrapper.frameRate, 30);
+    assert.equal(layer.outPoint, 5);
 });
 
 test("a sequence somebody trimmed, stretched, remapped or locked is reported, not conformed", () => {

@@ -10,6 +10,15 @@
     "use strict";
 
     var CHANGELOG = {
+        "0.4.18": [
+            "Post-render: a PNG sequence with mixed number padding, a missing frame or a duplicate frame is now refused with the reason shown — it used to convert only the frames it could read and report success",
+            "Post-render: the finished WebM and MOV are checked to contain every frame; sequences numbered without padding (8, 9, 10…) now convert correctly",
+            "Frame rate guard: if a layer or comp cannot follow a frame rate change, everything is put back and the item is reported, instead of leaving footage cut short",
+            "Frame rate guard: a conform that fails because After Effects is busy is tried again on the next check",
+            "Collect: files that disappear while a collect is running are now reported as missing",
+            "New projects: brand and campaign names cannot start or end with a dot, and a project can never be created outside its quarter folder",
+            "Collect recovery: the offer to go back to your original project is no longer lost if After Effects was busy at startup"
+        ],
         "0.4.17": [
             "Frame rate guard: an imported image sequence is now conformed to Main's frame rate even if you dropped it straight into a comp — its layer is extended to the new length so no frames are hidden",
             "A comp created from the sequence (one layer, same frame rate and length) is set to the new frame rate and length along with it",
